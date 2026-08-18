@@ -150,6 +150,15 @@
   .detail-meta .k{ color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; font-size:10px; font-weight:700; }
   .detail-meta .v{ font-family:var(--font-mono); margin-top:2px; }
 
+  .metric-row{ display:flex; gap:22px; flex-wrap:wrap; margin-bottom:18px; }
+  .metric{ flex:1; min-width:150px; }
+  .metric-top{ display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:6px; }
+  .metric-top .k{ color:var(--text-muted); font-weight:600; }
+  .metric-top .v{ font-family:var(--font-mono); font-weight:700; }
+  .meter{ height:6px; border-radius:99px; background:var(--surface-alt); overflow:hidden; }
+  .meter div{ height:100%; border-radius:99px; }
+  .fill-ok{ background:var(--ok); } .fill-warn{ background:var(--warn); } .fill-crit{ background:var(--crit); }
+
   .tabs{ display:flex; gap:2px; padding:0 16px; border-bottom:1px solid var(--border-soft); overflow-x:auto; }
   .tab{ padding:11px 6px; margin-right:18px; font-size:12.5px; font-weight:700; color:var(--text-muted); background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; white-space:nowrap; }
   .tab.active{ color:var(--accent-strong); border-bottom-color:var(--accent); }
@@ -250,7 +259,7 @@
 
           <div class="tab-panel" data-panel="docker">
             <div class="table-scroll">
-              <table><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Last seen</th><th></th></tr></thead>
+              <table><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>CPU</th><th>Memory</th><th>Restarts</th><th>Ports</th><th>Last seen</th><th></th></tr></thead>
               <tbody id="dockerBody"></tbody></table>
             </div>
           </div>
@@ -566,7 +575,16 @@ function renderDetail(id) {
 
   const data = vmDetails[id] || { containers: [], services: [] };
 
+  const fillClass = v => v >= 85 ? 'fill-crit' : v >= 65 ? 'fill-warn' : 'fill-ok';
+  const meter = (label, value) => value === null || value === undefined ? '' : `
+    <div class="metric">
+      <div class="metric-top"><span class="k">${label}</span><span class="v">${value}%</span></div>
+      <div class="meter"><div class="${fillClass(value)}" style="width:${Math.min(value, 100)}%"></div></div>
+    </div>`;
+  const metricsHtml = [meter('CPU', vm.cpu_percent), meter('Memory', vm.mem_percent), meter('Disk', vm.disk_percent)].join('');
+
   $('#panelOverview').innerHTML = `
+    ${metricsHtml ? `<div class="metric-row">${metricsHtml}</div>` : ''}
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">
       <div><div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Containers</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px">${data.containers.length}</div></div>
       <div><div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Services</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px">${data.services.length}</div></div>
@@ -575,12 +593,16 @@ function renderDetail(id) {
       ? '<div class="agent-note" style="margin-top:16px">No agent connected yet — run the install command on this VM (see "+ Add VM") to start seeing real Docker/systemd data here.</div>' : ''}`;
 
   $('#dockerBody').innerHTML = data.containers.length === 0
-    ? `<tr><td colspan="5" class="empty-state">No containers reported yet.</td></tr>`
+    ? `<tr><td colspan="9" class="empty-state">No containers reported yet.</td></tr>`
     : data.containers.map((c, i) => `
         <tr>
           <td><strong>${c.name}</strong></td>
           <td class="cell-sub">${c.image || '—'}</td>
           <td>${c.status}</td>
+          <td class="mono">${c.cpu_percent != null ? c.cpu_percent + '%' : '—'}</td>
+          <td class="cell-sub">${c.mem_usage || '—'}</td>
+          <td class="mono">${c.restart_count != null ? c.restart_count : '—'}</td>
+          <td class="cell-sub">${c.ports || '—'}</td>
           <td class="cell-sub">${new Date(c.last_seen).toLocaleTimeString()}</td>
           <td><button class="btn small" data-log-index="${i}">Logs</button></td>
         </tr>`).join('');

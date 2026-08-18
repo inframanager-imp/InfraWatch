@@ -54,6 +54,9 @@ class VMOut(BaseModel):
     ip_address: Optional[str]
     status: str
     last_heartbeat: Optional[datetime]
+    cpu_percent: Optional[float]
+    mem_percent: Optional[float]
+    disk_percent: Optional[float]
     created_at: datetime
     environment: EnvironmentOut
 
@@ -71,6 +74,10 @@ class ContainerOut(BaseModel):
     image: Optional[str]
     status: str
     logs: Optional[str]
+    cpu_percent: Optional[float]
+    mem_usage: Optional[str]
+    restart_count: Optional[int]
+    ports: Optional[str]
     last_seen: datetime
 
     class Config:
@@ -93,6 +100,10 @@ class ContainerIn(BaseModel):
     image: Optional[str] = None
     status: str
     logs: Optional[str] = None
+    cpu_percent: Optional[float] = None
+    mem_usage: Optional[str] = None
+    restart_count: Optional[int] = None
+    ports: Optional[str] = None
 
 
 class ServiceIn(BaseModel):
@@ -104,5 +115,8 @@ class ServiceIn(BaseModel):
 class HeartbeatIn(BaseModel):
     name: str
     token: str
+    cpu_percent: Optional[float] = None
+    mem_percent: Optional[float] = None
+    disk_percent: Optional[float] = None
     containers: list[ContainerIn] = []
     services: list[ServiceIn] = []

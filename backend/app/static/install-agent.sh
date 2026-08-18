@@ -56,11 +56,15 @@ server never connects into this VM.
 """
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+
+# Delta state between heartbeats, for CPU %.
+_last_cpu = None
 
 
 def run(cmd, timeout=15):
@@ -82,18 +86,83 @@ def run_logs(cmd, timeout=5):
         return ""
 
 
+def parse_percent(s):
+    try:
+        return float(s.strip().rstrip("%"))
+    except Exception:
+        return None
+
+
+def read_cpu_percent():
+    # Delta-since-last-heartbeat, not an instantaneous blocking sample —
+    # returns None on the very first heartbeat (no prior sample to diff against).
+    global _last_cpu
+    try:
+        with open("/proc/stat") as f:
+            values = list(map(int, f.readline().split()[1:]))
+        idle = values[3] + values[4]
+        total = sum(values)
+        if _last_cpu is None:
+            _last_cpu = (total, idle)
+            return None
+        prev_total, prev_idle = _last_cpu
+        _last_cpu = (total, idle)
+        d_total, d_idle = total - prev_total, idle - prev_idle
+        return round((1 - d_idle / d_total) * 100, 1) if d_total > 0 else None
+    except Exception:
+        return None
+
+
+def read_mem_percent():
+    try:
+        info = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                key, _, rest = line.partition(":")
+                info[key] = int(rest.strip().split()[0])
+        total, available = info.get("MemTotal"), info.get("MemAvailable")
+        return round((1 - available / total) * 100, 1) if total else None
+    except Exception:
+        return None
+
+
+def read_disk_percent():
+    try:
+        usage = shutil.disk_usage("/")
+        return round(usage.used / usage.total * 100, 1)
+    except Exception:
+        return None
+
+
 def collect_containers():
-    out = run(["docker", "ps", "-a", "--format", "{{.Names}}|{{.Image}}|{{.Status}}"])
+    out = run(["docker", "ps", "-a", "--format", "{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}"])
     containers = []
     for line in out.strip().splitlines():
+        parts = line.split("|", 3)
+        if len(parts) < 3:
+            continue
+        name, image, status = parts[0], parts[1], parts[2]
+        ports = parts[3] if len(parts) > 3 else ""
+        containers.append({"name": name, "image": image, "status": status, "ports": ports or None})
+
+    # One bulk call for live resource stats (only returns running containers).
+    stats_out = run(["docker", "stats", "--no-stream", "--format", "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}"], timeout=10)
+    stats_by_name = {}
+    for line in stats_out.strip().splitlines():
         parts = line.split("|", 2)
         if len(parts) == 3:
-            name, image, status = parts
-            # Snapshot only — not live streaming. Kept short (--tail) and
-            # per-container timeout small so this can't meaningfully delay
-            # the heartbeat even with several containers.
-            logs = run_logs(["docker", "logs", "--tail", "50", "--timestamps", name])
-            containers.append({"name": name, "image": image, "status": status, "logs": logs})
+            stats_by_name[parts[0]] = {"cpu": parts[1], "mem": parts[2]}
+
+    for c in containers:
+        stat = stats_by_name.get(c["name"], {})
+        c["cpu_percent"] = parse_percent(stat.get("cpu", ""))
+        c["mem_usage"] = stat.get("mem")
+        # Snapshot only — not live streaming. Kept short (--tail) and
+        # per-container timeout small so this can't meaningfully delay
+        # the heartbeat even with several containers.
+        c["logs"] = run_logs(["docker", "logs", "--tail", "50", "--timestamps", c["name"]])
+        rc = run(["docker", "inspect", "-f", "{{.RestartCount}}", c["name"]], timeout=5).strip()
+        c["restart_count"] = int(rc) if rc.isdigit() else None
     return containers
 
 
@@ -112,6 +181,9 @@ def send_heartbeat(server, token, name):
     payload = {
         "name": name,
         "token": token,
+        "cpu_percent": read_cpu_percent(),
+        "mem_percent": read_mem_percent(),
+        "disk_percent": read_disk_percent(),
         "containers": collect_containers(),
         "services": collect_services(),
     }

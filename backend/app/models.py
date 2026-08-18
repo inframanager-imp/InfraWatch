@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -45,6 +45,9 @@ class VM(Base):
     status = Column(String, nullable=False, default="pending")  # "pending" | "online" | "offline"
     agent_token_hash = Column(String, nullable=False)
     last_heartbeat = Column(DateTime, nullable=True)
+    cpu_percent = Column(Float, nullable=True)
+    mem_percent = Column(Float, nullable=True)
+    disk_percent = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     environment = relationship("Environment", back_populates="vms")
@@ -62,6 +65,10 @@ class Container(Base):
     image = Column(String, nullable=True)
     status = Column(String, nullable=False)  # docker's own status text, e.g. "Up 2 hours"
     logs = Column(Text, nullable=True)  # last ~50 lines, snapshot as of last heartbeat
+    cpu_percent = Column(Float, nullable=True)
+    mem_usage = Column(String, nullable=True)  # kept as docker's own text, e.g. "45.2MiB / 512MiB"
+    restart_count = Column(Integer, nullable=True)
+    ports = Column(String, nullable=True)
     last_seen = Column(DateTime, default=datetime.utcnow)
 
     vm = relationship("VM", back_populates="containers")

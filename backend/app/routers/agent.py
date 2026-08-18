@@ -29,13 +29,19 @@ def heartbeat(payload: schemas.HeartbeatIn, db: Session = Depends(get_db)):
 
     vm.last_heartbeat = datetime.utcnow()
     vm.status = "online"
+    vm.cpu_percent = payload.cpu_percent
+    vm.mem_percent = payload.mem_percent
+    vm.disk_percent = payload.disk_percent
 
     # Full replace each heartbeat — simplest correct approach at this scale;
     # revisit with a diff/upsert if container/service counts grow large.
     db.query(Container).filter(Container.vm_id == vm.id).delete()
     db.query(Service).filter(Service.vm_id == vm.id).delete()
     for c in payload.containers:
-        db.add(Container(vm_id=vm.id, name=c.name, image=c.image, status=c.status, logs=c.logs))
+        db.add(Container(
+            vm_id=vm.id, name=c.name, image=c.image, status=c.status, logs=c.logs,
+            cpu_percent=c.cpu_percent, mem_usage=c.mem_usage, restart_count=c.restart_count, ports=c.ports,
+        ))
     for s in payload.services:
         db.add(Service(vm_id=vm.id, name=s.name, status=s.status, sub_state=s.sub_state))
 

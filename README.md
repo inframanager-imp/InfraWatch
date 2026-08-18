@@ -2,9 +2,7 @@
 
 Centralized dashboard for monitoring VMs, Docker containers, and systemd services across environments. Agents run on each monitored VM and push data to this central server — the server never connects into a VM directly.
 
-## Status: Phase 1 — backend, database, auth, RBAC
-
-This phase ships a working API with no agents yet:
+## Status: Phase 1 — backend, database, auth, RBAC, real frontend
 
 - FastAPI backend + PostgreSQL
 - JWT auth, password hashing (bcrypt)
@@ -13,6 +11,7 @@ This phase ships a working API with no agents yet:
 - Configurable environments (seeded with production, staging, development, qa, demo, das, sandbox)
 - Audit log for admin actions
 - `POST /vms` generates a one-time agent token (shown once, stored hashed) — this is what the future agent install command will use
+- A real frontend (plain HTML/JS, no build step, served by nginx) that logs in and calls the live API — login, VM list with real stats, Add VM (shows the real generated install command), VM detail, and an admin-only Users screen
 
 Not built yet: the agent itself, live log streaming, Docker/systemd inventory, alerting. See "Next phases" below.
 
@@ -23,6 +22,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
+- UI: http://localhost:8080
 - API: http://localhost:8000
 - Interactive docs: http://localhost:8000/docs
 - Default admin (from `.env`): `admin@infrawatch.local` / `changeme123` — change this before any real deployment
@@ -32,10 +32,10 @@ In `/docs`, click **Authorize** and log in with the admin email as the username.
 ## Project structure
 
 ```
-backend/     FastAPI app, SQLAlchemy models, JWT auth, RBAC
-frontend/    UI — currently the static dashboard mockup used to validate the design;
-             a real app (React) replaces this in phase 2, wired to the API above
-agent/       placeholder — the per-VM agent (phase 2)
+backend/         FastAPI app, SQLAlchemy models, JWT auth, RBAC
+frontend/app/    the real frontend — plain HTML/JS calling the live API, served by nginx
+frontend/mockup/ the original static design mockup (fake data), kept as a design reference
+agent/           placeholder — the per-VM agent (phase 2)
 ```
 
 ## API overview

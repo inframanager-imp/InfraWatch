@@ -40,9 +40,8 @@ def create_vm(payload: schemas.VMCreate, db: Session = Depends(get_db), admin: U
     db.refresh(vm)
     log_action(db, admin.email, "vm.create", target=vm.name)
 
-    result = schemas.VMCreated.model_validate(vm)
-    result.agent_token = agent_token
-    return result
+    out = schemas.VMOut.model_validate(vm)
+    return schemas.VMCreated(**out.model_dump(), agent_token=agent_token)
 
 
 @router.delete("/{vm_id}", status_code=204)

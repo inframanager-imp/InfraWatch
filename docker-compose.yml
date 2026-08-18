@@ -8,8 +8,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-infrawatch_dev}
     volumes:
       - db_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # No host port mapping — only reachable from other containers on this
+    # compose network (backend -> db). Keeps Postgres off the host entirely.
 
   backend:
     build: ./backend
@@ -19,10 +19,21 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-prod}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@infrawatch.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
     depends_on:
       - db
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      API_BASE: ${API_BASE:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
 
 volumes:
   db_data:

@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 12
     admin_email: str = "admin@infrawatch.local"
     admin_password: str = "changeme123"
+    cors_origins: str = "*"  # comma-separated list, or "*" for local dev
 
     class Config:
         env_file = ".env"

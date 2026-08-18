@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InfraWatch</title>
+<style>
+  :root{
+    --bg:#F4F7F8; --surface:#FFFFFF; --surface-alt:#EAF0F2;
+    --border:#D6E0E3; --border-soft:#E4EAEC;
+    --text:#131C22; --text-muted:#5B6E75; --text-faint:#8A9BA1;
+    --accent:#0C7C82; --accent-strong:#075A5F; --accent-soft:#E3F2F1;
+    --ok:#1E8E5A; --ok-soft:#E3F5EC;
+    --warn:#B36B00; --warn-soft:#FBEEDD;
+    --crit:#C4392B; --crit-soft:#FBE7E4;
+    --offline:#6B7680; --offline-soft:#EEF1F3;
+    --env-violet:#6E4FC9; --env-violet-soft:#EFE9F9;
+    --env-rose:#C23B7A; --env-rose-soft:#FBE8F0;
+    --env-gold:#9C7A12; --env-gold-soft:#FBF3DC;
+    --shadow: 0 1px 2px rgba(19,28,34,.04), 0 6px 16px rgba(19,28,34,.06);
+    --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, "SFMono-Regular", monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "IBM Plex Sans", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0A1013; --surface:#10181C; --surface-alt:#162126;
+      --border:#243239; --border-soft:#1C282D;
+      --text:#E4ECEE; --text-muted:#8CA0A6; --text-faint:#5F7379;
+      --accent:#33C9C2; --accent-strong:#5EDCD6; --accent-soft:rgba(51,201,194,.14);
+      --ok:#3ECF8E; --ok-soft:rgba(62,207,142,.14);
+      --warn:#E2A23B; --warn-soft:rgba(226,162,59,.14);
+      --crit:#F0564A; --crit-soft:rgba(240,86,74,.14);
+      --offline:#7C8A92; --offline-soft:rgba(124,138,146,.14);
+      --env-violet:#B39DFF; --env-violet-soft:rgba(151,120,255,.16);
+      --env-rose:#F48FC0; --env-rose-soft:rgba(240,100,160,.16);
+      --env-gold:#E0C25E; --env-gold-soft:rgba(224,194,94,.16);
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--font-sans); font-size:14px; line-height:1.5; }
+  button, input, select{ font-family:inherit; font-size:inherit; color:inherit; }
+
+  /* login */
+  .login-wrap{ min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:28px; box-shadow:var(--shadow); }
+  .login-brand{ font-family:var(--font-mono); font-weight:700; font-size:18px; margin-bottom:4px; }
+  .login-sub{ color:var(--text-muted); font-size:12.5px; margin-bottom:20px; }
+  .field{ display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
+  .field label{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); }
+  .field input, .field select{ border:1px solid var(--border); background:var(--surface-alt); border-radius:6px; padding:9px 10px; outline:0; }
+  .field input:focus, .field select:focus{ border-color:var(--accent); }
+  .error-box{ background:var(--crit-soft); color:var(--crit); font-size:12.5px; padding:8px 10px; border-radius:6px; margin-bottom:14px; display:none; }
+  .error-box.show{ display:block; }
+
+  .btn{ font-size:12.5px; font-weight:600; padding:8px 14px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
+  .btn:hover{ background:var(--surface-alt); }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:#fff; width:100%; }
+  .btn.primary:hover{ background:var(--accent-strong); }
+  .btn.danger{ color:var(--crit); border-color:var(--crit-soft); }
+  .btn.danger:hover{ background:var(--crit-soft); }
+  .btn.small{ padding:5px 10px; font-size:11.5px; }
+
+  /* app shell */
+  #appShell{ display:none; }
+  .topbar{ display:flex; align-items:center; gap:20px; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--surface); }
+  .brand{ font-family:var(--font-mono); font-weight:700; font-size:15px; }
+  .brand span{ color:var(--text-faint); font-weight:500; }
+  .topnav{ display:flex; gap:2px; }
+  .topnav button{ border:0; background:none; padding:6px 12px; border-radius:6px; font-size:13px; font-weight:600; color:var(--text-muted); cursor:pointer; }
+  .topnav button.active{ color:var(--accent-strong); background:var(--accent-soft); }
+  .topbar-right{ margin-left:auto; display:flex; align-items:center; gap:12px; }
+  .role-badge{ font-family:var(--font-mono); font-size:11px; font-weight:600; padding:4px 8px; border-radius:5px; background:var(--accent-soft); color:var(--accent-strong); }
+  .user-email{ font-size:12.5px; color:var(--text-muted); }
+
+  .page{ max-width:1100px; margin:0 auto; padding:22px 20px 60px; }
+  .page-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .page-head h1{ font-family:var(--font-mono); font-size:19px; margin:0; }
+
+  .stat-row{ display:flex; gap:14px; margin-bottom:18px; flex-wrap:wrap; }
+  .stat{ flex:1 1 140px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px; box-shadow:var(--shadow); }
+  .stat .n{ font-family:var(--font-mono); font-size:22px; font-weight:700; }
+  .stat .l{ font-size:11.5px; color:var(--text-muted); margin-top:4px; }
+  .stat.ok .n{ color:var(--ok); } .stat.crit .n{ color:var(--crit); } .stat.off .n{ color:var(--offline); }
+
+  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow); }
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  thead th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); font-weight:700; padding:12px 14px 8px; }
+  tbody td{ padding:10px 14px; border-top:1px solid var(--border-soft); vertical-align:middle; }
+  tbody tr:hover{ background:var(--surface-alt); cursor:pointer; }
+  .mono{ font-family:var(--font-mono); }
+  .cell-sub{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); }
+  .table-scroll{ overflow-x:auto; }
+  .empty-state{ padding:36px 10px; text-align:center; color:var(--text-faint); font-size:12.5px; }
+
+  .pill{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:3px 8px; border-radius:99px; text-transform:uppercase; letter-spacing:.02em; }
+  .pill.online, .pill.admin{ background:var(--ok-soft); color:var(--ok); }
+  .pill.pending{ background:var(--accent-soft); color:var(--accent-strong); }
+  .pill.offline, .pill.readonly{ background:var(--offline-soft); color:var(--offline); }
+  .pill i{ width:6px; height:6px; border-radius:50%; background:currentColor; }
+
+  .env-tag{ font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:2px 6px; border-radius:4px; }
+  .env-tag.production{ background:var(--crit-soft); color:var(--crit); }
+  .env-tag.staging{ background:var(--warn-soft); color:var(--warn); }
+  .env-tag.development{ background:var(--accent-soft); color:var(--accent-strong); }
+  .env-tag.qa{ background:var(--env-violet-soft); color:var(--env-violet); }
+  .env-tag.demo{ background:var(--env-rose-soft); color:var(--env-rose); }
+  .env-tag.das{ background:var(--offline-soft); color:var(--offline); }
+  .env-tag.sandbox{ background:var(--env-gold-soft); color:var(--env-gold); }
+
+  .modal-overlay{ position:fixed; inset:0; background:rgba(8,12,14,.55); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50; }
+  .modal{ width:100%; max-width:440px; background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); max-height:88vh; overflow-y:auto; }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border-soft); }
+  .modal-head h3{ margin:0; font-family:var(--font-mono); font-size:15px; }
+  .modal-close{ border:0; background:none; color:var(--text-faint); font-size:16px; cursor:pointer; }
+  .modal-body{ padding:18px; }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+  .modal-hint{ font-size:12px; color:var(--text-muted); margin:0 0 14px; line-height:1.5; }
+
+  .code-block{ background:#0B1013; border:1px solid #1E2A30; border-radius:8px; padding:12px 14px; font-family:var(--font-mono); font-size:11.5px; color:#C9D6DA; white-space:pre-wrap; word-break:break-all; line-height:1.6; }
+  .token-line{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:10px; }
+  .checkbox-row{ display:flex; align-items:center; gap:8px; font-size:12.5px; padding:4px 0; }
+
+  .detail-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
+  .detail-grid div .k{ font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; font-weight:700; }
+  .detail-grid div .v{ font-family:var(--font-mono); margin-top:3px; font-size:13px; }
+  .agent-note{ background:var(--surface-alt); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div class="login-wrap" id="loginScreen">
+  <div class="login-card">
+    <div class="login-brand">InfraWatch</div>
+    <div class="login-sub">Sign in to the fleet console</div>
+    <div class="error-box" id="loginError"></div>
+    <form id="loginForm">
+      <div class="field"><label>Email</label><input type="email" id="loginEmail" required autofocus /></div>
+      <div class="field"><label>Password</label><input type="password" id="loginPassword" required /></div>
+      <button type="submit" class="btn primary">Sign in</button>
+    </form>
+  </div>
+</div>
+
+<div id="appShell">
+  <div class="topbar">
+    <div class="brand">infrawatch</div>
+    <nav class="topnav">
+      <button class="active" id="navVms">VMs</button>
+      <button id="navUsers" style="display:none">Users</button>
+    </nav>
+    <div class="topbar-right">
+      <span class="role-badge" id="roleBadge">—</span>
+      <span class="user-email" id="userEmail">—</span>
+      <button class="btn small" id="logoutBtn">Log out</button>
+    </div>
+  </div>
+
+  <div class="page" id="viewVms">
+    <div class="page-head">
+      <h1>Virtual machines</h1>
+      <button class="btn primary" id="addVmBtn" style="display:none;width:auto">+ Add VM</button>
+    </div>
+    <div class="stat-row" id="vmStats"></div>
+    <div class="panel">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Name</th><th>Hostname</th><th>IP</th><th>Environment</th><th>Status</th><th>Created</th><th></th></tr></thead>
+          <tbody id="vmBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="page" id="viewUsers" style="display:none">
+    <div class="page-head">
+      <h1>Users</h1>
+      <button class="btn primary" id="addUserBtn" style="width:auto">+ Add user</button>
+    </div>
+    <div class="panel">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Created</th></tr></thead>
+          <tbody id="userBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add VM modal -->
+<div class="modal-overlay" id="addVmOverlay" style="display:none">
+  <div class="modal">
+    <div class="modal-head"><h3 id="vmModalTitle">Add a VM</h3><button class="modal-close" id="vmModalClose">✕</button></div>
+    <div class="modal-body" id="vmModalForm">
+      <p class="modal-hint">Register the VM here, then install the agent on it. The server never connects into the VM — the agent connects out to you.</p>
+      <div class="error-box" id="vmError"></div>
+      <form id="vmForm">
+        <div class="field"><label>VM name</label><input id="vmName" required placeholder="prod-cache-01" /></div>
+        <div class="field"><label>Hostname</label><input id="vmHost" placeholder="prod-cache-01.internal" /></div>
+        <div class="field"><label>IP address</label><input id="vmIp" placeholder="10.20.1.30" /></div>
+        <div class="field"><label>Environment</label><select id="vmEnv"></select></div>
+        <div class="modal-actions">
+          <button type="button" class="btn" id="vmCancelBtn">Cancel</button>
+          <button type="submit" class="btn primary" style="width:auto">Register VM</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-body" id="vmModalInstall" style="display:none">
+      <p class="modal-hint">Run this once on the target VM (needs sudo):</p>
+      <div class="code-block" id="installCmd"></div>
+      <div class="token-line">This token is shown once. Store it securely — it authenticates the agent going forward.</div>
+      <div class="modal-actions"><button type="button" class="btn primary" id="vmDoneBtn" style="width:auto">Done</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- VM detail modal -->
+<div class="modal-overlay" id="vmDetailOverlay" style="display:none">
+  <div class="modal">
+    <div class="modal-head"><h3 id="vmDetailName">—</h3><button class="modal-close" id="vmDetailClose">✕</button></div>
+    <div class="modal-body">
+      <div class="detail-grid" id="vmDetailGrid"></div>
+      <div class="agent-note">No agent connected yet — Docker container and systemd service monitoring will appear here once the agent is installed and phase 2 (agent build) ships.</div>
+      <div class="modal-actions" id="vmDetailActions"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Add user modal -->
+<div class="modal-overlay" id="addUserOverlay" style="display:none">
+  <div class="modal">
+    <div class="modal-head"><h3>Add a user</h3><button class="modal-close" id="userModalClose">✕</button></div>
+    <div class="modal-body">
+      <div class="error-box" id="userError"></div>
+      <form id="userForm">
+        <div class="field"><label>Name</label><input id="userName" required /></div>
+        <div class="field"><label>Email</label><input id="userEmailInput" type="email" required /></div>
+        <div class="field"><label>Password</label><input id="userPassword" type="password" required /></div>
+        <div class="field"><label>Role</label>
+          <select id="userRole">
+            <option value="readonly">Read-only</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="field" id="vmAccessField">
+          <label>VM access (read-only users only)</label>
+          <div id="vmAccessList"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" id="userCancelBtn">Cancel</button>
+          <button type="submit" class="btn primary" style="width:auto">Create user</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="/config.js"></script>
+<script>
+const API_BASE = window.API_BASE;
+const $ = s => document.querySelector(s);
+
+let token = sessionStorage.getItem('iw_token') || null;
+let me = null;
+let environments = [];
+let vms = [];
+let users = [];
+
+async function api(path, options = {}) {
+  const headers = options.headers || {};
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const res = await fetch(API_BASE + path, { ...options, headers });
+  if (res.status === 401) { logout(); throw new Error('Session expired — please log in again.'); }
+  let body = null;
+  try { body = await res.json(); } catch (e) { /* no body */ }
+  if (!res.ok) throw new Error((body && body.detail) || ('Request failed (' + res.status + ')'));
+  return body;
+}
+
+function logout() {
+  token = null; me = null;
+  sessionStorage.removeItem('iw_token');
+  $('#appShell').style.display = 'none';
+  $('#loginScreen').style.display = 'flex';
+}
+
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const errBox = $('#loginError');
+  errBox.classList.remove('show');
+  try {
+    const form = new URLSearchParams();
+    form.set('username', $('#loginEmail').value.trim());
+    form.set('password', $('#loginPassword').value);
+    const res = await fetch(API_BASE + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form,
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || 'Login failed');
+    token = body.access_token;
+    sessionStorage.setItem('iw_token', token);
+    await bootApp();
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.add('show');
+  }
+});
+
+$('#logoutBtn').addEventListener('click', logout);
+
+async function bootApp() {
+  me = await api('/auth/me');
+  $('#roleBadge').textContent = me.role.toUpperCase();
+  $('#userEmail').textContent = me.email;
+  $('#addVmBtn').style.display = me.role === 'admin' ? 'block' : 'none';
+  $('#navUsers').style.display = me.role === 'admin' ? 'block' : 'none';
+
+  environments = await api('/environments');
+  $('#vmEnv').innerHTML = environments.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+
+  await loadVms();
+  if (me.role === 'admin') await loadUsers();
+
+  $('#loginScreen').style.display = 'none';
+  $('#appShell').style.display = 'block';
+}
+
+async function loadVms() {
+  vms = await api('/vms');
+  renderStats();
+  renderVms();
+}
+
+function renderStats() {
+  const online = vms.filter(v => v.status === 'online').length;
+  const pending = vms.filter(v => v.status === 'pending').length;
+  const offline = vms.filter(v => v.status === 'offline').length;
+  $('#vmStats').innerHTML = `
+    <div class="stat"><div class="n">${vms.length}</div><div class="l">Total</div></div>
+    <div class="stat ok"><div class="n">${online}</div><div class="l">Online</div></div>
+    <div class="stat"><div class="n">${pending}</div><div class="l">Pending</div></div>
+    <div class="stat crit"><div class="n">${offline}</div><div class="l">Offline</div></div>`;
+}
+
+function renderVms() {
+  const body = $('#vmBody');
+  if (vms.length === 0) {
+    body.innerHTML = `<tr><td colspan="7" class="empty-state">No VMs registered yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = vms.map(vm => `
+    <tr data-id="${vm.id}">
+      <td><strong>${vm.name}</strong></td>
+      <td class="cell-sub">${vm.hostname || '—'}</td>
+      <td class="mono">${vm.ip_address || '—'}</td>
+      <td><span class="env-tag ${vm.environment.name}">${vm.environment.name}</span></td>
+      <td><span class="pill ${vm.status}"><i></i>${vm.status}</span></td>
+      <td class="cell-sub">${new Date(vm.created_at).toLocaleDateString()}</td>
+      <td></td>
+    </tr>`).join('');
+  body.querySelectorAll('tr').forEach(row => row.addEventListener('click', () => openVmDetail(row.dataset.id)));
+}
+
+function openVmDetail(id) {
+  const vm = vms.find(v => v.id === id);
+  $('#vmDetailName').textContent = vm.name;
+  $('#vmDetailGrid').innerHTML = `
+    <div><div class="k">Hostname</div><div class="v">${vm.hostname || '—'}</div></div>
+    <div><div class="k">IP address</div><div class="v">${vm.ip_address || '—'}</div></div>
+    <div><div class="k">Environment</div><div class="v">${vm.environment.name}</div></div>
+    <div><div class="k">Status</div><div class="v">${vm.status}</div></div>
+    <div><div class="k">Last heartbeat</div><div class="v">${vm.last_heartbeat ? new Date(vm.last_heartbeat).toLocaleString() : '—'}</div></div>
+    <div><div class="k">Registered</div><div class="v">${new Date(vm.created_at).toLocaleString()}</div></div>`;
+  $('#vmDetailActions').innerHTML = me.role === 'admin'
+    ? `<button class="btn danger" id="vmDeleteBtn" style="width:auto">Delete VM</button>` : '';
+  if (me.role === 'admin') {
+    $('#vmDeleteBtn').addEventListener('click', async () => {
+      if (!confirm(`Delete ${vm.name}? This cannot be undone.`)) return;
+      await api('/vms/' + vm.id, { method: 'DELETE' });
+      $('#vmDetailOverlay').style.display = 'none';
+      await loadVms();
+    });
+  }
+  $('#vmDetailOverlay').style.display = 'flex';
+}
+$('#vmDetailClose').addEventListener('click', () => $('#vmDetailOverlay').style.display = 'none');
+
+/* add VM modal */
+$('#addVmBtn').addEventListener('click', () => {
+  $('#vmForm').reset();
+  $('#vmError').classList.remove('show');
+  $('#vmModalTitle').textContent = 'Add a VM';
+  $('#vmModalForm').style.display = 'block';
+  $('#vmModalInstall').style.display = 'none';
+  $('#addVmOverlay').style.display = 'flex';
+});
+$('#vmModalClose').addEventListener('click', () => $('#addVmOverlay').style.display = 'none');
+$('#vmCancelBtn').addEventListener('click', () => $('#addVmOverlay').style.display = 'none');
+$('#vmDoneBtn').addEventListener('click', () => $('#addVmOverlay').style.display = 'none');
+
+$('#vmForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const errBox = $('#vmError');
+  errBox.classList.remove('show');
+  try {
+    const created = await api('/vms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: $('#vmName').value.trim(),
+        hostname: $('#vmHost').value.trim() || null,
+        ip_address: $('#vmIp').value.trim() || null,
+        environment_id: $('#vmEnv').value,
+      }),
+    });
+    const cmd = `curl -sSL ${API_BASE}/install-agent.sh | sudo bash -s -- \\\n  --server=${API_BASE} \\\n  --token=${created.agent_token} \\\n  --name=${created.name}`;
+    $('#installCmd').textContent = cmd;
+    $('#vmModalTitle').textContent = 'Install the agent';
+    $('#vmModalForm').style.display = 'none';
+    $('#vmModalInstall').style.display = 'block';
+    await loadVms();
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.add('show');
+  }
+});
+
+/* users */
+async function loadUsers() {
+  users = await api('/users');
+  renderUsers();
+}
+function renderUsers() {
+  const body = $('#userBody');
+  if (users.length === 0) { body.innerHTML = `<tr><td colspan="4" class="empty-state">No users yet.</td></tr>`; return; }
+  body.innerHTML = users.map(u => `
+    <tr>
+      <td>${u.name}</td>
+      <td class="mono">${u.email}</td>
+      <td><span class="pill ${u.role}">${u.role}</span></td>
+      <td class="cell-sub">${new Date(u.created_at).toLocaleDateString()}</td>
+    </tr>`).join('');
+}
+
+$('#navVms').addEventListener('click', () => {
+  $('#navVms').classList.add('active'); $('#navUsers').classList.remove('active');
+  $('#viewVms').style.display = 'block'; $('#viewUsers').style.display = 'none';
+});
+$('#navUsers').addEventListener('click', () => {
+  $('#navUsers').classList.add('active'); $('#navVms').classList.remove('active');
+  $('#viewUsers').style.display = 'block'; $('#viewVms').style.display = 'none';
+});
+
+$('#addUserBtn').addEventListener('click', () => {
+  $('#userForm').reset();
+  $('#userError').classList.remove('show');
+  $('#vmAccessList').innerHTML = vms.map(v => `
+    <label class="checkbox-row"><input type="checkbox" value="${v.id}" /> ${v.name} <span class="cell-sub">(${v.environment.name})</span></label>
+  `).join('') || '<div class="cell-sub">No VMs registered yet.</div>';
+  $('#addUserOverlay').style.display = 'flex';
+});
+$('#userModalClose').addEventListener('click', () => $('#addUserOverlay').style.display = 'none');
+$('#userCancelBtn').addEventListener('click', () => $('#addUserOverlay').style.display = 'none');
+
+$('#userForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const errBox = $('#userError');
+  errBox.classList.remove('show');
+  try {
+    const vmIds = [...document.querySelectorAll('#vmAccessList input:checked')].map(i => i.value);
+    await api('/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: $('#userName').value.trim(),
+        email: $('#userEmailInput').value.trim(),
+        password: $('#userPassword').value,
+        role: $('#userRole').value,
+        vm_ids: vmIds,
+      }),
+    });
+    $('#addUserOverlay').style.display = 'none';
+    await loadUsers();
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.add('show');
+  }
+});
+
+/* boot: resume session if a token is already stored */
+if (token) {
+  bootApp().catch(() => logout());
+} else {
+  logout();
+}
+</script>
+</body>
+</html>

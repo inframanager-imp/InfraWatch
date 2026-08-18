@@ -48,7 +48,7 @@
   .login-sub{ color:var(--text-muted); font-size:12.5px; margin-bottom:20px; }
   .field{ display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
   .field label{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); }
-  .field input, .field select{ border:1px solid var(--border); background:var(--surface-alt); border-radius:6px; padding:9px 10px; outline:0; }
+  .field input, .field select{ border:1px solid var(--border); background:var(--surface-alt); border-radius:6px; padding:9px 10px; outline:0; width:100%; }
   .field input:focus, .field select:focus{ border-color:var(--accent); }
   .error-box{ background:var(--crit-soft); color:var(--crit); font-size:12.5px; padding:8px 10px; border-radius:6px; margin-bottom:14px; display:none; }
   .error-box.show{ display:block; }
@@ -73,21 +73,36 @@
   .role-badge{ font-family:var(--font-mono); font-size:11px; font-weight:600; padding:4px 8px; border-radius:5px; background:var(--accent-soft); color:var(--accent-strong); }
   .user-email{ font-size:12.5px; color:var(--text-muted); }
 
-  .page{ max-width:1100px; margin:0 auto; padding:22px 20px 60px; }
+  .page{ max-width:1320px; margin:0 auto; padding:22px 20px 60px; }
   .page-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
   .page-head h1{ font-family:var(--font-mono); font-size:19px; margin:0; }
 
-  .stat-row{ display:flex; gap:14px; margin-bottom:18px; flex-wrap:wrap; }
+  .stat-row{ display:flex; gap:18px; }
   .stat{ flex:1 1 140px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px; box-shadow:var(--shadow); }
   .stat .n{ font-family:var(--font-mono); font-size:22px; font-weight:700; }
   .stat .l{ font-size:11.5px; color:var(--text-muted); margin-top:4px; }
   .stat.ok .n{ color:var(--ok); } .stat.crit .n{ color:var(--crit); } .stat.off .n{ color:var(--offline); }
 
+  .stat-groups{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+  .stat-cluster{ flex:1 1 220px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px; box-shadow:var(--shadow); }
+  .stat-cluster h3{ margin:0 0 10px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); font-weight:700; }
+  .stat-cluster .stat-row{ display:flex; gap:16px; }
+  .stat-cluster .stat{ flex:1; background:none; border:none; box-shadow:none; padding:0; }
+  .stat-cluster .stat .n{ font-size:19px; }
+
+  .health-strip{ display:flex; align-items:center; gap:16px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:18px; box-shadow:var(--shadow); flex-wrap:wrap; }
+  .health-strip h3{ margin:0; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); font-weight:700; flex:none; }
+  .health-bar{ flex:1 1 160px; display:flex; height:8px; border-radius:99px; overflow:hidden; background:var(--surface-alt); }
+  .health-bar div{ height:100%; }
+  .health-legend{ display:flex; gap:14px; flex:none; flex-wrap:wrap; }
+  .health-legend span{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); }
+  .health-legend i{ width:8px; height:8px; border-radius:50%; display:inline-block; }
+
   .panel{ background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow); }
   table{ width:100%; border-collapse:collapse; font-size:12.5px; }
   thead th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); font-weight:700; padding:12px 14px 8px; }
   tbody td{ padding:10px 14px; border-top:1px solid var(--border-soft); vertical-align:middle; }
-  tbody tr:hover{ background:var(--surface-alt); cursor:pointer; }
+  tbody tr:hover{ background:var(--surface-alt); }
   .mono{ font-family:var(--font-mono); }
   .cell-sub{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); }
   .table-scroll{ overflow-x:auto; }
@@ -100,7 +115,7 @@
   .pill.failed{ background:var(--crit-soft); color:var(--crit); }
   .pill i{ width:6px; height:6px; border-radius:50%; background:currentColor; }
 
-  .env-tag{ font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:2px 6px; border-radius:4px; }
+  .env-tag{ font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:2px 6px; border-radius:4px; flex:none; }
   .env-tag.production{ background:var(--crit-soft); color:var(--crit); }
   .env-tag.staging{ background:var(--warn-soft); color:var(--warn); }
   .env-tag.development{ background:var(--accent-soft); color:var(--accent-strong); }
@@ -109,11 +124,40 @@
   .env-tag.das{ background:var(--offline-soft); color:var(--offline); }
   .env-tag.sandbox{ background:var(--env-gold-soft); color:var(--env-gold); }
 
+  /* master-detail dashboard */
+  .main-grid{ display:grid; grid-template-columns:320px 1fr; gap:16px; align-items:start; }
+  @media (max-width:900px){ .main-grid{ grid-template-columns:1fr; } }
+  .panel-head{ padding:13px 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; }
+  .panel-head h2{ margin:0; font-size:13px; font-weight:700; }
+  .panel-head .count{ font-family:var(--font-mono); font-size:11.5px; color:var(--text-faint); }
+  .vm-list{ max-height:660px; overflow-y:auto; }
+  .vm-row{ display:flex; align-items:center; gap:10px; padding:11px 16px; border-bottom:1px solid var(--border-soft); cursor:pointer; }
+  .vm-row:hover{ background:var(--surface-alt); }
+  .vm-row.selected{ background:var(--accent-soft); box-shadow:inset 3px 0 0 var(--accent); }
+  .status-dot{ width:8px; height:8px; border-radius:50%; flex:none; }
+  .status-dot.online{ background:var(--ok); box-shadow:0 0 0 3px var(--ok-soft); }
+  .status-dot.offline{ background:var(--offline); box-shadow:0 0 0 3px var(--offline-soft); }
+  .status-dot.pending{ background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .vm-row-main{ flex:1; min-width:0; }
+  .vm-row-name{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .vm-row-meta{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:1px; }
+
+  .detail-head{ padding:16px; border-bottom:1px solid var(--border-soft); }
+  .detail-head-top{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .detail-head-top h2{ margin:0; font-family:var(--font-mono); font-size:17px; }
+  .detail-meta{ display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; }
+  .detail-meta div{ font-size:12px; }
+  .detail-meta .k{ color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; font-size:10px; font-weight:700; }
+  .detail-meta .v{ font-family:var(--font-mono); margin-top:2px; }
+
+  .tabs{ display:flex; gap:2px; padding:0 16px; border-bottom:1px solid var(--border-soft); overflow-x:auto; }
+  .tab{ padding:11px 6px; margin-right:18px; font-size:12.5px; font-weight:700; color:var(--text-muted); background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; white-space:nowrap; }
+  .tab.active{ color:var(--accent-strong); border-bottom-color:var(--accent); }
+  .tab-panel{ display:none; padding:16px; }
+  .tab-panel.active{ display:block; }
+
   .modal-overlay{ position:fixed; inset:0; background:rgba(8,12,14,.55); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50; }
   .modal{ width:100%; max-width:440px; background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); max-height:88vh; overflow-y:auto; }
-  .modal.wide{ max-width:760px; }
-  .detail-section{ margin-top:16px; }
-  .detail-section h4{ margin:0 0 8px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); font-weight:700; }
   .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border-soft); }
   .modal-head h3{ margin:0; font-family:var(--font-mono); font-size:15px; }
   .modal-close{ border:0; background:none; color:var(--text-faint); font-size:16px; cursor:pointer; }
@@ -125,10 +169,7 @@
   .token-line{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:10px; }
   .checkbox-row{ display:flex; align-items:center; gap:8px; font-size:12.5px; padding:4px 0; }
 
-  .detail-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
-  .detail-grid div .k{ font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; font-weight:700; }
-  .detail-grid div .v{ font-family:var(--font-mono); margin-top:3px; font-size:13px; }
-  .agent-note{ background:var(--surface-alt); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-muted); }
+  .agent-note{ background:var(--surface-alt); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-muted); line-height:1.5; }
 </style>
 </head>
 <body>
@@ -162,16 +203,75 @@
 
   <div class="page" id="viewVms">
     <div class="page-head">
-      <h1>Virtual machines</h1>
+      <h1>Fleet overview</h1>
       <button class="btn primary" id="addVmBtn" style="display:none;width:auto">+ Add VM</button>
     </div>
-    <div class="stat-row" id="vmStats"></div>
-    <div class="panel">
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>Name</th><th>Hostname</th><th>IP</th><th>Environment</th><th>Status</th><th>Created</th><th></th></tr></thead>
-          <tbody id="vmBody"></tbody>
-        </table>
+
+    <div class="stat-groups" id="statGroups"></div>
+
+    <div class="health-strip">
+      <h3>Health</h3>
+      <div class="health-bar" id="healthBar"></div>
+      <div class="health-legend" id="healthLegend"></div>
+    </div>
+
+    <div class="main-grid">
+      <div class="panel">
+        <div class="panel-head"><h2>Virtual machines</h2><span class="count" id="vmCount">0</span></div>
+        <div class="vm-list" id="vmList"></div>
+      </div>
+
+      <div class="panel">
+        <div class="empty-state" id="detailEmpty" style="padding:80px 10px">Select a VM from the list to see details.</div>
+        <div id="detailContent" style="display:none">
+          <div class="detail-head">
+            <div class="detail-head-top">
+              <h2 id="dtName">—</h2>
+              <span class="pill" id="dtStatus">—</span>
+              <span class="env-tag" id="dtEnv">—</span>
+            </div>
+            <div class="detail-meta">
+              <div><div class="k">Hostname</div><div class="v" id="dtHost">—</div></div>
+              <div><div class="k">IP address</div><div class="v" id="dtIp">—</div></div>
+              <div><div class="k">Last heartbeat</div><div class="v" id="dtHb">—</div></div>
+              <div><div class="k">Registered</div><div class="v" id="dtCreated">—</div></div>
+            </div>
+          </div>
+
+          <div class="tabs">
+            <button class="tab active" data-tab="overview">Overview</button>
+            <button class="tab" data-tab="docker">Docker</button>
+            <button class="tab" data-tab="systemd">Systemd</button>
+            <button class="tab" data-tab="logs">Live logs</button>
+            <button class="tab" data-tab="alerts">Alerts</button>
+          </div>
+
+          <div class="tab-panel active" data-panel="overview" id="panelOverview"></div>
+
+          <div class="tab-panel" data-panel="docker">
+            <div class="table-scroll">
+              <table><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Last seen</th></tr></thead>
+              <tbody id="dockerBody"></tbody></table>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="systemd">
+            <div class="table-scroll">
+              <table><thead><tr><th>Name</th><th>Active</th><th>Sub-state</th><th>Last seen</th></tr></thead>
+              <tbody id="systemdBody"></tbody></table>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="logs">
+            <div class="agent-note">Live log streaming isn't built yet. The agent currently reports periodic container/service snapshots every 30s, not live log output — that's planned as a follow-up phase (WebSocket streaming from the agent).</div>
+          </div>
+
+          <div class="tab-panel" data-panel="alerts">
+            <div class="agent-note">Alerting isn't built yet. The underlying data (heartbeat status, container/service state changes) already exists — nothing evaluates it into alert events or notifications yet.</div>
+          </div>
+
+          <div class="modal-actions" id="dtActions" style="justify-content:flex-start; padding:0 16px 16px"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -219,35 +319,6 @@
   </div>
 </div>
 
-<!-- VM detail modal -->
-<div class="modal-overlay" id="vmDetailOverlay" style="display:none">
-  <div class="modal wide">
-    <div class="modal-head"><h3 id="vmDetailName">—</h3><button class="modal-close" id="vmDetailClose">✕</button></div>
-    <div class="modal-body">
-      <div class="detail-grid" id="vmDetailGrid"></div>
-      <div id="vmDetailAgentNote" class="agent-note" style="display:none">No agent connected yet — Docker container and systemd service monitoring will appear here once the agent is installed on this VM.</div>
-
-      <div class="detail-section" id="vmDetailContainersSection" style="display:none">
-        <h4>Docker containers</h4>
-        <div class="table-scroll">
-          <table><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Last seen</th></tr></thead>
-          <tbody id="vmDetailContainersBody"></tbody></table>
-        </div>
-      </div>
-
-      <div class="detail-section" id="vmDetailServicesSection" style="display:none">
-        <h4>Systemd services</h4>
-        <div class="table-scroll">
-          <table><thead><tr><th>Name</th><th>Active</th><th>Sub-state</th><th>Last seen</th></tr></thead>
-          <tbody id="vmDetailServicesBody"></tbody></table>
-        </div>
-      </div>
-
-      <div class="modal-actions" id="vmDetailActions"></div>
-    </div>
-  </div>
-</div>
-
 <!-- Add user modal -->
 <div class="modal-overlay" id="addUserOverlay" style="display:none">
   <div class="modal">
@@ -287,6 +358,8 @@ let me = null;
 let environments = [];
 let vms = [];
 let users = [];
+let vmDetails = {}; // vmId -> { containers, services }
+let selectedVmId = null;
 
 async function api(path, options = {}) {
   const headers = options.headers || {};
@@ -300,7 +373,7 @@ async function api(path, options = {}) {
 }
 
 function logout() {
-  token = null; me = null;
+  token = null; me = null; selectedVmId = null;
   sessionStorage.removeItem('iw_token');
   $('#appShell').style.display = 'none';
   $('#loginScreen').style.display = 'flex';
@@ -351,99 +424,172 @@ async function bootApp() {
 
 async function loadVms() {
   vms = await api('/vms');
+  const pairs = await Promise.all(vms.map(async vm => {
+    const [containers, services] = await Promise.all([
+      api('/vms/' + vm.id + '/containers').catch(() => []),
+      api('/vms/' + vm.id + '/services').catch(() => []),
+    ]);
+    return [vm.id, { containers, services }];
+  }));
+  vmDetails = Object.fromEntries(pairs);
+
   renderStats();
-  renderVms();
+  renderVmList();
+
+  if (selectedVmId && vms.some(v => v.id === selectedVmId)) {
+    renderDetail(selectedVmId);
+  }
 }
 
 function renderStats() {
+  $('#vmCount').textContent = vms.length;
   const online = vms.filter(v => v.status === 'online').length;
   const pending = vms.filter(v => v.status === 'pending').length;
   const offline = vms.filter(v => v.status === 'offline').length;
-  $('#vmStats').innerHTML = `
-    <div class="stat"><div class="n">${vms.length}</div><div class="l">Total</div></div>
-    <div class="stat ok"><div class="n">${online}</div><div class="l">Online</div></div>
-    <div class="stat"><div class="n">${pending}</div><div class="l">Pending</div></div>
-    <div class="stat crit"><div class="n">${offline}</div><div class="l">Offline</div></div>`;
+
+  let cTotal = 0, cRunning = 0, sTotal = 0, sRunning = 0, sFailed = 0;
+  Object.values(vmDetails).forEach(d => {
+    cTotal += d.containers.length;
+    cRunning += d.containers.filter(c => /up/i.test(c.status)).length;
+    sTotal += d.services.length;
+    sRunning += d.services.filter(s => s.status === 'active').length;
+    sFailed += d.services.filter(s => s.status === 'failed').length;
+  });
+
+  $('#statGroups').innerHTML = `
+    <div class="stat-cluster">
+      <h3>Virtual Machines</h3>
+      <div class="stat-row">
+        <div class="stat"><div class="n">${vms.length}</div><div class="l">Total</div></div>
+        <div class="stat ok"><div class="n">${online}</div><div class="l">Online</div></div>
+        <div class="stat crit"><div class="n">${offline}</div><div class="l">Offline</div></div>
+      </div>
+    </div>
+    <div class="stat-cluster">
+      <h3>Docker Containers</h3>
+      <div class="stat-row">
+        <div class="stat"><div class="n">${cTotal}</div><div class="l">Total</div></div>
+        <div class="stat ok"><div class="n">${cRunning}</div><div class="l">Running</div></div>
+        <div class="stat off"><div class="n">${cTotal - cRunning}</div><div class="l">Stopped</div></div>
+      </div>
+    </div>
+    <div class="stat-cluster">
+      <h3>Systemd Services</h3>
+      <div class="stat-row">
+        <div class="stat"><div class="n">${sTotal}</div><div class="l">Total</div></div>
+        <div class="stat ok"><div class="n">${sRunning}</div><div class="l">Running</div></div>
+        <div class="stat crit"><div class="n">${sFailed}</div><div class="l">Failed</div></div>
+      </div>
+    </div>
+    <div class="stat-cluster">
+      <h3>Alerts</h3>
+      <div class="stat-row">
+        <div class="stat"><div class="n">0</div><div class="l">Active</div></div>
+        <div class="stat"><div class="n">0</div><div class="l">Critical</div></div>
+      </div>
+    </div>`;
+
+  const buckets = [['online', 'Online', online], ['pending', 'Pending', pending], ['offline', 'Offline', offline]];
+  const present = buckets.filter(([, , n]) => n > 0);
+  const total = vms.length || 1;
+  const colorFor = k => k === 'online' ? 'var(--ok)' : k === 'pending' ? 'var(--accent)' : 'var(--offline)';
+  $('#healthBar').innerHTML = present.map(([k, , n]) =>
+    `<div style="width:${(n / total * 100).toFixed(1)}%;background:${colorFor(k)}" title="${k}: ${n}"></div>`).join('');
+  $('#healthLegend').innerHTML = present.map(([k, label, n]) =>
+    `<span><i style="background:${colorFor(k)}"></i>${label} · ${n}</span>`).join('');
 }
 
-function renderVms() {
-  const body = $('#vmBody');
+function renderVmList() {
+  const el = $('#vmList');
   if (vms.length === 0) {
-    body.innerHTML = `<tr><td colspan="7" class="empty-state">No VMs registered yet.</td></tr>`;
+    el.innerHTML = `<div class="empty-state">No VMs registered yet.</div>`;
     return;
   }
-  body.innerHTML = vms.map(vm => `
-    <tr data-id="${vm.id}">
-      <td><strong>${vm.name}</strong></td>
-      <td class="cell-sub">${vm.hostname || '—'}</td>
-      <td class="mono">${vm.ip_address || '—'}</td>
-      <td><span class="env-tag ${vm.environment.name}">${vm.environment.name}</span></td>
-      <td><span class="pill ${vm.status}"><i></i>${vm.status}</span></td>
-      <td class="cell-sub">${new Date(vm.created_at).toLocaleDateString()}</td>
-      <td></td>
-    </tr>`).join('');
-  body.querySelectorAll('tr').forEach(row => row.addEventListener('click', () => openVmDetail(row.dataset.id)));
+  el.innerHTML = vms.map(vm => `
+    <div class="vm-row ${vm.id === selectedVmId ? 'selected' : ''}" data-id="${vm.id}">
+      <span class="status-dot ${vm.status}"></span>
+      <div class="vm-row-main">
+        <div class="vm-row-name">${vm.name}</div>
+        <div class="vm-row-meta">${vm.ip_address || vm.hostname || '—'}</div>
+      </div>
+      <span class="env-tag ${vm.environment.name}">${vm.environment.name.slice(0, 4)}</span>
+      <span class="pill ${vm.status}"><i></i>${vm.status}</span>
+    </div>`).join('');
+  el.querySelectorAll('.vm-row').forEach(row => row.addEventListener('click', () => selectVm(row.dataset.id)));
 }
 
-async function openVmDetail(id) {
+function selectVm(id) {
+  selectedVmId = id;
+  renderVmList();
+  renderDetail(id);
+}
+
+function renderDetail(id) {
   const vm = vms.find(v => v.id === id);
-  $('#vmDetailName').textContent = vm.name;
-  $('#vmDetailGrid').innerHTML = `
-    <div><div class="k">Hostname</div><div class="v">${vm.hostname || '—'}</div></div>
-    <div><div class="k">IP address</div><div class="v">${vm.ip_address || '—'}</div></div>
-    <div><div class="k">Environment</div><div class="v">${vm.environment.name}</div></div>
-    <div><div class="k">Status</div><div class="v">${vm.status}</div></div>
-    <div><div class="k">Last heartbeat</div><div class="v">${vm.last_heartbeat ? new Date(vm.last_heartbeat).toLocaleString() : '—'}</div></div>
-    <div><div class="k">Registered</div><div class="v">${new Date(vm.created_at).toLocaleString()}</div></div>`;
-  $('#vmDetailActions').innerHTML = me.role === 'admin'
+  if (!vm) return;
+  $('#detailEmpty').style.display = 'none';
+  $('#detailContent').style.display = 'block';
+
+  $('#dtName').textContent = vm.name;
+  $('#dtStatus').textContent = vm.status;
+  $('#dtStatus').className = 'pill ' + vm.status;
+  $('#dtEnv').textContent = vm.environment.name;
+  $('#dtEnv').className = 'env-tag ' + vm.environment.name;
+  $('#dtHost').textContent = vm.hostname || '—';
+  $('#dtIp').textContent = vm.ip_address || '—';
+  $('#dtHb').textContent = vm.last_heartbeat ? new Date(vm.last_heartbeat).toLocaleString() : '—';
+  $('#dtCreated').textContent = new Date(vm.created_at).toLocaleString();
+
+  $('#dtActions').innerHTML = me.role === 'admin'
     ? `<button class="btn danger" id="vmDeleteBtn" style="width:auto">Delete VM</button>` : '';
   if (me.role === 'admin') {
     $('#vmDeleteBtn').addEventListener('click', async () => {
       if (!confirm(`Delete ${vm.name}? This cannot be undone.`)) return;
       await api('/vms/' + vm.id, { method: 'DELETE' });
-      $('#vmDetailOverlay').style.display = 'none';
+      selectedVmId = null;
+      $('#detailContent').style.display = 'none';
+      $('#detailEmpty').style.display = 'block';
       await loadVms();
     });
   }
-  $('#vmDetailOverlay').style.display = 'flex';
 
-  $('#vmDetailAgentNote').style.display = 'none';
-  $('#vmDetailContainersSection').style.display = 'none';
-  $('#vmDetailServicesSection').style.display = 'none';
+  const data = vmDetails[id] || { containers: [], services: [] };
 
-  const [containers, services] = await Promise.all([
-    api('/vms/' + vm.id + '/containers').catch(() => []),
-    api('/vms/' + vm.id + '/services').catch(() => []),
-  ]);
+  $('#panelOverview').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">
+      <div><div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Containers</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px">${data.containers.length}</div></div>
+      <div><div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Services</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px">${data.services.length}</div></div>
+    </div>
+    ${data.containers.length === 0 && data.services.length === 0
+      ? '<div class="agent-note" style="margin-top:16px">No agent connected yet — run the install command on this VM (see "+ Add VM") to start seeing real Docker/systemd data here.</div>' : ''}`;
 
-  if (containers.length === 0 && services.length === 0) {
-    $('#vmDetailAgentNote').style.display = 'block';
-    return;
-  }
+  $('#dockerBody').innerHTML = data.containers.length === 0
+    ? `<tr><td colspan="4" class="empty-state">No containers reported yet.</td></tr>`
+    : data.containers.map(c => `
+        <tr>
+          <td><strong>${c.name}</strong></td>
+          <td class="cell-sub">${c.image || '—'}</td>
+          <td>${c.status}</td>
+          <td class="cell-sub">${new Date(c.last_seen).toLocaleTimeString()}</td>
+        </tr>`).join('');
 
-  if (containers.length) {
-    $('#vmDetailContainersSection').style.display = 'block';
-    $('#vmDetailContainersBody').innerHTML = containers.map(c => `
-      <tr>
-        <td><strong>${c.name}</strong></td>
-        <td class="cell-sub">${c.image || '—'}</td>
-        <td>${c.status}</td>
-        <td class="cell-sub">${new Date(c.last_seen).toLocaleTimeString()}</td>
-      </tr>`).join('');
-  }
-
-  if (services.length) {
-    $('#vmDetailServicesSection').style.display = 'block';
-    $('#vmDetailServicesBody').innerHTML = services.map(s => `
-      <tr>
-        <td>${s.name}</td>
-        <td><span class="pill ${s.status === 'active' ? 'online' : s.status === 'failed' ? 'failed' : 'offline'}">${s.status}</span></td>
-        <td class="cell-sub">${s.sub_state || '—'}</td>
-        <td class="cell-sub">${new Date(s.last_seen).toLocaleTimeString()}</td>
-      </tr>`).join('');
-  }
+  $('#systemdBody').innerHTML = data.services.length === 0
+    ? `<tr><td colspan="4" class="empty-state">No services reported yet.</td></tr>`
+    : data.services.map(s => `
+        <tr>
+          <td>${s.name}</td>
+          <td><span class="pill ${s.status === 'active' ? 'online' : s.status === 'failed' ? 'failed' : 'offline'}">${s.status}</span></td>
+          <td class="cell-sub">${s.sub_state || '—'}</td>
+          <td class="cell-sub">${new Date(s.last_seen).toLocaleTimeString()}</td>
+        </tr>`).join('');
 }
-$('#vmDetailClose').addEventListener('click', () => $('#vmDetailOverlay').style.display = 'none');
+
+document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  tab.classList.add('active');
+  document.querySelector(`.tab-panel[data-panel="${tab.dataset.tab}"]`).classList.add('active');
+}));
 
 /* add VM modal */
 $('#addVmBtn').addEventListener('click', () => {

@@ -179,6 +179,8 @@
   /* terminal-style log viewer — intentionally fixed-dark regardless of page theme,
      matching the conventional look of every other log/console UI (VS Code, CI logs, etc). */
   .terminal{ background:#0B1013; border:1px solid #1E2A30; border-radius:8px; max-height:440px; overflow-y:auto; padding:8px 0; font-family:var(--font-mono); font-size:12px; }
+  .log-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+  .log-select{ border:1px solid var(--border); background:var(--surface); border-radius:6px; padding:6px 9px; font-size:12px; font-family:var(--font-mono); }
   .log-line{ display:flex; gap:12px; padding:2.5px 14px; white-space:pre-wrap; word-break:break-word; }
   .log-line:hover{ background:#131C22; }
   .log-line .ts{ color:#5D6E75; flex:none; }
@@ -281,7 +283,15 @@
           </div>
 
           <div class="tab-panel" data-panel="logs">
-            <div class="agent-note">Live log streaming isn't built yet. The agent currently reports periodic container/service snapshots every 30s, not live log output — that's planned as a follow-up phase (WebSocket streaming from the agent).</div>
+            <div id="liveLogsEmpty" class="agent-note" style="display:none">No containers reported yet — nothing to show logs for.</div>
+            <div id="liveLogsBody" style="display:none">
+              <div class="log-toolbar">
+                <select class="log-select" id="liveLogsSelect"></select>
+                <span class="cell-sub" id="liveLogsUpdated"></span>
+              </div>
+              <div class="terminal" id="liveLogsContent"></div>
+              <p class="modal-hint" style="margin:8px 0 0">Auto-refreshes every 15s from the agent's last heartbeat — not true real-time streaming. That's a bigger follow-up build (persistent connection agent → server → browser).</p>
+            </div>
           </div>
 
           <div class="tab-panel" data-panel="alerts">
@@ -402,6 +412,7 @@ async function api(path, options = {}) {
 }
 
 function logout() {
+  stopLiveLogsPolling();
   token = null; me = null; selectedVmId = null;
   sessionStorage.removeItem('iw_token');
   $('#appShell').style.display = 'none';
@@ -548,9 +559,14 @@ function renderVmList() {
 }
 
 function selectVm(id) {
+  stopLiveLogsPolling();
   selectedVmId = id;
   renderVmList();
   renderDetail(id);
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.tab[data-tab="overview"]').classList.add('active');
+  document.querySelector('.tab-panel[data-panel="overview"]').classList.add('active');
 }
 
 function renderDetail(id) {
@@ -635,7 +651,54 @@ document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', (
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   tab.classList.add('active');
   document.querySelector(`.tab-panel[data-panel="${tab.dataset.tab}"]`).classList.add('active');
+  if (tab.dataset.tab === 'logs') startLiveLogsPolling(); else stopLiveLogsPolling();
 }));
+
+/* live logs tab — auto-refreshing snapshot, not a true live stream */
+const TS_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s(.*)$/s;
+let liveLogsTimer = null;
+
+function renderLogLines(text) {
+  if (!text || !text.trim()) return '<div class="empty-state">No log output captured.</div>';
+  return text.split('\n').map(line => {
+    const match = line.match(TS_PATTERN);
+    if (!match) return `<div class="log-line"><span class="msg">${escapeHtml(line)}</span></div>`;
+    const time = new Date(match[1]).toLocaleTimeString();
+    return `<div class="log-line"><span class="ts">${time}</span><span class="msg">${escapeHtml(match[2])}</span></div>`;
+  }).join('');
+}
+
+function startLiveLogsPolling() {
+  stopLiveLogsPolling();
+  const containers = (vmDetails[selectedVmId] || {}).containers || [];
+  if (containers.length === 0) {
+    $('#liveLogsEmpty').style.display = 'block';
+    $('#liveLogsBody').style.display = 'none';
+    return;
+  }
+  $('#liveLogsEmpty').style.display = 'none';
+  $('#liveLogsBody').style.display = 'block';
+  $('#liveLogsSelect').innerHTML = containers.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+  refreshLiveLogs();
+  liveLogsTimer = setInterval(refreshLiveLogs, 15000);
+}
+
+function stopLiveLogsPolling() {
+  if (liveLogsTimer) { clearInterval(liveLogsTimer); liveLogsTimer = null; }
+}
+
+async function refreshLiveLogs() {
+  const vmId = selectedVmId;
+  if (!vmId) return;
+  const containers = await api('/vms/' + vmId + '/containers').catch(() => null);
+  if (!containers || vmId !== selectedVmId) return; // VM changed mid-fetch
+  const wanted = $('#liveLogsSelect').value;
+  const match = containers.find(c => c.name === wanted) || containers[0];
+  if (!match) return;
+  $('#liveLogsContent').innerHTML = renderLogLines(match.logs);
+  $('#liveLogsUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+$('#liveLogsSelect').addEventListener('change', refreshLiveLogs);
 
 /* add VM modal */
 $('#addVmBtn').addEventListener('click', () => {
@@ -699,6 +762,7 @@ $('#navVms').addEventListener('click', () => {
   $('#viewVms').style.display = 'block'; $('#viewUsers').style.display = 'none';
 });
 $('#navUsers').addEventListener('click', () => {
+  stopLiveLogsPolling();
   $('#navUsers').classList.add('active'); $('#navVms').classList.remove('active');
   $('#viewUsers').style.display = 'block'; $('#viewVms').style.display = 'none';
 });
@@ -715,26 +779,11 @@ $('#userModalClose').addEventListener('click', () => $('#addUserOverlay').style.
 $('#userCancelBtn').addEventListener('click', () => $('#addUserOverlay').style.display = 'none');
 
 /* container logs modal */
-const TS_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s(.*)$/s;
-
 function openContainerLogs(container) {
   $('#logsModalTitle').textContent = container.name;
-  const el = $('#logsContent');
-
-  if (!container.logs || !container.logs.trim()) {
-    el.innerHTML = '<div class="empty-state">No log output captured.</div>';
-    $('#logsOverlay').style.display = 'flex';
-    return;
-  }
-
-  el.innerHTML = container.logs.split('\n').map(line => {
-    const match = line.match(TS_PATTERN);
-    if (!match) return `<div class="log-line"><span class="msg">${escapeHtml(line)}</span></div>`;
-    const time = new Date(match[1]).toLocaleTimeString();
-    return `<div class="log-line"><span class="ts">${time}</span><span class="msg">${escapeHtml(match[2])}</span></div>`;
-  }).join('');
+  $('#logsContent').innerHTML = renderLogLines(container.logs);
   $('#logsOverlay').style.display = 'flex';
-  el.scrollTop = el.scrollHeight;
+  $('#logsContent').scrollTop = $('#logsContent').scrollHeight;
 }
 
 function escapeHtml(s) {

@@ -238,7 +238,12 @@ WantedBy=multi-user.target
 SERVICEEOF
 
 systemctl daemon-reload
-systemctl enable --now infrawatch-agent
+systemctl enable infrawatch-agent
+# restart (not "enable --now") so re-running this script on a VM that
+# already has the agent installed actually picks up new agent.py code —
+# --now only starts a service if it isn't already running, which made
+# re-installs a silent no-op for any already-running process.
+systemctl restart infrawatch-agent
 
 echo "InfraWatch agent installed and started."
 echo "Check status: systemctl status infrawatch-agent"

@@ -165,7 +165,7 @@
   .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
   .modal-hint{ font-size:12px; color:var(--text-muted); margin:0 0 14px; line-height:1.5; }
 
-  .code-block{ background:#0B1013; border:1px solid #1E2A30; border-radius:8px; padding:12px 14px; font-family:var(--font-mono); font-size:11.5px; color:#C9D6DA; white-space:pre-wrap; word-break:break-all; line-height:1.6; }
+  .code-block{ margin:0; background:#0B1013; border:1px solid #1E2A30; border-radius:8px; padding:12px 14px; font-family:var(--font-mono); font-size:11.5px; color:#C9D6DA; white-space:pre-wrap; word-break:break-all; line-height:1.6; }
   .token-line{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:10px; }
   .checkbox-row{ display:flex; align-items:center; gap:8px; font-size:12.5px; padding:4px 0; }
 
@@ -250,7 +250,7 @@
 
           <div class="tab-panel" data-panel="docker">
             <div class="table-scroll">
-              <table><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Last seen</th></tr></thead>
+              <table><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Last seen</th><th></th></tr></thead>
               <tbody id="dockerBody"></tbody></table>
             </div>
           </div>
@@ -344,6 +344,17 @@
           <button type="submit" class="btn primary" style="width:auto">Create user</button>
         </div>
       </form>
+    </div>
+  </div>
+</div>
+
+<!-- Container logs modal -->
+<div class="modal-overlay" id="logsOverlay" style="display:none">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-head"><h3 id="logsModalTitle">Logs</h3><button class="modal-close" id="logsModalClose">✕</button></div>
+    <div class="modal-body">
+      <p class="modal-hint">Snapshot from the container's last heartbeat (up to 30s old) — not a live stream.</p>
+      <pre class="code-block" id="logsContent" style="max-height:420px;overflow-y:auto"></pre>
     </div>
   </div>
 </div>
@@ -564,14 +575,18 @@ function renderDetail(id) {
       ? '<div class="agent-note" style="margin-top:16px">No agent connected yet — run the install command on this VM (see "+ Add VM") to start seeing real Docker/systemd data here.</div>' : ''}`;
 
   $('#dockerBody').innerHTML = data.containers.length === 0
-    ? `<tr><td colspan="4" class="empty-state">No containers reported yet.</td></tr>`
-    : data.containers.map(c => `
+    ? `<tr><td colspan="5" class="empty-state">No containers reported yet.</td></tr>`
+    : data.containers.map((c, i) => `
         <tr>
           <td><strong>${c.name}</strong></td>
           <td class="cell-sub">${c.image || '—'}</td>
           <td>${c.status}</td>
           <td class="cell-sub">${new Date(c.last_seen).toLocaleTimeString()}</td>
+          <td><button class="btn small" data-log-index="${i}">Logs</button></td>
         </tr>`).join('');
+  $('#dockerBody').querySelectorAll('[data-log-index]').forEach(btn => {
+    btn.addEventListener('click', () => openContainerLogs(data.containers[Number(btn.dataset.logIndex)]));
+  });
 
   $('#systemdBody').innerHTML = data.services.length === 0
     ? `<tr><td colspan="4" class="empty-state">No services reported yet.</td></tr>`
@@ -667,6 +682,16 @@ $('#addUserBtn').addEventListener('click', () => {
 });
 $('#userModalClose').addEventListener('click', () => $('#addUserOverlay').style.display = 'none');
 $('#userCancelBtn').addEventListener('click', () => $('#addUserOverlay').style.display = 'none');
+
+/* container logs modal */
+function openContainerLogs(container) {
+  $('#logsModalTitle').textContent = container.name;
+  $('#logsContent').textContent = container.logs && container.logs.trim()
+    ? container.logs
+    : '(no log output captured)';
+  $('#logsOverlay').style.display = 'flex';
+}
+$('#logsModalClose').addEventListener('click', () => $('#logsOverlay').style.display = 'none');
 
 $('#userForm').addEventListener('submit', async e => {
   e.preventDefault();

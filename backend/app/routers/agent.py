@@ -35,7 +35,7 @@ def heartbeat(payload: schemas.HeartbeatIn, db: Session = Depends(get_db)):
     db.query(Container).filter(Container.vm_id == vm.id).delete()
     db.query(Service).filter(Service.vm_id == vm.id).delete()
     for c in payload.containers:
-        db.add(Container(vm_id=vm.id, name=c.name, image=c.image, status=c.status))
+        db.add(Container(vm_id=vm.id, name=c.name, image=c.image, status=c.status, logs=c.logs))
     for s in payload.services:
         db.add(Service(vm_id=vm.id, name=s.name, status=s.status, sub_state=s.sub_state))
 

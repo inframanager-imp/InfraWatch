@@ -70,6 +70,7 @@ class ContainerOut(BaseModel):
     name: str
     image: Optional[str]
     status: str
+    logs: Optional[str]
     last_seen: datetime
 
     class Config:
@@ -91,6 +92,7 @@ class ContainerIn(BaseModel):
     name: str
     image: Optional[str] = None
     status: str
+    logs: Optional[str] = None
 
 
 class ServiceIn(BaseModel):

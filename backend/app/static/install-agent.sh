@@ -63,9 +63,21 @@ import urllib.error
 import urllib.request
 
 
-def run(cmd):
+def run(cmd, timeout=15):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=15).stdout
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
+    except Exception:
+        return ""
+
+
+def run_logs(cmd, timeout=5):
+    # docker logs writes the container's stdout and stderr as two separate
+    # streams; merge them into one so we don't silently drop stderr output
+    # (where most apps put their warnings/errors).
+    try:
+        return subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout
+        ).stdout
     except Exception:
         return ""
 
@@ -77,7 +89,11 @@ def collect_containers():
         parts = line.split("|", 2)
         if len(parts) == 3:
             name, image, status = parts
-            containers.append({"name": name, "image": image, "status": status})
+            # Snapshot only — not live streaming. Kept short (--tail) and
+            # per-container timeout small so this can't meaningfully delay
+            # the heartbeat even with several containers.
+            logs = run_logs(["docker", "logs", "--tail", "50", "--timestamps", name])
+            containers.append({"name": name, "image": image, "status": status, "logs": logs})
     return containers
 
 

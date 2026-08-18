@@ -61,6 +61,7 @@ class Container(Base):
     name = Column(String, nullable=False)
     image = Column(String, nullable=True)
     status = Column(String, nullable=False)  # docker's own status text, e.g. "Up 2 hours"
+    logs = Column(Text, nullable=True)  # last ~50 lines, snapshot as of last heartbeat
     last_seen = Column(DateTime, default=datetime.utcnow)
 
     vm = relationship("VM", back_populates="containers")

@@ -63,3 +63,44 @@ class VMOut(BaseModel):
 
 class VMCreated(VMOut):
     agent_token: str
+
+
+class ContainerOut(BaseModel):
+    id: str
+    name: str
+    image: Optional[str]
+    status: str
+    last_seen: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ServiceOut(BaseModel):
+    id: str
+    name: str
+    status: str
+    sub_state: Optional[str]
+    last_seen: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ContainerIn(BaseModel):
+    name: str
+    image: Optional[str] = None
+    status: str
+
+
+class ServiceIn(BaseModel):
+    name: str
+    status: str
+    sub_state: Optional[str] = None
+
+
+class HeartbeatIn(BaseModel):
+    name: str
+    token: str
+    containers: list[ContainerIn] = []
+    services: list[ServiceIn] = []

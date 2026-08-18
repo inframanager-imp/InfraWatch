@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import auth, environments, users, vms
+from .routers import agent, auth, environments, users, vms
 from .seed import seed
 
 Base.metadata.create_all(bind=engine)
@@ -23,6 +23,7 @@ app.include_router(auth.router)
 app.include_router(vms.router)
 app.include_router(users.router)
 app.include_router(environments.router)
+app.include_router(agent.router)
 
 
 @app.on_event("startup")

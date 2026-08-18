@@ -97,6 +97,7 @@
   .pill.online, .pill.admin{ background:var(--ok-soft); color:var(--ok); }
   .pill.pending{ background:var(--accent-soft); color:var(--accent-strong); }
   .pill.offline, .pill.readonly{ background:var(--offline-soft); color:var(--offline); }
+  .pill.failed{ background:var(--crit-soft); color:var(--crit); }
   .pill i{ width:6px; height:6px; border-radius:50%; background:currentColor; }
 
   .env-tag{ font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:2px 6px; border-radius:4px; }
@@ -110,6 +111,9 @@
 
   .modal-overlay{ position:fixed; inset:0; background:rgba(8,12,14,.55); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50; }
   .modal{ width:100%; max-width:440px; background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); max-height:88vh; overflow-y:auto; }
+  .modal.wide{ max-width:760px; }
+  .detail-section{ margin-top:16px; }
+  .detail-section h4{ margin:0 0 8px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); font-weight:700; }
   .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border-soft); }
   .modal-head h3{ margin:0; font-family:var(--font-mono); font-size:15px; }
   .modal-close{ border:0; background:none; color:var(--text-faint); font-size:16px; cursor:pointer; }
@@ -217,11 +221,28 @@
 
 <!-- VM detail modal -->
 <div class="modal-overlay" id="vmDetailOverlay" style="display:none">
-  <div class="modal">
+  <div class="modal wide">
     <div class="modal-head"><h3 id="vmDetailName">—</h3><button class="modal-close" id="vmDetailClose">✕</button></div>
     <div class="modal-body">
       <div class="detail-grid" id="vmDetailGrid"></div>
-      <div class="agent-note">No agent connected yet — Docker container and systemd service monitoring will appear here once the agent is installed and phase 2 (agent build) ships.</div>
+      <div id="vmDetailAgentNote" class="agent-note" style="display:none">No agent connected yet — Docker container and systemd service monitoring will appear here once the agent is installed on this VM.</div>
+
+      <div class="detail-section" id="vmDetailContainersSection" style="display:none">
+        <h4>Docker containers</h4>
+        <div class="table-scroll">
+          <table><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Last seen</th></tr></thead>
+          <tbody id="vmDetailContainersBody"></tbody></table>
+        </div>
+      </div>
+
+      <div class="detail-section" id="vmDetailServicesSection" style="display:none">
+        <h4>Systemd services</h4>
+        <div class="table-scroll">
+          <table><thead><tr><th>Name</th><th>Active</th><th>Sub-state</th><th>Last seen</th></tr></thead>
+          <tbody id="vmDetailServicesBody"></tbody></table>
+        </div>
+      </div>
+
       <div class="modal-actions" id="vmDetailActions"></div>
     </div>
   </div>
@@ -364,7 +385,7 @@ function renderVms() {
   body.querySelectorAll('tr').forEach(row => row.addEventListener('click', () => openVmDetail(row.dataset.id)));
 }
 
-function openVmDetail(id) {
+async function openVmDetail(id) {
   const vm = vms.find(v => v.id === id);
   $('#vmDetailName').textContent = vm.name;
   $('#vmDetailGrid').innerHTML = `
@@ -385,6 +406,42 @@ function openVmDetail(id) {
     });
   }
   $('#vmDetailOverlay').style.display = 'flex';
+
+  $('#vmDetailAgentNote').style.display = 'none';
+  $('#vmDetailContainersSection').style.display = 'none';
+  $('#vmDetailServicesSection').style.display = 'none';
+
+  const [containers, services] = await Promise.all([
+    api('/vms/' + vm.id + '/containers').catch(() => []),
+    api('/vms/' + vm.id + '/services').catch(() => []),
+  ]);
+
+  if (containers.length === 0 && services.length === 0) {
+    $('#vmDetailAgentNote').style.display = 'block';
+    return;
+  }
+
+  if (containers.length) {
+    $('#vmDetailContainersSection').style.display = 'block';
+    $('#vmDetailContainersBody').innerHTML = containers.map(c => `
+      <tr>
+        <td><strong>${c.name}</strong></td>
+        <td class="cell-sub">${c.image || '—'}</td>
+        <td>${c.status}</td>
+        <td class="cell-sub">${new Date(c.last_seen).toLocaleTimeString()}</td>
+      </tr>`).join('');
+  }
+
+  if (services.length) {
+    $('#vmDetailServicesSection').style.display = 'block';
+    $('#vmDetailServicesBody').innerHTML = services.map(s => `
+      <tr>
+        <td>${s.name}</td>
+        <td><span class="pill ${s.status === 'active' ? 'online' : s.status === 'failed' ? 'failed' : 'offline'}">${s.status}</span></td>
+        <td class="cell-sub">${s.sub_state || '—'}</td>
+        <td class="cell-sub">${new Date(s.last_seen).toLocaleTimeString()}</td>
+      </tr>`).join('');
+  }
 }
 $('#vmDetailClose').addEventListener('click', () => $('#vmDetailOverlay').style.display = 'none');
 

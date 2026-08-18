@@ -1,0 +1,984 @@
+<title>Nodewatch</title>
+<style>
+  :root{
+    --bg:#F4F7F8;
+    --surface:#FFFFFF;
+    --surface-alt:#EAF0F2;
+    --border:#D6E0E3;
+    --border-soft:#E4EAEC;
+    --text:#131C22;
+    --text-muted:#5B6E75;
+    --text-faint:#8A9BA1;
+    --accent:#0C7C82;
+    --accent-strong:#075A5F;
+    --accent-soft:#E3F2F1;
+    --ok:#1E8E5A;        --ok-soft:#E3F5EC;
+    --warn:#B36B00;       --warn-soft:#FBEEDD;
+    --crit:#C4392B;       --crit-soft:#FBE7E4;
+    --offline:#6B7680;    --offline-soft:#EEF1F3;
+    --env-violet:#6E4FC9; --env-violet-soft:#EFE9F9;
+    --env-rose:#C23B7A;   --env-rose-soft:#FBE8F0;
+    --env-gold:#9C7A12;   --env-gold-soft:#FBF3DC;
+    --shadow: 0 1px 2px rgba(19,28,34,.04), 0 6px 16px rgba(19,28,34,.06);
+    --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, "SFMono-Regular", monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "IBM Plex Sans", Roboto, sans-serif;
+    --term-bg:#0B1013; --term-surface:#0F161A; --term-border:#1E2A30;
+    --term-text:#C9D6DA; --term-muted:#5D6E75;
+    --term-info:#5FB3C7; --term-warn:#E2A23B; --term-error:#F0564A; --term-debug:#6B7680;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0A1013; --surface:#10181C; --surface-alt:#162126;
+      --border:#243239; --border-soft:#1C282D;
+      --text:#E4ECEE; --text-muted:#8CA0A6; --text-faint:#5F7379;
+      --accent:#33C9C2; --accent-strong:#5EDCD6; --accent-soft:rgba(51,201,194,.14);
+      --ok:#3ECF8E; --ok-soft:rgba(62,207,142,.14);
+      --warn:#E2A23B; --warn-soft:rgba(226,162,59,.14);
+      --crit:#F0564A; --crit-soft:rgba(240,86,74,.14);
+      --offline:#7C8A92; --offline-soft:rgba(124,138,146,.14);
+      --env-violet:#B39DFF; --env-violet-soft:rgba(151,120,255,.16);
+      --env-rose:#F48FC0;   --env-rose-soft:rgba(240,100,160,.16);
+      --env-gold:#E0C25E;   --env-gold-soft:rgba(224,194,94,.16);
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0A1013; --surface:#10181C; --surface-alt:#162126;
+    --border:#243239; --border-soft:#1C282D;
+    --text:#E4ECEE; --text-muted:#8CA0A6; --text-faint:#5F7379;
+    --accent:#33C9C2; --accent-strong:#5EDCD6; --accent-soft:rgba(51,201,194,.14);
+    --ok:#3ECF8E; --ok-soft:rgba(62,207,142,.14);
+    --warn:#E2A23B; --warn-soft:rgba(226,162,59,.14);
+    --crit:#F0564A; --crit-soft:rgba(240,86,74,.14);
+    --offline:#7C8A92; --offline-soft:rgba(124,138,146,.14);
+    --env-violet:#B39DFF; --env-violet-soft:rgba(151,120,255,.16);
+    --env-rose:#F48FC0;   --env-rose-soft:rgba(240,100,160,.16);
+    --env-gold:#E0C25E;   --env-gold-soft:rgba(224,194,94,.16);
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:var(--font-sans); font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background:var(--accent-soft); color:var(--accent-strong); }
+  button, input, select{ font-family:inherit; font-size:inherit; color:inherit; }
+  @media (prefers-reduced-motion: reduce){ *{ animation-duration:.001ms !important; transition-duration:.001ms !important; } }
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    display:flex; align-items:center; gap:20px;
+    padding:12px 20px; border-bottom:1px solid var(--border);
+    background:var(--surface);
+  }
+  .brand{ display:flex; align-items:center; gap:9px; margin-right:8px; }
+  .brand-mark{
+    width:26px; height:26px; border-radius:6px;
+    background:var(--accent); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-mono); font-weight:700; font-size:13px;
+  }
+  .brand-name{ font-family:var(--font-mono); font-weight:700; font-size:15px; letter-spacing:-.01em; }
+  .brand-name span{ color:var(--text-faint); font-weight:500; }
+
+  .topnav{ display:flex; gap:2px; }
+  .topnav a{
+    padding:6px 12px; border-radius:6px; font-size:13px; font-weight:600;
+    color:var(--text-muted); text-decoration:none;
+  }
+  .topnav a.active{ color:var(--accent-strong); background:var(--accent-soft); }
+
+  .topbar-right{ margin-left:auto; display:flex; align-items:center; gap:14px; }
+  .search{
+    display:flex; align-items:center; gap:7px;
+    background:var(--surface-alt); border:1px solid var(--border);
+    border-radius:7px; padding:6px 10px; width:230px;
+  }
+  .search input{ border:0; background:transparent; outline:0; width:100%; color:var(--text); font-size:13px; }
+  .search svg{ flex:none; opacity:.55; }
+  .role-badge{
+    font-family:var(--font-mono); font-size:11px; font-weight:600;
+    padding:4px 8px; border-radius:5px; background:var(--accent-soft); color:var(--accent-strong);
+    letter-spacing:.02em;
+  }
+  .avatar{
+    width:28px; height:28px; border-radius:50%; background:var(--surface-alt);
+    border:1px solid var(--border); display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:700; color:var(--text-muted);
+  }
+
+  /* ---------- layout ---------- */
+  .page{ max-width:1440px; margin:0 auto; padding:22px 20px 60px; }
+  .page-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px; }
+  .page-head h1{ font-family:var(--font-mono); font-size:20px; margin:0; letter-spacing:-.01em; }
+  .page-head .sub{ color:var(--text-muted); font-size:12.5px; }
+
+  /* ---------- stat tiles ---------- */
+  .stat-groups{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+  .stat-cluster{
+    flex:1 1 260px; background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; padding:14px 16px; box-shadow:var(--shadow);
+  }
+  .stat-cluster h3{
+    margin:0 0 10px; font-size:11px; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--text-faint); font-weight:700;
+  }
+  .stat-row{ display:flex; gap:18px; }
+  .stat{ flex:1; }
+  .stat .n{ font-family:var(--font-mono); font-size:22px; font-weight:700; line-height:1; font-variant-numeric:tabular-nums; }
+  .stat .l{ font-size:11.5px; color:var(--text-muted); margin-top:4px; }
+  .stat.ok .n{ color:var(--ok); } .stat.warn .n{ color:var(--warn); }
+  .stat.crit .n{ color:var(--crit); } .stat.off .n{ color:var(--offline); }
+
+  .stat-cluster.alerts{ border-color:var(--crit); background:linear-gradient(180deg, var(--crit-soft), transparent 60%); flex:0 0 220px; }
+
+  /* ---------- health strip ---------- */
+  .health-strip{
+    display:flex; align-items:center; gap:16px; background:var(--surface);
+    border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:20px;
+    box-shadow:var(--shadow);
+  }
+  .health-strip h3{ margin:0; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); font-weight:700; flex:none; }
+  .health-bar{ flex:1; display:flex; height:8px; border-radius:99px; overflow:hidden; background:var(--surface-alt); }
+  .health-bar div{ height:100%; }
+  .health-legend{ display:flex; gap:14px; flex:none; }
+  .health-legend span{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); }
+  .health-legend i{ width:8px; height:8px; border-radius:50%; display:inline-block; }
+
+  /* ---------- main grid ---------- */
+  .main-grid{ display:grid; grid-template-columns:340px 1fr; gap:16px; align-items:start; }
+  @media (max-width:920px){ .main-grid{ grid-template-columns:1fr; } }
+
+  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow); }
+  .panel-head{ padding:13px 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; }
+  .panel-head h2{ margin:0; font-size:13px; font-weight:700; }
+  .panel-head .count{ font-family:var(--font-mono); font-size:11.5px; color:var(--text-faint); }
+
+  /* vm list */
+  .vm-list{ max-height:640px; overflow-y:auto; }
+  .vm-row{
+    display:flex; align-items:center; gap:10px; padding:11px 16px;
+    border-bottom:1px solid var(--border-soft); cursor:pointer;
+  }
+  .vm-row:hover{ background:var(--surface-alt); }
+  .vm-row.selected{ background:var(--accent-soft); box-shadow:inset 3px 0 0 var(--accent); }
+  .status-dot{ width:8px; height:8px; border-radius:50%; flex:none; }
+  .status-dot.online{ background:var(--ok); box-shadow:0 0 0 3px var(--ok-soft); }
+  .status-dot.online.pulse{ animation:pulse 2.4s ease-in-out infinite; }
+  .status-dot.offline{ background:var(--offline); box-shadow:0 0 0 3px var(--offline-soft); }
+  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.45; } }
+  .vm-row-main{ flex:1; min-width:0; }
+  .vm-row-name{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .vm-row-meta{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:1px; }
+  .env-tag{
+    font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase;
+    padding:2px 6px; border-radius:4px; flex:none;
+  }
+  .env-tag.production{ background:var(--crit-soft); color:var(--crit); }
+  .env-tag.staging{ background:var(--warn-soft); color:var(--warn); }
+  .env-tag.development{ background:var(--accent-soft); color:var(--accent-strong); }
+  .env-tag.qa{ background:var(--env-violet-soft); color:var(--env-violet); }
+  .env-tag.demo{ background:var(--env-rose-soft); color:var(--env-rose); }
+  .env-tag.das{ background:var(--offline-soft); color:var(--offline); }
+  .env-tag.sandbox{ background:var(--env-gold-soft); color:var(--env-gold); }
+  .health-pill{ flex:none; }
+
+  /* pills */
+  .pill{
+    display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700;
+    padding:3px 8px; border-radius:99px; text-transform:uppercase; letter-spacing:.02em;
+  }
+  .pill.healthy, .pill.running, .pill.enabled, .pill.on{ background:var(--ok-soft); color:var(--ok); }
+  .pill.warning{ background:var(--warn-soft); color:var(--warn); }
+  .pill.critical, .pill.failed{ background:var(--crit-soft); color:var(--crit); }
+  .pill.offline, .pill.stopped, .pill.disabled, .pill.off, .pill.unknown{ background:var(--offline-soft); color:var(--offline); }
+  .pill i{ width:6px; height:6px; border-radius:50%; background:currentColor; }
+
+  /* detail header */
+  .detail-head{ padding:16px; border-bottom:1px solid var(--border-soft); }
+  .detail-head-top{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .detail-head-top h2{ margin:0; font-family:var(--font-mono); font-size:17px; }
+  .detail-meta{ display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; }
+  .detail-meta div{ font-size:12px; }
+  .detail-meta .k{ color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; font-size:10px; font-weight:700; }
+  .detail-meta .v{ font-family:var(--font-mono); margin-top:2px; }
+
+  .metric-row{ display:flex; gap:22px; padding:14px 16px; border-bottom:1px solid var(--border-soft); flex-wrap:wrap; }
+  .metric{ flex:1; min-width:150px; }
+  .metric-top{ display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:6px; }
+  .metric-top .k{ color:var(--text-muted); font-weight:600; }
+  .metric-top .v{ font-family:var(--font-mono); font-weight:700; }
+  .meter{ height:6px; border-radius:99px; background:var(--surface-alt); overflow:hidden; }
+  .meter div{ height:100%; border-radius:99px; }
+  .fill-ok{ background:var(--ok); } .fill-warn{ background:var(--warn); } .fill-crit{ background:var(--crit); }
+
+  .offline-banner{
+    margin:14px 16px 0; padding:10px 12px; border-radius:8px;
+    background:var(--offline-soft); color:var(--offline); font-size:12.5px; display:flex; gap:8px; align-items:center;
+  }
+
+  /* tabs */
+  .tabs{ display:flex; gap:2px; padding:0 16px; border-bottom:1px solid var(--border-soft); }
+  .tab{
+    padding:11px 6px; margin-right:18px; font-size:12.5px; font-weight:700;
+    color:var(--text-muted); background:none; border:none; border-bottom:2px solid transparent;
+    cursor:pointer;
+  }
+  .tab.active{ color:var(--accent-strong); border-bottom-color:var(--accent); }
+  .tab-panel{ display:none; padding:16px; }
+  .tab-panel.active{ display:block; }
+
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  thead th{
+    text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--text-faint); font-weight:700; padding:0 10px 8px; white-space:nowrap;
+  }
+  tbody td{ padding:9px 10px; border-top:1px solid var(--border-soft); vertical-align:middle; }
+  tbody tr:hover{ background:var(--surface-alt); }
+  .mono{ font-family:var(--font-mono); }
+  .cell-name{ font-weight:600; }
+  .cell-sub{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); }
+  .table-scroll{ overflow-x:auto; }
+
+  .switch{ position:relative; display:inline-block; width:30px; height:17px; flex:none; cursor:pointer; }
+  .switch input{ opacity:0; width:0; height:0; position:absolute; }
+  .switch .track{
+    position:absolute; inset:0; background:var(--offline-soft); border-radius:99px; transition:.15s;
+  }
+  .switch .track:before{
+    content:""; position:absolute; width:13px; height:13px; left:2px; top:2px;
+    background:var(--surface); border-radius:50%; transition:.15s; box-shadow:0 1px 2px rgba(0,0,0,.25);
+  }
+  .switch input:checked + .track{ background:var(--accent); }
+  .switch input:checked + .track:before{ transform:translateX(13px); }
+  .switch input:focus-visible + .track{ outline:2px solid var(--accent); outline-offset:2px; }
+  .mon-cell{ display:flex; align-items:center; gap:8px; }
+
+  .btn{
+    font-size:12px; font-weight:600; padding:6px 11px; border-radius:6px;
+    border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer;
+  }
+  .btn:hover{ background:var(--surface-alt); }
+  .btn:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn.primary:hover{ background:var(--accent-strong); }
+  .btn.active-toggle{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong); }
+
+  .empty-state{ padding:30px 10px; text-align:center; color:var(--text-faint); font-size:12.5px; }
+
+  /* alerts list */
+  .alert-item{ display:flex; gap:10px; padding:11px 0; border-top:1px solid var(--border-soft); }
+  .alert-item:first-child{ border-top:none; }
+  .sev-stripe{ width:3px; border-radius:3px; flex:none; }
+  .sev-stripe.critical{ background:var(--crit); } .sev-stripe.warning{ background:var(--warn); } .sev-stripe.recovered{ background:var(--ok); }
+  .alert-body{ flex:1; min-width:0; }
+  .alert-top{ display:flex; gap:8px; align-items:center; }
+  .alert-title{ font-size:12.5px; font-weight:600; }
+  .alert-time{ margin-left:auto; font-family:var(--font-mono); font-size:11px; color:var(--text-faint); flex:none; }
+  .alert-detail{ font-size:12px; color:var(--text-muted); margin-top:3px; }
+
+  /* live logs */
+  .log-toolbar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .log-select{ border:1px solid var(--border); background:var(--surface); border-radius:6px; padding:6px 9px; font-size:12px; font-family:var(--font-mono); }
+  .log-search{ display:flex; align-items:center; gap:6px; background:var(--surface-alt); border:1px solid var(--border); border-radius:6px; padding:5px 9px; flex:1; min-width:140px; }
+  .log-search input{ border:0; background:transparent; outline:0; width:100%; font-family:var(--font-mono); font-size:12px; }
+  .level-toggle{ display:flex; gap:4px; }
+  .lvl-chip{
+    font-family:var(--font-mono); font-size:10.5px; font-weight:700; padding:4px 7px; border-radius:5px;
+    border:1px solid var(--border); background:var(--surface); cursor:pointer; opacity:.5;
+  }
+  .lvl-chip.on{ opacity:1; }
+  .lvl-chip.info.on{ color:var(--term-info); border-color:var(--term-info); }
+  .lvl-chip.warn.on{ color:var(--term-warn); border-color:var(--term-warn); }
+  .lvl-chip.error.on{ color:var(--term-error); border-color:var(--term-error); }
+  .lvl-chip.debug.on{ color:var(--term-muted); border-color:var(--term-muted); }
+
+  .terminal{
+    background:var(--term-bg); border:1px solid var(--term-border); border-radius:8px;
+    height:340px; overflow-y:auto; padding:10px 0; font-family:var(--font-mono); font-size:12px;
+  }
+  .log-line{ display:flex; gap:10px; padding:2.5px 14px; white-space:pre-wrap; word-break:break-word; }
+  .log-line:hover{ background:var(--term-surface); }
+  .log-line .ts{ color:var(--term-muted); flex:none; }
+  .log-line .lvl{ flex:none; width:44px; font-weight:700; }
+  .log-line .lvl.INFO{ color:var(--term-info); } .log-line .lvl.WARN{ color:var(--term-warn); }
+  .log-line .lvl.ERROR{ color:var(--term-error); } .log-line .lvl.DEBUG{ color:var(--term-muted); }
+  .log-line .msg{ color:var(--term-text); flex:1; }
+  .log-line.hidden{ display:none; }
+
+  .log-footbar{ display:flex; align-items:center; gap:10px; margin-top:9px; flex-wrap:wrap; }
+  .log-footbar .spacer{ flex:1; }
+  .retention-note{ font-size:11px; color:var(--text-faint); }
+  .toast{
+    font-size:11.5px; color:var(--accent-strong); background:var(--accent-soft);
+    padding:4px 9px; border-radius:5px; opacity:0; transition:opacity .2s;
+  }
+  .toast.show{ opacity:1; }
+  .autoscroll-label{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); }
+  .autoscroll-label input{ accent-color:var(--accent); }
+
+  .pill.pending{ background:var(--accent-soft); color:var(--accent-strong); }
+  .status-dot.pending{ background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); animation:pulse 1.2s ease-in-out infinite; }
+
+  .panel-head-actions{ display:flex; align-items:center; gap:10px; }
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(8,12,14,.55);
+    display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;
+  }
+  .modal{
+    width:100%; max-width:480px; background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; box-shadow:var(--shadow); max-height:88vh; overflow-y:auto;
+  }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border-soft); }
+  .modal-head h3{ margin:0; font-family:var(--font-mono); font-size:15px; }
+  .modal-close{ border:0; background:none; color:var(--text-faint); font-size:16px; cursor:pointer; line-height:1; padding:4px; }
+  .modal-close:hover{ color:var(--text); }
+  .modal-close:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .modal-body{ padding:18px; }
+  .modal-hint{ font-size:12px; color:var(--text-muted); margin:0 0 14px; line-height:1.5; }
+  .form-field{ display:flex; flex-direction:column; gap:5px; margin-bottom:12px; }
+  .form-field label{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); }
+  .form-field input, .form-field select{
+    width:100%; border:1px solid var(--border); background:var(--surface-alt); border-radius:6px;
+    padding:8px 10px; font-size:13px; color:var(--text); outline:0;
+  }
+  .form-field input:focus, .form-field select:focus{ border-color:var(--accent); }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+
+  .code-block{
+    background:var(--term-bg); border:1px solid var(--term-border); border-radius:8px;
+    padding:12px 14px; font-family:var(--font-mono); font-size:11.5px; color:var(--term-text);
+    white-space:pre-wrap; word-break:break-all; line-height:1.6;
+  }
+  .code-row{ display:flex; align-items:center; gap:10px; margin-top:9px; }
+  .token-line{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:10px; }
+
+  .connect-status{ display:flex; align-items:center; gap:9px; margin-top:16px; padding:10px 12px; border-radius:8px; background:var(--surface-alt); font-size:12.5px; }
+  .connect-status.ok{ background:var(--ok-soft); color:var(--ok); }
+  .spinner{ width:13px; height:13px; border-radius:50%; border:2px solid var(--border); border-top-color:var(--accent); animation:spin .8s linear infinite; flex:none; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .check{ color:var(--ok); font-weight:700; flex:none; }
+</style>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">NW</div>
+    <div class="brand-name">nodewatch <span>/ fleet console</span></div>
+  </div>
+  <nav class="topnav">
+    <a class="active" href="#">Dashboard</a>
+    <a href="#">VMs</a>
+    <a href="#">Alerts</a>
+    <a href="#">Users</a>
+  </nav>
+  <div class="topbar-right">
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="text" placeholder="Search VMs, containers, services…" />
+    </div>
+    <span class="role-badge">ADMIN</span>
+    <div class="avatar">RD</div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="page-head">
+    <h1>Fleet overview</h1>
+    <div class="sub">5 VMs · updated moments ago via agent heartbeat</div>
+  </div>
+
+  <div class="stat-groups">
+    <div class="stat-cluster">
+      <h3>Virtual Machines</h3>
+      <div class="stat-row">
+        <div class="stat"><div class="n" id="statTotalVms">5</div><div class="l">Total</div></div>
+        <div class="stat ok"><div class="n" id="statOnlineVms">4</div><div class="l">Online</div></div>
+        <div class="stat crit"><div class="n" id="statOfflineVms">1</div><div class="l">Offline</div></div>
+      </div>
+    </div>
+    <div class="stat-cluster">
+      <h3>Docker Containers</h3>
+      <div class="stat-row">
+        <div class="stat"><div class="n" id="statTotalContainers">14</div><div class="l">Total</div></div>
+        <div class="stat ok"><div class="n" id="statRunContainers">11</div><div class="l">Running</div></div>
+        <div class="stat off"><div class="n" id="statStopContainers">3</div><div class="l">Stopped</div></div>
+      </div>
+    </div>
+    <div class="stat-cluster">
+      <h3>Systemd Services</h3>
+      <div class="stat-row">
+        <div class="stat"><div class="n" id="statTotalServices">23</div><div class="l">Total</div></div>
+        <div class="stat ok"><div class="n" id="statRunServices">20</div><div class="l">Running</div></div>
+        <div class="stat crit"><div class="n" id="statFailServices">2</div><div class="l">Failed</div></div>
+      </div>
+    </div>
+    <div class="stat-cluster alerts">
+      <h3>Alerts</h3>
+      <div class="stat-row">
+        <div class="stat crit"><div class="n" id="statActiveAlerts">4</div><div class="l">Active</div></div>
+        <div class="stat crit"><div class="n" id="statCritAlerts">2</div><div class="l">Critical</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="health-strip">
+    <h3>Health</h3>
+    <div class="health-bar" id="healthBar">
+      <div style="width:40%;background:var(--ok)" title="Healthy: 2"></div>
+      <div style="width:20%;background:var(--warn)" title="Warning: 1"></div>
+      <div style="width:20%;background:var(--crit)" title="Critical: 1"></div>
+      <div style="width:20%;background:var(--offline)" title="Offline: 1"></div>
+    </div>
+    <div class="health-legend" id="healthLegend">
+      <span><i style="background:var(--ok)"></i>Healthy · 2</span>
+      <span><i style="background:var(--warn)"></i>Warning · 1</span>
+      <span><i style="background:var(--crit)"></i>Critical · 1</span>
+      <span><i style="background:var(--offline)"></i>Offline · 1</span>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Virtual machines</h2>
+        <div class="panel-head-actions">
+          <span class="count" id="vmCount">5</span>
+          <button class="btn primary" id="addVmBtn" style="padding:5px 10px;font-size:11.5px">+ Add VM</button>
+        </div>
+      </div>
+      <div class="vm-list" id="vmList"></div>
+    </div>
+
+    <div class="panel">
+      <div class="detail-head">
+        <div class="detail-head-top">
+          <h2 id="dtName">—</h2>
+          <span class="pill" id="dtHealth">—</span>
+          <span class="env-tag" id="dtEnv">—</span>
+        </div>
+        <div class="detail-meta">
+          <div><div class="k">Hostname</div><div class="v" id="dtHost">—</div></div>
+          <div><div class="k">IP address</div><div class="v" id="dtIp">—</div></div>
+          <div><div class="k">Last heartbeat</div><div class="v" id="dtHb">—</div></div>
+          <div><div class="k">Uptime</div><div class="v" id="dtUptime">—</div></div>
+        </div>
+      </div>
+
+      <div id="dtOfflineBanner" style="display:none" class="offline-banner">⚠ Agent unreachable — showing last known state.</div>
+
+      <div class="metric-row" id="dtMetrics"></div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="overview">Overview</button>
+        <button class="tab" data-tab="docker">Docker</button>
+        <button class="tab" data-tab="systemd">Systemd</button>
+        <button class="tab" data-tab="logs">Live logs</button>
+        <button class="tab" data-tab="alerts">Alerts</button>
+      </div>
+
+      <div class="tab-panel active" data-panel="overview" id="panelOverview"></div>
+
+      <div class="tab-panel" data-panel="docker">
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th>Container</th><th>Image</th><th>Status</th><th>CPU</th><th>Mem</th><th>Restarts</th><th>Ports</th><th>Monitor</th><th>Logs</th><th>Alerts</th><th></th>
+            </tr></thead>
+            <tbody id="dockerBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="systemd">
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th>Service</th><th>Status</th><th>Enabled</th><th>Active since</th><th>Restarts</th><th>Monitor</th><th>Logs</th><th>Alerts</th><th></th>
+            </tr></thead>
+            <tbody id="systemdBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="logs">
+        <div class="log-toolbar">
+          <select class="log-select" id="logSource"></select>
+          <div class="log-search">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" id="logSearch" placeholder="Filter log lines…" />
+          </div>
+          <div class="level-toggle" id="levelToggle">
+            <button class="lvl-chip info on" data-lvl="INFO">INFO</button>
+            <button class="lvl-chip warn on" data-lvl="WARN">WARN</button>
+            <button class="lvl-chip error on" data-lvl="ERROR">ERROR</button>
+            <button class="lvl-chip debug on" data-lvl="DEBUG">DEBUG</button>
+          </div>
+        </div>
+        <div class="terminal" id="terminal"></div>
+        <div class="log-footbar">
+          <button class="btn primary" id="pauseBtn">⏸ Pause</button>
+          <label class="autoscroll-label"><input type="checkbox" id="autoscroll" checked /> Auto-scroll</label>
+          <button class="btn" id="clearBtn">Clear</button>
+          <button class="btn" id="downloadBtn">Export logs</button>
+          <span class="toast" id="logToast">Export ready (demo)</span>
+          <div class="spacer"></div>
+          <span class="retention-note">Retention: 7 days</span>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="alerts" id="panelAlerts"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addVmOverlay" style="display:none">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">Add a VM</h3>
+      <button class="modal-close" id="modalClose" aria-label="Close">✕</button>
+    </div>
+
+    <div class="modal-body" id="modalBodyForm">
+      <p class="modal-hint">Register the VM here, then install the agent on it. Your server never connects into the VM — the agent connects out to you.</p>
+      <form id="vmForm">
+        <div class="form-field"><label for="vmName">VM name</label><input id="vmName" type="text" placeholder="prod-cache-01" required /></div>
+        <div class="form-field"><label for="vmHost">Hostname</label><input id="vmHost" type="text" placeholder="prod-cache-01.internal" /></div>
+        <div class="form-field"><label for="vmIp">IP address</label><input id="vmIp" type="text" placeholder="10.20.1.30" /></div>
+        <div class="form-field">
+          <label for="vmEnv">Environment</label>
+          <select id="vmEnv">
+            <option value="production">Production</option>
+            <option value="staging">Staging</option>
+            <option value="development">Development</option>
+            <option value="qa">QA</option>
+            <option value="demo">Demo</option>
+            <option value="das">DAS</option>
+            <option value="sandbox">Sandbox</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" id="cancelVmBtn">Cancel</button>
+          <button type="submit" class="btn primary">Generate install command</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="modal-body" id="modalBodyInstall" style="display:none">
+      <p class="modal-hint">Run this once on the target VM (needs sudo). It installs the agent as a systemd service and points it back at this server.</p>
+      <div class="code-block" id="installCmd"></div>
+      <div class="code-row">
+        <button class="btn" id="copyCmdBtn">Copy command</button>
+        <span class="toast" id="modalToast">Copied</span>
+      </div>
+      <div class="token-line" id="installToken"></div>
+      <div class="connect-status" id="connectStatus"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn primary" id="doneVmBtn">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const vms = [
+  { id:'prod-web-01', name:'prod-web-01', hostname:'prod-web-01.internal', ip:'10.20.1.11', env:'production', status:'online', health:'healthy', cpu:42, mem:61, disk:38, hb:'12s ago', uptime:'18d 6h',
+    containers:[
+      {name:'nginx-frontend', img:'nginx:1.25-alpine', status:'running', cpu:'3%', mem:'64 MB', restarts:0, ports:'80→80, 443→443', mon:true, logs:true, alerts:true},
+      {name:'api-gateway', img:'gateway:2.4.1', status:'running', cpu:'11%', mem:'210 MB', restarts:1, ports:'8080→8080', mon:true, logs:true, alerts:true},
+      {name:'worker-queue', img:'worker:1.9.0', status:'running', cpu:'6%', mem:'130 MB', restarts:0, ports:'—', mon:true, logs:false, alerts:true},
+      {name:'redis-cache', img:'redis:7.2-alpine', status:'stopped', cpu:'—', mem:'—', restarts:3, ports:'6379→6379', mon:false, logs:false, alerts:false},
+    ],
+    services:[
+      {name:'nginx.service', status:'running', enabled:true, since:'18d 6h', restarts:0, mon:true, logs:true, alerts:true},
+      {name:'app-deploy.service', status:'running', enabled:true, since:'18d 6h', restarts:0, mon:true, logs:true, alerts:true},
+      {name:'fail2ban.service', status:'running', enabled:true, since:'18d 5h', restarts:0, mon:true, logs:false, alerts:true},
+      {name:'cron.service', status:'running', enabled:true, since:'18d 6h', restarts:0, mon:true, logs:false, alerts:false},
+      {name:'backup-sync.service', status:'failed', enabled:true, since:'—', restarts:2, mon:true, logs:true, alerts:true},
+      {name:'monitoring-agent.service', status:'running', enabled:true, since:'18d 6h', restarts:0, mon:true, logs:true, alerts:true},
+    ],
+    alerts:[
+      {sev:'critical', title:'backup-sync.service entered FAILED state', detail:'exit code 1 — rsync connection timeout', time:'8m ago'},
+      {sev:'recovered', title:'api-gateway container back to running', detail:'recovered after 1 restart', time:'3h ago'},
+    ]},
+  { id:'prod-db-01', name:'prod-db-01', hostname:'prod-db-01.internal', ip:'10.20.1.15', env:'production', status:'online', health:'warning', cpu:78, mem:84, disk:71, hb:'6s ago', uptime:'42d 11h',
+    containers:[
+      {name:'postgres-primary', img:'postgres:16', status:'running', cpu:'34%', mem:'2.1 GB', restarts:0, ports:'5432→5432', mon:true, logs:true, alerts:true},
+      {name:'pgbouncer', img:'pgbouncer:1.21', status:'running', cpu:'4%', mem:'48 MB', restarts:0, ports:'6432→6432', mon:true, logs:true, alerts:true},
+    ],
+    services:[
+      {name:'postgresql.service', status:'running', enabled:true, since:'42d 11h', restarts:0, mon:true, logs:true, alerts:true},
+      {name:'wal-archiver.service', status:'running', enabled:true, since:'42d 11h', restarts:0, mon:true, logs:true, alerts:true},
+      {name:'node-exporter.service', status:'running', enabled:true, since:'42d 11h', restarts:0, mon:true, logs:false, alerts:false},
+      {name:'cron.service', status:'running', enabled:true, since:'42d 11h', restarts:0, mon:true, logs:false, alerts:false},
+      {name:'monitoring-agent.service', status:'running', enabled:true, since:'42d 11h', restarts:0, mon:true, logs:true, alerts:true},
+    ],
+    alerts:[
+      {sev:'warning', title:'Sustained CPU above 75%', detail:'20 min average · 78% current', time:'22m ago'},
+      {sev:'warning', title:'Disk usage above 70%', detail:'71% of 200 GB volume', time:'1h ago'},
+    ]},
+  { id:'prod-api-02', name:'prod-api-02', hostname:'prod-api-02.internal', ip:'10.20.1.22', env:'production', status:'offline', health:'critical', cpu:null, mem:null, disk:null, hb:'14m ago', uptime:'—',
+    containers:[
+      {name:'api-core', img:'api:3.2.0', status:'unknown', cpu:'—', mem:'—', restarts:'—', ports:'8080→8080', mon:true, logs:true, alerts:true},
+      {name:'rate-limiter', img:'ratelimiter:1.0', status:'unknown', cpu:'—', mem:'—', restarts:'—', ports:'—', mon:true, logs:false, alerts:true},
+    ],
+    services:[
+      {name:'api-core.service', status:'unknown', enabled:true, since:'—', restarts:'—', mon:true, logs:true, alerts:true},
+      {name:'monitoring-agent.service', status:'unknown', enabled:true, since:'—', restarts:'—', mon:true, logs:true, alerts:true},
+    ],
+    alerts:[
+      {sev:'critical', title:'VM unreachable', detail:'No heartbeat received since 14:22 UTC', time:'14m ago'},
+    ]},
+  { id:'staging-app-01', name:'staging-app-01', hostname:'staging-app-01.internal', ip:'10.20.4.10', env:'staging', status:'online', health:'healthy', cpu:22, mem:35, disk:40, hb:'9s ago', uptime:'6d 2h',
+    containers:[
+      {name:'app-staging', img:'app:2.5.0-rc3', status:'running', cpu:'8%', mem:'180 MB', restarts:0, ports:'3000→3000', mon:true, logs:true, alerts:true},
+      {name:'redis-session', img:'redis:7.2', status:'running', cpu:'2%', mem:'40 MB', restarts:0, ports:'6379→6379', mon:true, logs:false, alerts:false},
+      {name:'mailhog', img:'mailhog:1.0', status:'running', cpu:'1%', mem:'20 MB', restarts:0, ports:'8025→8025', mon:true, logs:false, alerts:false},
+    ],
+    services:[
+      {name:'app-deploy.service', status:'running', enabled:true, since:'6d 2h', restarts:0, mon:true, logs:true, alerts:true},
+      {name:'cron.service', status:'running', enabled:true, since:'6d 2h', restarts:0, mon:true, logs:false, alerts:false},
+      {name:'monitoring-agent.service', status:'running', enabled:true, since:'6d 2h', restarts:0, mon:true, logs:true, alerts:true},
+      {name:'fail2ban.service', status:'stopped', enabled:false, since:'—', restarts:0, mon:false, logs:false, alerts:false},
+    ],
+    alerts:[]},
+  { id:'dev-sandbox-01', name:'dev-sandbox-01', hostname:'dev-sandbox-01.internal', ip:'10.20.9.4', env:'development', status:'online', health:'healthy', cpu:12, mem:18, disk:22, hb:'20s ago', uptime:'2d 9h',
+    containers:[
+      {name:'sandbox-app', img:'app:dev', status:'running', cpu:'4%', mem:'90 MB', restarts:5, ports:'3000→3000', mon:true, logs:true, alerts:false},
+      {name:'test-db', img:'postgres:16', status:'running', cpu:'3%', mem:'150 MB', restarts:0, ports:'5432→5432', mon:true, logs:false, alerts:false},
+      {name:'mock-api', img:'mockapi:0.4', status:'stopped', cpu:'—', mem:'—', restarts:0, ports:'—', mon:true, logs:false, alerts:false},
+      {name:'test-redis', img:'redis:7.2', status:'running', cpu:'1%', mem:'20 MB', restarts:0, ports:'—', mon:true, logs:false, alerts:false},
+      {name:'jupyter', img:'jupyter:latest', status:'running', cpu:'9%', mem:'300 MB', restarts:0, ports:'8888→8888', mon:true, logs:true, alerts:false},
+    ],
+    services:[
+      {name:'monitoring-agent.service', status:'running', enabled:true, since:'2d 9h', restarts:0, mon:true, logs:true, alerts:true},
+      {name:'docker.service', status:'running', enabled:true, since:'2d 9h', restarts:0, mon:true, logs:false, alerts:false},
+      {name:'cron.service', status:'running', enabled:true, since:'2d 9h', restarts:0, mon:true, logs:false, alerts:false},
+    ],
+    alerts:[
+      {sev:'warning', title:'sandbox-app restarted 5 times in 1h', detail:'Excessive restart threshold exceeded', time:'40m ago'},
+    ]},
+];
+
+let selectedId = vms[0].id;
+const $ = s => document.querySelector(s);
+
+function meterClass(v){ return v>80?'fill-crit':v>60?'fill-warn':'fill-ok'; }
+
+function renderVmList(){
+  const el = $('#vmList');
+  el.innerHTML = vms.map(vm => `
+    <div class="vm-row ${vm.id===selectedId?'selected':''}" data-id="${vm.id}">
+      <span class="status-dot ${vm.status}${vm.status==='online'?' pulse':''}"></span>
+      <div class="vm-row-main">
+        <div class="vm-row-name">${vm.name}</div>
+        <div class="vm-row-meta">${vm.ip}</div>
+      </div>
+      <span class="env-tag ${vm.env}">${vm.env.slice(0,4)}</span>
+      <span class="pill health-pill ${vm.health}"><i></i>${vm.health}</span>
+    </div>
+  `).join('');
+  el.querySelectorAll('.vm-row').forEach(row => row.addEventListener('click', () => {
+    selectedId = row.dataset.id;
+    renderVmList(); renderDetail(); resetLogs();
+  }));
+  renderStats();
+}
+
+/* ---------- fleet-wide stats ---------- */
+function computeStats(){
+  const total = vms.length;
+  const online = vms.filter(v => v.status==='online').length;
+  const offline = vms.filter(v => v.status==='offline').length;
+  let cTotal=0,cRun=0,cStop=0,sTotal=0,sRun=0,sFail=0,aActive=0,aCrit=0;
+  const health = {healthy:0,warning:0,critical:0,offline:0,pending:0};
+  vms.forEach(v => {
+    cTotal += v.containers.length;
+    cRun += v.containers.filter(c=>c.status==='running').length;
+    cStop += v.containers.filter(c=>c.status==='stopped').length;
+    sTotal += v.services.length;
+    sRun += v.services.filter(s=>s.status==='running').length;
+    sFail += v.services.filter(s=>s.status==='failed').length;
+    aActive += v.alerts.filter(a=>a.sev!=='recovered').length;
+    aCrit += v.alerts.filter(a=>a.sev==='critical').length;
+    health[v.health] = (health[v.health]||0) + 1;
+  });
+  return {total,online,offline,cTotal,cRun,cStop,sTotal,sRun,sFail,aActive,aCrit,health};
+}
+
+function renderStats(){
+  const s = computeStats();
+  $('#vmCount').textContent = s.total;
+  $('#statTotalVms').textContent = s.total;
+  $('#statOnlineVms').textContent = s.online;
+  $('#statOfflineVms').textContent = s.offline;
+  $('#statTotalContainers').textContent = s.cTotal;
+  $('#statRunContainers').textContent = s.cRun;
+  $('#statStopContainers').textContent = s.cStop;
+  $('#statTotalServices').textContent = s.sTotal;
+  $('#statRunServices').textContent = s.sRun;
+  $('#statFailServices').textContent = s.sFail;
+  $('#statActiveAlerts').textContent = s.aActive;
+  $('#statCritAlerts').textContent = s.aCrit;
+
+  const order = ['healthy','warning','critical','offline','pending'];
+  const colors = {healthy:'var(--ok)',warning:'var(--warn)',critical:'var(--crit)',offline:'var(--offline)',pending:'var(--accent)'};
+  const present = order.filter(k => s.health[k]);
+  $('#healthBar').innerHTML = present.map(k =>
+    `<div style="width:${(s.health[k]/s.total*100).toFixed(1)}%;background:${colors[k]}" title="${k}: ${s.health[k]}"></div>`
+  ).join('');
+  $('#healthLegend').innerHTML = present.map(k =>
+    `<span><i style="background:${colors[k]}"></i>${k.charAt(0).toUpperCase()+k.slice(1)} · ${s.health[k]}</span>`
+  ).join('');
+}
+
+/* ---------- add-VM onboarding modal ---------- */
+const overlay = $('#addVmOverlay');
+let connectTimer = null;
+
+function openModal(){
+  $('#vmName').value = ''; $('#vmHost').value = ''; $('#vmIp').value = ''; $('#vmEnv').value = 'production';
+  $('#modalTitle').textContent = 'Add a VM';
+  $('#modalBodyForm').style.display = 'block';
+  $('#modalBodyInstall').style.display = 'none';
+  overlay.style.display = 'flex';
+  $('#vmName').focus();
+}
+function closeModal(){ overlay.style.display = 'none'; }
+
+$('#addVmBtn').addEventListener('click', openModal);
+$('#modalClose').addEventListener('click', closeModal);
+$('#cancelVmBtn').addEventListener('click', closeModal);
+$('#doneVmBtn').addEventListener('click', closeModal);
+overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && overlay.style.display === 'flex') closeModal(); });
+
+$('#vmForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('#vmName').value.trim() || 'unnamed-vm';
+  const hostname = $('#vmHost').value.trim() || (name + '.internal');
+  const ip = $('#vmIp').value.trim() || '—';
+  const env = $('#vmEnv').value;
+
+  let id = name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || ('vm-' + Date.now());
+  if (vms.some(v => v.id === id)) id += '-' + Math.floor(Math.random()*900 + 100);
+
+  const token = 'tok_' + Math.random().toString(16).slice(2, 12);
+
+  vms.push({ id, name, hostname, ip, env, status:'pending', health:'pending',
+    cpu:null, mem:null, disk:null, hb:'—', uptime:'—', containers:[], services:[], alerts:[] });
+  selectedId = id;
+  renderVmList(); renderDetail(); resetLogs();
+
+  const cmd = 'curl -sSL https://nodewatch.yourco.com/install-agent.sh | sudo bash -s -- \\\n'
+    + '  --server=https://nodewatch.yourco.com \\\n'
+    + '  --token=' + token + ' \\\n'
+    + '  --name=' + id;
+  $('#installCmd').textContent = cmd;
+  $('#installToken').textContent = 'Token: ' + token + ' (single-use, revoke anytime from VM settings)';
+  $('#modalTitle').textContent = 'Install the agent';
+  $('#connectStatus').className = 'connect-status';
+  $('#connectStatus').innerHTML = '<span class="spinner"></span><span>Waiting for agent to check in on <strong>' + id + '</strong>…</span>';
+  $('#modalBodyForm').style.display = 'none';
+  $('#modalBodyInstall').style.display = 'block';
+
+  if (connectTimer) clearTimeout(connectTimer);
+  connectTimer = setTimeout(() => {
+    const vm = vms.find(v => v.id === id);
+    if (!vm) return;
+    Object.assign(vm, {
+      status:'online', health:'healthy', cpu:8, mem:15, disk:20, hb:'2s ago', uptime:'< 1m',
+      containers:[{name:'app-container', img:'app:latest', status:'running', cpu:'2%', mem:'40 MB', restarts:0, ports:'—', mon:true, logs:true, alerts:true}],
+      services:[{name:'monitoring-agent.service', status:'running', enabled:true, since:'< 1m', restarts:0, mon:true, logs:true, alerts:true}]
+    });
+    renderVmList();
+    if (selectedId === id) renderDetail();
+    if (overlay.style.display === 'flex'){
+      $('#connectStatus').className = 'connect-status ok';
+      $('#connectStatus').innerHTML = '<span class="check">✓</span><span><strong>' + id + '</strong> is online and streaming data.</span>';
+    }
+  }, 4000);
+});
+
+$('#copyCmdBtn').addEventListener('click', async () => {
+  const text = $('#installCmd').textContent;
+  try{ await navigator.clipboard.writeText(text); }
+  catch(err){
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); } catch(_e){}
+    document.body.removeChild(ta);
+  }
+  const t = $('#modalToast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1500);
+});
+
+function renderDetail(){
+  const vm = vms.find(v => v.id===selectedId);
+  $('#dtName').textContent = vm.name;
+  $('#dtHealth').textContent = vm.health;
+  $('#dtHealth').className = 'pill ' + vm.health;
+  $('#dtEnv').textContent = vm.env;
+  $('#dtEnv').className = 'env-tag ' + vm.env;
+  $('#dtHost').textContent = vm.hostname;
+  $('#dtIp').textContent = vm.ip;
+  $('#dtHb').textContent = vm.hb;
+  $('#dtUptime').textContent = vm.uptime;
+  const banner = $('#dtOfflineBanner');
+  if (vm.status === 'offline'){ banner.style.display = 'flex'; banner.textContent = '⚠ Agent unreachable — showing last known state.'; }
+  else if (vm.status === 'pending'){ banner.style.display = 'flex'; banner.textContent = '⏳ Registered — waiting for the agent to check in for the first time.'; }
+  else { banner.style.display = 'none'; }
+
+  $('#dtMetrics').innerHTML = vm.cpu===null ? `<div style="color:var(--text-faint);font-size:12.5px">Metrics unavailable while agent is unreachable.</div>` : `
+    <div class="metric"><div class="metric-top"><span class="k">CPU</span><span class="v">${vm.cpu}%</span></div><div class="meter"><div class="${meterClass(vm.cpu)}" style="width:${vm.cpu}%"></div></div></div>
+    <div class="metric"><div class="metric-top"><span class="k">Memory</span><span class="v">${vm.mem}%</span></div><div class="meter"><div class="${meterClass(vm.mem)}" style="width:${vm.mem}%"></div></div></div>
+    <div class="metric"><div class="metric-top"><span class="k">Disk</span><span class="v">${vm.disk}%</span></div><div class="meter"><div class="${meterClass(vm.disk)}" style="width:${vm.disk}%"></div></div></div>
+  `;
+
+  $('#panelOverview').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
+      <div><div class="k" style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Containers</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px">${vm.containers.length}</div></div>
+      <div><div class="k" style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Services</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px">${vm.services.length}</div></div>
+      <div><div class="k" style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Open alerts</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px;color:${vm.alerts.length?'var(--crit)':'inherit'}">${vm.alerts.length}</div></div>
+      <div><div class="k" style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Network</div><div style="font-family:var(--font-mono);font-size:13px;margin-top:7px">${vm.status==='online' ? '1.2 MB/s in · 3.4 MB/s out' : '—'}</div></div>
+    </div>`;
+
+  $('#dockerBody').innerHTML = vm.containers.length===0 ? `<tr><td colspan="11" class="empty-state">No containers detected yet — agent inventory scan in progress.</td></tr>` : vm.containers.map(c => `
+    <tr>
+      <td class="cell-name">${c.name}</td>
+      <td class="cell-sub">${c.img}</td>
+      <td><span class="pill ${c.status}"><i></i>${c.status}</span></td>
+      <td class="mono">${c.cpu}</td>
+      <td class="mono">${c.mem}</td>
+      <td class="mono">${c.restarts}</td>
+      <td class="mono cell-sub">${c.ports}</td>
+      <td>${toggle(c.mon)}</td>
+      <td>${toggle(c.logs)}</td>
+      <td>${toggle(c.alerts)}</td>
+      <td><button class="btn" data-view-logs="${c.name}">Logs</button></td>
+    </tr>`).join('');
+
+  $('#systemdBody').innerHTML = vm.services.length===0 ? `<tr><td colspan="9" class="empty-state">No services detected yet — agent inventory scan in progress.</td></tr>` : vm.services.map(s => `
+    <tr>
+      <td class="cell-name">${s.name}</td>
+      <td><span class="pill ${s.status}"><i></i>${s.status}</span></td>
+      <td><span class="pill ${s.enabled?'enabled':'disabled'}">${s.enabled?'enabled':'disabled'}</span></td>
+      <td class="mono cell-sub">${s.since}</td>
+      <td class="mono">${s.restarts}</td>
+      <td>${toggle(s.mon)}</td>
+      <td>${toggle(s.logs)}</td>
+      <td>${toggle(s.alerts)}</td>
+      <td><button class="btn" data-view-logs="${s.name}">Logs</button></td>
+    </tr>`).join('');
+
+  $('#panelAlerts').innerHTML = vm.alerts.length ? vm.alerts.map(a => `
+    <div class="alert-item">
+      <div class="sev-stripe ${a.sev}"></div>
+      <div class="alert-body">
+        <div class="alert-top"><span class="alert-title">${a.title}</span><span class="alert-time">${a.time}</span></div>
+        <div class="alert-detail">${a.detail}</div>
+      </div>
+    </div>`).join('') : `<div class="empty-state">No alerts in the last 24 hours.</div>`;
+
+  const sources = [...vm.containers.map(c=>c.name), ...vm.services.map(s=>s.name)];
+  $('#logSource').innerHTML = sources.map(s => `<option value="${s}">${s}</option>`).join('');
+
+  document.querySelectorAll('[data-view-logs]').forEach(b => b.addEventListener('click', () => {
+    document.querySelector('.tab[data-tab="logs"]').click();
+    $('#logSource').value = b.dataset.viewLogs;
+  }));
+}
+
+function toggle(checked){
+  return `<label class="switch"><input type="checkbox" ${checked?'checked':''} onclick="event.stopPropagation()"><span class="track"></span></label>`;
+}
+
+document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  tab.classList.add('active');
+  document.querySelector(`.tab-panel[data-panel="${tab.dataset.tab}"]`).classList.add('active');
+}));
+
+/* ---------- live log simulation ---------- */
+const templates = [
+  ['INFO', 'health check ok — {t} responding in 4ms'],
+  ['INFO', 'connection accepted from 10.20.{r}.{r2}'],
+  ['DEBUG', 'cache hit ratio 0.9{r} for {t}'],
+  ['INFO', 'request GET /api/v1/status 200 12ms'],
+  ['DEBUG', 'gc cycle completed, freed {r}MB'],
+  ['WARN', 'response time for {t} exceeded 300ms threshold'],
+  ['INFO', 'heartbeat sent to nodewatch-agent'],
+  ['DEBUG', 'connection pool size: {r}/50'],
+  ['ERROR', 'failed to reach upstream for {t}: timeout after 5000ms'],
+  ['INFO', 'scheduled task completed successfully'],
+  ['WARN', 'retrying operation for {t} (attempt {r}/5)'],
+  ['INFO', 'config reloaded without restart'],
+];
+
+let logTimer = null, paused = false, lineCount = 0;
+
+function nextLine(){
+  const vm = vms.find(v => v.id===selectedId);
+  const target = $('#logSource').value || vm.name;
+  const [lvl, tpl] = templates[Math.floor(Math.random()*templates.length)];
+  const msg = tpl.replace('{t}', target).replace(/\{r2\}/g, Math.floor(Math.random()*255)).replace(/\{r\}/g, Math.floor(Math.random()*90)+5);
+  const ts = new Date().toTimeString().slice(0,8);
+  const term = $('#terminal');
+  const row = document.createElement('div');
+  row.className = 'log-line';
+  row.dataset.lvl = lvl;
+  row.innerHTML = `<span class="ts">${ts}</span><span class="lvl ${lvl}">${lvl}</span><span class="msg">${msg}</span>`;
+  term.appendChild(row);
+  lineCount++;
+  if (lineCount > 300) term.removeChild(term.firstChild);
+  applyLogFilters(row);
+  if ($('#autoscroll').checked) term.scrollTop = term.scrollHeight;
+}
+
+function applyLogFilters(row){
+  const q = $('#logSearch').value.toLowerCase();
+  const activeLevels = [...document.querySelectorAll('.lvl-chip.on')].map(c=>c.dataset.lvl);
+  const text = row.textContent.toLowerCase();
+  const show = (!q || text.includes(q)) && activeLevels.includes(row.dataset.lvl);
+  row.classList.toggle('hidden', !show);
+}
+
+function resetLogs(){
+  $('#terminal').innerHTML = '';
+  lineCount = 0;
+  for (let i=0;i<6;i++) nextLine();
+}
+
+function startLogTimer(){
+  if (logTimer) clearInterval(logTimer);
+  logTimer = setInterval(() => { if (!paused) nextLine(); }, 1400);
+}
+
+$('#pauseBtn').addEventListener('click', () => {
+  paused = !paused;
+  $('#pauseBtn').textContent = paused ? '▶ Resume' : '⏸ Pause';
+  $('#pauseBtn').classList.toggle('active-toggle', paused);
+});
+$('#clearBtn').addEventListener('click', () => { $('#terminal').innerHTML=''; lineCount=0; });
+$('#downloadBtn').addEventListener('click', () => {
+  const t = $('#logToast'); t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 1600);
+});
+$('#logSearch').addEventListener('input', () => {
+  document.querySelectorAll('.log-line').forEach(applyLogFilters);
+});
+document.querySelectorAll('.lvl-chip').forEach(chip => chip.addEventListener('click', () => {
+  chip.classList.toggle('on');
+  document.querySelectorAll('.log-line').forEach(applyLogFilters);
+}));
+$('#logSource').addEventListener('change', resetLogs);
+
+renderVmList();
+renderDetail();
+resetLogs();
+startLogTimer();
+</script>

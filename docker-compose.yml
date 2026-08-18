@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: infrawatch
+      POSTGRES_USER: infrawatch
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-infrawatch_dev}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://infrawatch:${POSTGRES_PASSWORD:-infrawatch_dev}@db:5432/infrawatch
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-prod}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@infrawatch.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+volumes:
+  db_data:

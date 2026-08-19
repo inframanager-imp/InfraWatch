@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .models import Environment, User, VM
+from .models import Environment, User
 from .security import hash_password
 
 DEFAULT_ENVIRONMENTS = ["production", "staging", "development", "qa", "demo", "das", "sandbox"]
@@ -22,14 +22,3 @@ def seed(db: Session):
             db.add(Environment(name=name))
 
     db.commit()
-
-    if db.query(VM).count() == 0:
-        prod = db.query(Environment).filter(Environment.name == "production").first()
-        db.add(VM(
-            name="prod-web-01",
-            hostname="prod-web-01.internal",
-            ip_address="10.20.1.11",
-            environment_id=prod.id,
-            agent_token_hash=hash_password("seed-token-not-usable"),
-        ))
-        db.commit()

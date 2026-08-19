@@ -297,7 +297,7 @@
 
           <div class="tab-panel" data-panel="systemd">
             <div class="table-scroll">
-              <table><thead><tr><th>Name</th><th>Active</th><th>Sub-state</th><th>Last seen</th></tr></thead>
+              <table><thead><tr><th>Name</th><th>Active</th><th>Sub-state</th><th>Last seen</th><th></th></tr></thead>
               <tbody id="systemdBody"></tbody></table>
             </div>
           </div>
@@ -727,14 +727,18 @@ function renderDetail(id) {
   });
 
   $('#systemdBody').innerHTML = data.services.length === 0
-    ? `<tr><td colspan="4" class="empty-state">No services reported yet.</td></tr>`
+    ? `<tr><td colspan="5" class="empty-state">No services reported yet.</td></tr>`
     : data.services.map(s => `
         <tr>
           <td>${s.name}</td>
           <td><span class="pill ${s.status === 'active' ? 'online' : s.status === 'failed' ? 'failed' : 'offline'}">${s.status}</span></td>
           <td class="cell-sub">${s.sub_state || '—'}</td>
           <td class="cell-sub">${new Date(s.last_seen).toLocaleTimeString()}</td>
+          <td><button class="btn small" data-live-service="${s.name}">Logs</button></td>
         </tr>`).join('');
+  $('#systemdBody').querySelectorAll('[data-live-service]').forEach(btn => {
+    btn.addEventListener('click', () => jumpToLiveLogs('service', btn.dataset.liveService));
+  });
 }
 
 document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
@@ -814,6 +818,20 @@ function appendLiveLogLine(raw) {
   lineEl.classList.toggle('hidden', !lineMatchesFilters(lineEl));
   container.appendChild(lineEl);
   if ($('#liveLogsAutoscroll').checked) container.scrollTop = container.scrollHeight;
+}
+
+function jumpToLiveLogs(type, name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.tab[data-tab="logs"]').classList.add('active');
+  document.querySelector('.tab-panel[data-panel="logs"]').classList.add('active');
+  startLiveLogsPolling();
+  const value = `${type}::${name}`;
+  const select = $('#liveLogsSelect');
+  if ([...select.options].some(o => o.value === value)) {
+    select.value = value;
+    connectLiveLogsStream();
+  }
 }
 
 function startLiveLogsPolling() {

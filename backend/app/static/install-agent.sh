@@ -49,10 +49,20 @@ fi
 # websocket-client is the one dependency the agent needs, and only for the
 # optional live-log-streaming channel — heartbeat/inventory reporting has
 # zero dependencies and keeps working even if this fails to install.
+# Newer Debian/Ubuntu (PEP 668) refuse a plain pip install into the system
+# Python at all ("externally-managed-environment"). --break-system-packages
+# overrides that — acceptable here since this installs exactly one small,
+# well-known package for the agent's own use, not something that risks the
+# OS's own Python tooling in practice. Try the normal path first so older
+# systems that don't enforce PEP 668 aren't unnecessarily forcing anything.
 if command -v pip3 >/dev/null 2>&1; then
-  pip3 install --quiet websocket-client || echo "Warning: could not install websocket-client — live log streaming will be disabled (heartbeat/inventory still work)." >&2
+  pip3 install --quiet websocket-client 2>/dev/null \
+    || pip3 install --quiet --break-system-packages websocket-client \
+    || echo "Warning: could not install websocket-client — live log streaming will be disabled (heartbeat/inventory still work)." >&2
 elif python3 -m pip --version >/dev/null 2>&1; then
-  python3 -m pip install --quiet websocket-client || echo "Warning: could not install websocket-client — live log streaming will be disabled (heartbeat/inventory still work)." >&2
+  python3 -m pip install --quiet websocket-client 2>/dev/null \
+    || python3 -m pip install --quiet --break-system-packages websocket-client \
+    || echo "Warning: could not install websocket-client — live log streaming will be disabled (heartbeat/inventory still work)." >&2
 else
   echo "Warning: pip not found — live log streaming will be disabled (heartbeat/inventory still work)." >&2
 fi

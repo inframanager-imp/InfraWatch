@@ -238,9 +238,9 @@ def handle_ws_message(ws, msg):
     if action == "start_stream":
         target_type, target_name = data.get("type"), data.get("name")
         if target_type == "container":
-            cmd = ["docker", "logs", "-f", "--tail", "0", target_name]
+            cmd = ["docker", "logs", "-f", "--tail", "20", target_name]
         elif target_type == "service":
-            cmd = ["journalctl", "-u", target_name, "-f", "-n", "0", "--no-pager"]
+            cmd = ["journalctl", "-u", target_name, "-f", "-n", "20", "--no-pager"]
         else:
             return
         threading.Thread(target=stream_worker, args=(ws, stream_id, cmd), daemon=True).start()

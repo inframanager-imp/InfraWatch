@@ -47,7 +47,7 @@
   .login-brand{ font-family:var(--font-mono); font-weight:700; font-size:18px; margin-bottom:4px; }
   .login-sub{ color:var(--text-muted); font-size:12.5px; margin-bottom:20px; }
   .field{ display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
-  .field label{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); }
+  .field > label{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); }
   .field input, .field select{ border:1px solid var(--border); background:var(--surface-alt); border-radius:6px; padding:9px 10px; outline:0; width:100%; }
   .field input:focus, .field select:focus{ border-color:var(--accent); }
   .error-box{ background:var(--crit-soft); color:var(--crit); font-size:12.5px; padding:8px 10px; border-radius:6px; margin-bottom:14px; display:none; }
@@ -206,7 +206,8 @@
   .lvl-badge.DEBUG{ background:rgba(107,118,128,.15); color:#6B7680; }
   .terminal .empty-state{ color:#5D6E75; }
   .token-line{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:10px; }
-  .checkbox-row{ display:flex; align-items:center; gap:8px; font-size:12.5px; padding:4px 0; }
+  .checkbox-row{ display:flex; align-items:flex-start; gap:8px; font-size:12.5px; font-weight:400; text-transform:none; letter-spacing:normal; color:var(--text); padding:5px 0; }
+  .checkbox-row input{ flex:none; margin-top:3px; }
 
   .agent-note{ background:var(--surface-alt); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-muted); line-height:1.5; }
 </style>
@@ -964,7 +965,7 @@ $('#addUserBtn').addEventListener('click', () => {
   $('#userForm').reset();
   $('#userError').classList.remove('show');
   $('#vmAccessList').innerHTML = vms.map(v => `
-    <label class="checkbox-row"><input type="checkbox" value="${v.id}" /> ${v.name} <span class="cell-sub">(${v.environment.name})</span></label>
+    <label class="checkbox-row"><input type="checkbox" value="${v.id}" /><span>${v.name} <span class="cell-sub">(${v.environment.name})</span></span></label>
   `).join('') || '<div class="cell-sub">No VMs registered yet.</div>';
   $('#addUserOverlay').style.display = 'flex';
 });

@@ -55,6 +55,17 @@ fi
 # well-known package for the agent's own use, not something that risks the
 # OS's own Python tooling in practice. Try the normal path first so older
 # systems that don't enforce PEP 668 aren't unnecessarily forcing anything.
+if ! command -v pip3 >/dev/null 2>&1 && ! python3 -m pip --version >/dev/null 2>&1; then
+  echo "pip not found — installing..."
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -y && apt-get install -y python3-pip
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y python3-pip
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y python3-pip
+  fi
+fi
+
 if command -v pip3 >/dev/null 2>&1; then
   pip3 install --quiet websocket-client 2>/dev/null \
     || pip3 install --quiet --break-system-packages websocket-client \
@@ -64,7 +75,7 @@ elif python3 -m pip --version >/dev/null 2>&1; then
     || python3 -m pip install --quiet --break-system-packages websocket-client \
     || echo "Warning: could not install websocket-client — live log streaming will be disabled (heartbeat/inventory still work)." >&2
 else
-  echo "Warning: pip not found — live log streaming will be disabled (heartbeat/inventory still work)." >&2
+  echo "Warning: pip not found and could not be installed — live log streaming will be disabled (heartbeat/inventory still work)." >&2
 fi
 
 mkdir -p /opt/infrawatch-agent

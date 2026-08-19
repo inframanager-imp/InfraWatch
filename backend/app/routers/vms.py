@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import schemas
 from ..audit import log_action
 from ..database import SessionLocal, get_db
-from ..models import Container, Service, User, VM
+from ..models import Container, LogSource, Service, User, VM
 from ..security import get_current_user, get_user_from_token, hash_password, require_admin
 from ..streams import agent_sockets, browser_sockets
 
@@ -86,6 +86,35 @@ def list_containers(vm_id: str, db: Session = Depends(get_db), user: User = Depe
 def list_services(vm_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     vm = _get_accessible_vm(db, user, vm_id)
     return db.query(Service).filter(Service.vm_id == vm.id).order_by(Service.name).all()
+
+
+@router.get("/{vm_id}/log-sources", response_model=list[schemas.LogSourceOut])
+def list_log_sources(vm_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    vm = _get_accessible_vm(db, user, vm_id)
+    return db.query(LogSource).filter(LogSource.vm_id == vm.id).order_by(LogSource.name).all()
+
+
+@router.post("/{vm_id}/log-sources", response_model=schemas.LogSourceOut)
+def create_log_source(vm_id: str, payload: schemas.LogSourceCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    vm = db.query(VM).filter(VM.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    source = LogSource(vm_id=vm.id, name=payload.name, path=payload.path)
+    db.add(source)
+    db.commit()
+    db.refresh(source)
+    log_action(db, admin.email, "log_source.create", target=f"{vm.name}:{payload.path}")
+    return source
+
+
+@router.delete("/{vm_id}/log-sources/{source_id}", status_code=204)
+def delete_log_source(vm_id: str, source_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    source = db.query(LogSource).filter(LogSource.id == source_id, LogSource.vm_id == vm_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Log source not found")
+    db.delete(source)
+    db.commit()
+    log_action(db, admin.email, "log_source.delete", target=f"{vm_id}:{source.path}")
 
 
 @router.websocket("/{vm_id}/logs/ws")

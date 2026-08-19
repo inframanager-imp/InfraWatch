@@ -54,6 +54,7 @@ class VM(Base):
     access = relationship("UserVMAccess", back_populates="vm", cascade="all, delete-orphan")
     containers = relationship("Container", back_populates="vm", cascade="all, delete-orphan")
     services = relationship("Service", back_populates="vm", cascade="all, delete-orphan")
+    log_sources = relationship("LogSource", back_populates="vm", cascade="all, delete-orphan")
 
 
 class Container(Base):
@@ -85,6 +86,21 @@ class Service(Base):
     last_seen = Column(DateTime, default=datetime.utcnow)
 
     vm = relationship("VM", back_populates="services")
+
+
+class LogSource(Base):
+    """An admin-registered file path to tail on a VM, for apps that write
+    their own log file instead of stdout (docker logs) or the journal
+    (systemd) — e.g. a logback/log4j2 file appender."""
+    __tablename__ = "log_sources"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False)
+    name = Column(String, nullable=False)
+    path = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    vm = relationship("VM", back_populates="log_sources")
 
 
 class UserVMAccess(Base):

@@ -112,6 +112,21 @@ class ServiceIn(BaseModel):
     sub_state: Optional[str] = None
 
 
+class LogSourceOut(BaseModel):
+    id: str
+    name: str
+    path: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LogSourceCreate(BaseModel):
+    name: str
+    path: str
+
+
 class HeartbeatIn(BaseModel):
     name: str
     token: str

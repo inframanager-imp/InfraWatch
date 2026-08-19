@@ -241,6 +241,10 @@ def handle_ws_message(ws, msg):
             cmd = ["docker", "logs", "-f", "--tail", "300", target_name]
         elif target_type == "service":
             cmd = ["journalctl", "-u", target_name, "-f", "-n", "300", "--no-pager"]
+        elif target_type == "file":
+            # -F (not -f): re-opens the file if it's rotated/recreated,
+            # which plain -f would silently stop following after.
+            cmd = ["tail", "-F", "-n", "300", target_name]
         else:
             return
         threading.Thread(target=stream_worker, args=(ws, stream_id, cmd), daemon=True).start()

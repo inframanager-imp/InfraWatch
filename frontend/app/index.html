@@ -495,11 +495,12 @@ async function bootApp() {
 async function loadVms() {
   vms = await api('/vms');
   const pairs = await Promise.all(vms.map(async vm => {
-    const [containers, services] = await Promise.all([
+    const [containers, services, logSources] = await Promise.all([
       api('/vms/' + vm.id + '/containers').catch(() => []),
       api('/vms/' + vm.id + '/services').catch(() => []),
+      api('/vms/' + vm.id + '/log-sources').catch(() => []),
     ]);
-    return [vm.id, { containers, services }];
+    return [vm.id, { containers, services, logSources }];
   }));
   vmDetails = Object.fromEntries(pairs);
 
@@ -628,7 +629,7 @@ function renderDetail(id) {
     });
   }
 
-  const data = vmDetails[id] || { containers: [], services: [] };
+  const data = vmDetails[id] || { containers: [], services: [], logSources: [] };
 
   const fillClass = v => v >= 85 ? 'fill-crit' : v >= 65 ? 'fill-warn' : 'fill-ok';
   const meter = (label, value) => value === null || value === undefined ? '' : `
@@ -645,7 +646,62 @@ function renderDetail(id) {
       <div><div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Services</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px">${data.services.length}</div></div>
     </div>
     ${data.containers.length === 0 && data.services.length === 0
-      ? '<div class="agent-note" style="margin-top:16px">No agent connected yet — run the install command on this VM (see "+ Add VM") to start seeing real Docker/systemd data here.</div>' : ''}`;
+      ? '<div class="agent-note" style="margin-top:16px">No agent connected yet — run the install command on this VM (see "+ Add VM") to start seeing real Docker/systemd data here.</div>' : ''}
+    <div class="detail-section" style="padding:0;margin-top:20px">
+      <h4 style="display:flex;align-items:center;justify-content:space-between">
+        <span>Custom log paths</span>
+        ${me.role === 'admin' ? '<button class="btn small" id="addLogSourceBtn">+ Add path</button>' : ''}
+      </h4>
+      <div id="logSourceForm" style="display:none;margin-bottom:10px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input type="text" id="logSourceName" placeholder="Name (e.g. App Log)"
+            style="flex:1;min-width:120px;border:1px solid var(--border);background:var(--surface-alt);border-radius:6px;padding:7px 9px" />
+          <input type="text" id="logSourcePath" placeholder="/opt/app/logs/application.log"
+            style="flex:2;min-width:220px;border:1px solid var(--border);background:var(--surface-alt);border-radius:6px;padding:7px 9px;font-family:var(--font-mono)" />
+          <button class="btn primary" id="saveLogSourceBtn" style="width:auto">Save</button>
+        </div>
+        <div class="error-box" id="logSourceError"></div>
+      </div>
+      ${data.logSources.length === 0
+        ? '<div class="cell-sub">No custom log paths registered — for apps that write to their own log file instead of stdout or the systemd journal.</div>'
+        : data.logSources.map(s => `
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--border-soft)">
+              <span style="flex:1;font-size:12.5px"><strong>${s.name}</strong> <span class="cell-sub">${s.path}</span></span>
+              ${me.role === 'admin' ? `<button class="btn small" data-delete-source="${s.id}">Remove</button>` : ''}
+            </div>`).join('')}
+    </div>`;
+
+  if (me.role === 'admin') {
+    $('#addLogSourceBtn').addEventListener('click', () => {
+      $('#logSourceForm').style.display = 'block';
+      $('#logSourceError').classList.remove('show');
+    });
+    $('#saveLogSourceBtn').addEventListener('click', async () => {
+      const errBox = $('#logSourceError');
+      errBox.classList.remove('show');
+      try {
+        const name = $('#logSourceName').value.trim();
+        const path = $('#logSourcePath').value.trim();
+        if (!name || !path) throw new Error('Name and path are both required.');
+        await api('/vms/' + id + '/log-sources', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, path }),
+        });
+        await loadVms();
+      } catch (err) {
+        errBox.textContent = err.message;
+        errBox.classList.add('show');
+      }
+    });
+    document.querySelectorAll('[data-delete-source]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remove this log path?')) return;
+        await api('/vms/' + id + '/log-sources/' + btn.dataset.deleteSource, { method: 'DELETE' });
+        await loadVms();
+      });
+    });
+  }
 
   $('#dockerBody').innerHTML = data.containers.length === 0
     ? `<tr><td colspan="9" class="empty-state">No containers reported yet.</td></tr>`
@@ -742,10 +798,11 @@ function appendLiveLogLine(raw) {
 
 function startLiveLogsPolling() {
   stopLiveLogsPolling();
-  const data = vmDetails[selectedVmId] || { containers: [], services: [] };
+  const data = vmDetails[selectedVmId] || { containers: [], services: [], logSources: [] };
   const targets = [
     ...data.containers.map(c => ({ type: 'container', name: c.name })),
     ...data.services.map(s => ({ type: 'service', name: s.name })),
+    ...data.logSources.map(s => ({ type: 'file', name: s.path, label: s.name })),
   ];
   if (targets.length === 0) {
     $('#liveLogsEmpty').style.display = 'block';
@@ -755,7 +812,7 @@ function startLiveLogsPolling() {
   $('#liveLogsEmpty').style.display = 'none';
   $('#liveLogsBody').style.display = 'block';
   $('#liveLogsSelect').innerHTML = targets
-    .map(t => `<option value="${t.type}::${t.name}">${t.type === 'service' ? '⚙' : '▣'} ${t.name}</option>`).join('');
+    .map(t => `<option value="${t.type}::${t.name}">${t.type === 'service' ? '⚙' : t.type === 'file' ? '📄' : '▣'} ${t.label || t.name}</option>`).join('');
   connectLiveLogsStream();
 }
 

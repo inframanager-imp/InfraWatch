@@ -290,7 +290,7 @@
                 <span class="cell-sub" id="liveLogsUpdated"></span>
               </div>
               <div class="terminal" id="liveLogsContent"></div>
-              <p class="modal-hint" style="margin:8px 0 0">Auto-refreshes every 15s from the agent's last heartbeat — not true real-time streaming. That's a bigger follow-up build (persistent connection agent → server → browser).</p>
+              <p class="modal-hint" style="margin:8px 0 0">Live — streamed directly from the agent as new lines are written (⚙ = systemd service, ▣ = Docker container).</p>
             </div>
           </div>
 
@@ -654,51 +654,70 @@ document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', (
   if (tab.dataset.tab === 'logs') startLiveLogsPolling(); else stopLiveLogsPolling();
 }));
 
-/* live logs tab — auto-refreshing snapshot, not a true live stream */
+/* live logs tab — real streaming over a WebSocket, agent -> server -> browser */
 const TS_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s(.*)$/s;
-let liveLogsTimer = null;
+let liveLogsSocket = null;
 
 function renderLogLines(text) {
   if (!text || !text.trim()) return '<div class="empty-state">No log output captured.</div>';
-  return text.split('\n').map(line => {
-    const match = line.match(TS_PATTERN);
-    if (!match) return `<div class="log-line"><span class="msg">${escapeHtml(line)}</span></div>`;
-    const time = new Date(match[1]).toLocaleTimeString();
-    return `<div class="log-line"><span class="ts">${time}</span><span class="msg">${escapeHtml(match[2])}</span></div>`;
-  }).join('');
+  return text.split('\n').map(line => logLineHtml(line)).join('');
+}
+
+function logLineHtml(line) {
+  const match = line.match(TS_PATTERN);
+  if (!match) return `<div class="log-line"><span class="msg">${escapeHtml(line)}</span></div>`;
+  const time = new Date(match[1]).toLocaleTimeString();
+  return `<div class="log-line"><span class="ts">${time}</span><span class="msg">${escapeHtml(match[2])}</span></div>`;
+}
+
+function wsBase() {
+  return API_BASE.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 }
 
 function startLiveLogsPolling() {
   stopLiveLogsPolling();
-  const containers = (vmDetails[selectedVmId] || {}).containers || [];
-  if (containers.length === 0) {
+  const data = vmDetails[selectedVmId] || { containers: [], services: [] };
+  const targets = [
+    ...data.containers.map(c => ({ type: 'container', name: c.name })),
+    ...data.services.map(s => ({ type: 'service', name: s.name })),
+  ];
+  if (targets.length === 0) {
     $('#liveLogsEmpty').style.display = 'block';
     $('#liveLogsBody').style.display = 'none';
     return;
   }
   $('#liveLogsEmpty').style.display = 'none';
   $('#liveLogsBody').style.display = 'block';
-  $('#liveLogsSelect').innerHTML = containers.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-  refreshLiveLogs();
-  liveLogsTimer = setInterval(refreshLiveLogs, 15000);
+  $('#liveLogsSelect').innerHTML = targets
+    .map(t => `<option value="${t.type}::${t.name}">${t.type === 'service' ? '⚙' : '▣'} ${t.name}</option>`).join('');
+  connectLiveLogsStream();
+}
+
+function connectLiveLogsStream() {
+  if (liveLogsSocket) { liveLogsSocket.close(); liveLogsSocket = null; }
+  const [type, name] = $('#liveLogsSelect').value.split('::');
+  const vmId = selectedVmId;
+  $('#liveLogsContent').innerHTML = '';
+  $('#liveLogsUpdated').textContent = 'Connecting…';
+
+  const url = wsBase() + `/vms/${vmId}/logs/ws?token=${encodeURIComponent(token)}&type=${encodeURIComponent(type)}&name=${encodeURIComponent(name)}`;
+  const socket = new WebSocket(url);
+  liveLogsSocket = socket;
+
+  socket.onopen = () => { $('#liveLogsUpdated').textContent = '● Live'; };
+  socket.onmessage = ev => {
+    const el = $('#liveLogsContent');
+    el.insertAdjacentHTML('beforeend', logLineHtml(ev.data));
+    el.scrollTop = el.scrollHeight;
+  };
+  socket.onclose = () => { if (liveLogsSocket === socket) $('#liveLogsUpdated').textContent = '○ Disconnected'; };
+  socket.onerror = () => { $('#liveLogsUpdated').textContent = '⚠ Connection error'; };
 }
 
 function stopLiveLogsPolling() {
-  if (liveLogsTimer) { clearInterval(liveLogsTimer); liveLogsTimer = null; }
+  if (liveLogsSocket) { liveLogsSocket.close(); liveLogsSocket = null; }
 }
-
-async function refreshLiveLogs() {
-  const vmId = selectedVmId;
-  if (!vmId) return;
-  const containers = await api('/vms/' + vmId + '/containers').catch(() => null);
-  if (!containers || vmId !== selectedVmId) return; // VM changed mid-fetch
-  const wanted = $('#liveLogsSelect').value;
-  const match = containers.find(c => c.name === wanted) || containers[0];
-  if (!match) return;
-  $('#liveLogsContent').innerHTML = renderLogLines(match.logs);
-  $('#liveLogsUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
-}
-$('#liveLogsSelect').addEventListener('change', refreshLiveLogs);
+$('#liveLogsSelect').addEventListener('change', connectLiveLogsStream);
 
 /* add VM modal */
 $('#addVmBtn').addEventListener('click', () => {

@@ -46,6 +46,17 @@ if ! command -v docker >/dev/null 2>&1; then
   echo "Warning: docker not found on this VM — container monitoring will report nothing until it is installed." >&2
 fi
 
+# websocket-client is the one dependency the agent needs, and only for the
+# optional live-log-streaming channel — heartbeat/inventory reporting has
+# zero dependencies and keeps working even if this fails to install.
+if command -v pip3 >/dev/null 2>&1; then
+  pip3 install --quiet websocket-client || echo "Warning: could not install websocket-client — live log streaming will be disabled (heartbeat/inventory still work)." >&2
+elif python3 -m pip --version >/dev/null 2>&1; then
+  python3 -m pip install --quiet websocket-client || echo "Warning: could not install websocket-client — live log streaming will be disabled (heartbeat/inventory still work)." >&2
+else
+  echo "Warning: pip not found — live log streaming will be disabled (heartbeat/inventory still work)." >&2
+fi
+
 mkdir -p /opt/infrawatch-agent
 
 cat > /opt/infrawatch-agent/agent.py << 'PYEOF'
@@ -59,12 +70,25 @@ import json
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+
+try:
+    import websocket as ws_client  # optional — only needed for live log streaming
+except ImportError:
+    ws_client = None
 
 # Delta state between heartbeats, for CPU %.
 _last_cpu = None
+
+# Live-log-streaming state: stream_id -> subprocess.Popen. Guards concurrent
+# writes to the single shared websocket, since multiple stream threads can
+# be sending at once.
+_active_streams = {}
+_ws_send_lock = threading.Lock()
 
 
 def run(cmd, timeout=15):
@@ -177,6 +201,80 @@ def collect_services():
     return services
 
 
+def stream_worker(ws, stream_id, cmd):
+    """Runs a follow-mode subprocess (docker logs -f / journalctl -f) and
+    pushes each new line to the server over the shared websocket, until
+    told to stop or the process/connection ends."""
+    proc = None
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        _active_streams[stream_id] = proc
+        for line in proc.stdout:
+            if stream_id not in _active_streams:
+                break
+            try:
+                with _ws_send_lock:
+                    ws.send(json.dumps({"stream_id": stream_id, "line": line.rstrip("\n")}))
+            except Exception:
+                break
+    except Exception:
+        pass
+    finally:
+        _active_streams.pop(stream_id, None)
+        if proc is not None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+
+
+def handle_ws_message(ws, msg):
+    try:
+        data = json.loads(msg)
+    except Exception:
+        return
+    action = data.get("action")
+    stream_id = data.get("stream_id")
+    if action == "start_stream":
+        target_type, target_name = data.get("type"), data.get("name")
+        if target_type == "container":
+            cmd = ["docker", "logs", "-f", "--tail", "0", target_name]
+        elif target_type == "service":
+            cmd = ["journalctl", "-u", target_name, "-f", "-n", "0", "--no-pager"]
+        else:
+            return
+        threading.Thread(target=stream_worker, args=(ws, stream_id, cmd), daemon=True).start()
+    elif action == "stop_stream":
+        proc = _active_streams.pop(stream_id, None)
+        if proc is not None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+
+
+def run_ws_agent(server, token, name):
+    if ws_client is None:
+        print("websocket-client not installed — live log streaming disabled (heartbeat/inventory unaffected)", file=sys.stderr)
+        return
+    ws_url = (
+        server.rstrip("/").replace("https://", "wss://", 1).replace("http://", "ws://", 1)
+        + "/agent/ws?name=" + urllib.parse.quote(name) + "&token=" + urllib.parse.quote(token)
+    )
+    while True:
+        try:
+            ws = ws_client.create_connection(ws_url, timeout=30)
+            print("live-log channel connected")
+            while True:
+                msg = ws.recv()
+                if not msg:
+                    break
+                handle_ws_message(ws, msg)
+        except Exception as e:
+            print(f"live-log channel error: {e}", file=sys.stderr)
+        time.sleep(10)
+
+
 def send_heartbeat(server, token, name):
     payload = {
         "name": name,
@@ -209,6 +307,8 @@ def main():
     parser.add_argument("--name", required=True)
     parser.add_argument("--interval", type=int, default=30)
     args = parser.parse_args()
+
+    threading.Thread(target=run_ws_agent, args=(args.server, args.token, args.name), daemon=True).start()
 
     while True:
         send_heartbeat(args.server, args.token, args.name)

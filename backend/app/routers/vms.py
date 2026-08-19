@@ -1,14 +1,16 @@
 import secrets
+import uuid
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from .. import schemas
 from ..audit import log_action
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..models import Container, Service, User, VM
-from ..security import get_current_user, hash_password, require_admin
+from ..security import get_current_user, get_user_from_token, hash_password, require_admin
+from ..streams import agent_sockets, browser_sockets
 
 router = APIRouter(prefix="/vms", tags=["vms"])
 
@@ -84,6 +86,57 @@ def list_containers(vm_id: str, db: Session = Depends(get_db), user: User = Depe
 def list_services(vm_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     vm = _get_accessible_vm(db, user, vm_id)
     return db.query(Service).filter(Service.vm_id == vm.id).order_by(Service.name).all()
+
+
+@router.websocket("/{vm_id}/logs/ws")
+async def logs_ws(websocket: WebSocket, vm_id: str, token: str, type: str, name: str):
+    await websocket.accept()
+
+    db = SessionLocal()
+    try:
+        user = get_user_from_token(token, db)
+        if not user:
+            await websocket.close(code=4401)
+            return
+        vm = db.query(VM).filter(VM.id == vm_id).first()
+        if not vm:
+            await websocket.close(code=4404)
+            return
+        if user.role != "admin":
+            allowed_ids = {a.vm_id for a in user.vm_access}
+            if vm.id not in allowed_ids:
+                await websocket.close(code=4403)
+                return
+        vm_name = vm.name
+    finally:
+        db.close()
+
+    agent_ws = agent_sockets.get(vm_name)
+    if agent_ws is None:
+        await websocket.send_text("[agent not connected]")
+        await websocket.close()
+        return
+
+    stream_id = str(uuid.uuid4())
+    browser_sockets[stream_id] = websocket
+    try:
+        await agent_ws.send_json({"action": "start_stream", "stream_id": stream_id, "type": type, "name": name})
+    except Exception:
+        browser_sockets.pop(stream_id, None)
+        await websocket.close()
+        return
+
+    try:
+        while True:
+            await websocket.receive_text()  # browser sends nothing meaningful; just blocks until disconnect
+    except WebSocketDisconnect:
+        pass
+    finally:
+        browser_sockets.pop(stream_id, None)
+        try:
+            await agent_ws.send_json({"action": "stop_stream", "stream_id": stream_id})
+        except Exception:
+            pass
 
 
 @router.delete("/{vm_id}", status_code=204)

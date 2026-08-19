@@ -1,14 +1,15 @@
 import os
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from .. import schemas
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..models import Container, Service, VM
 from ..security import verify_password
+from ..streams import agent_sockets, browser_sockets
 
 router = APIRouter(tags=["agent"])
 
@@ -47,3 +48,41 @@ def heartbeat(payload: schemas.HeartbeatIn, db: Session = Depends(get_db)):
 
     db.commit()
     return {"status": "ok"}
+
+
+@router.websocket("/agent/ws")
+async def agent_ws(websocket: WebSocket, name: str, token: str):
+    """Persistent, agent-initiated connection used only for on-demand live
+    log streaming — separate from the regular heartbeat POST. The agent
+    holds this open; the server pushes start/stop-stream commands down it
+    and relays log lines the agent sends back up to whichever browser
+    requested them. The agent still only ever dials out to the server."""
+    await websocket.accept()
+
+    db = SessionLocal()
+    try:
+        vm = db.query(VM).filter(VM.name == name).first()
+        valid = vm is not None and verify_password(token, vm.agent_token_hash)
+    finally:
+        db.close()
+
+    if not valid:
+        await websocket.close(code=4401)
+        return
+
+    agent_sockets[name] = websocket
+    try:
+        while True:
+            data = await websocket.receive_json()
+            stream_id = data.get("stream_id")
+            browser_ws = browser_sockets.get(stream_id)
+            if browser_ws:
+                try:
+                    await browser_ws.send_text(data.get("line", ""))
+                except Exception:
+                    pass
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if agent_sockets.get(name) is websocket:
+            del agent_sockets[name]

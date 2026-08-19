@@ -27,23 +27,27 @@ def create_access_token(subject: str) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    credentials_error = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+def get_user_from_token(token: str, db: Session) -> User | None:
+    """Shared by the HTTP auth dependency and WebSocket handlers (which have
+    no header-based auth, so take the token as a plain query param instead)."""
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         email = payload.get("sub")
         if not email:
-            raise credentials_error
+            return None
     except jwt.PyJWTError:
-        raise credentials_error
+        return None
+    return db.query(User).filter(User.email == email).first()
 
-    user = db.query(User).filter(User.email == email).first()
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    user = get_user_from_token(token, db)
     if not user:
-        raise credentials_error
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 

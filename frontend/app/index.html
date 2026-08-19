@@ -101,6 +101,11 @@
   .panel{ background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow); }
   table{ width:100%; border-collapse:collapse; font-size:12.5px; }
   thead th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); font-weight:700; padding:12px 14px 8px; }
+  th.sortable-th{ cursor:pointer; user-select:none; white-space:nowrap; }
+  th.sortable-th:hover{ color:var(--text); }
+  th.sortable-th .sort-arrow{ margin-left:4px; font-size:9px; opacity:.4; }
+  th.sortable-th.active{ color:var(--accent-strong); }
+  th.sortable-th.active .sort-arrow{ opacity:1; }
   tbody td{ padding:10px 14px; border-top:1px solid var(--border-soft); vertical-align:middle; }
   tbody tr:hover{ background:var(--surface-alt); }
   .mono{ font-family:var(--font-mono); }
@@ -301,14 +306,30 @@
 
           <div class="tab-panel" data-panel="docker">
             <div class="table-scroll">
-              <table><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>CPU</th><th>Memory</th><th>Restarts</th><th>Ports</th><th>Last seen</th><th>Monitor</th><th>Logs</th><th></th></tr></thead>
+              <table><thead><tr>
+                <th class="sortable-th" data-sort-key="name">Name<span class="sort-arrow">⇅</span></th>
+                <th class="sortable-th" data-sort-key="image">Image<span class="sort-arrow">⇅</span></th>
+                <th class="sortable-th" data-sort-key="status">Status<span class="sort-arrow">⇅</span></th>
+                <th class="sortable-th" data-sort-key="cpu_percent">CPU<span class="sort-arrow">⇅</span></th>
+                <th class="sortable-th" data-sort-key="mem_usage">Memory<span class="sort-arrow">⇅</span></th>
+                <th class="sortable-th" data-sort-key="restart_count">Restarts<span class="sort-arrow">⇅</span></th>
+                <th class="sortable-th" data-sort-key="ports">Ports<span class="sort-arrow">⇅</span></th>
+                <th class="sortable-th" data-sort-key="last_seen">Last seen<span class="sort-arrow">⇅</span></th>
+                <th>Monitor</th><th>Logs</th><th></th>
+              </tr></thead>
               <tbody id="dockerBody"></tbody></table>
             </div>
           </div>
 
           <div class="tab-panel" data-panel="systemd">
             <div class="table-scroll">
-              <table><thead><tr><th>Name</th><th>Active</th><th>Sub-state</th><th>Last seen</th><th>Monitor</th><th>Logs</th><th></th></tr></thead>
+              <table><thead><tr>
+                <th class="sortable-th" data-sort-key="name">Name<span class="sort-arrow">⇅</span></th>
+                <th class="sortable-th" data-sort-key="status">Active<span class="sort-arrow">⇅</span></th>
+                <th class="sortable-th" data-sort-key="sub_state">Sub-state<span class="sort-arrow">⇅</span></th>
+                <th class="sortable-th" data-sort-key="last_seen">Last seen<span class="sort-arrow">⇅</span></th>
+                <th>Monitor</th><th>Logs</th><th></th>
+              </tr></thead>
               <tbody id="systemdBody"></tbody></table>
             </div>
           </div>
@@ -434,6 +455,8 @@ let vms = [];
 let users = [];
 let vmDetails = {}; // vmId -> { containers, services }
 let selectedVmId = null;
+let dockerSort = { key: null, dir: 'asc' };
+let systemdSort = { key: null, dir: 'asc' };
 
 async function api(path, options = {}) {
   const headers = options.headers || {};
@@ -710,9 +733,10 @@ function renderDetail(id) {
     });
   }
 
-  $('#dockerBody').innerHTML = data.containers.length === 0
+  const sortedContainers = sortList(data.containers, dockerSort, dockerAccessors);
+  $('#dockerBody').innerHTML = sortedContainers.length === 0
     ? `<tr><td colspan="11" class="empty-state">No containers reported yet.</td></tr>`
-    : data.containers.map(c => `
+    : sortedContainers.map(c => `
         <tr class="${c.monitor_enabled ? '' : 'row-dimmed'}">
           <td><strong>${c.name}</strong></td>
           <td class="cell-sub">${c.image || '—'}</td>
@@ -730,10 +754,12 @@ function renderDetail(id) {
     btn.addEventListener('click', () => jumpToLiveLogs('container', btn.dataset.liveContainer));
   });
   wireResourceToggles('#dockerBody');
+  updateSortIndicators('[data-panel="docker"] table', dockerSort);
 
-  $('#systemdBody').innerHTML = data.services.length === 0
+  const sortedServices = sortList(data.services, systemdSort, systemdAccessors);
+  $('#systemdBody').innerHTML = sortedServices.length === 0
     ? `<tr><td colspan="7" class="empty-state">No services reported yet.</td></tr>`
-    : data.services.map(s => `
+    : sortedServices.map(s => `
         <tr class="${s.monitor_enabled ? '' : 'row-dimmed'}">
           <td>${s.name}</td>
           <td><span class="pill ${s.status === 'active' ? 'online' : s.status === 'failed' ? 'failed' : 'offline'}">${s.status}</span></td>
@@ -747,6 +773,7 @@ function renderDetail(id) {
     btn.addEventListener('click', () => jumpToLiveLogs('service', btn.dataset.liveService));
   });
   wireResourceToggles('#systemdBody');
+  updateSortIndicators('[data-panel="systemd"] table', systemdSort);
 }
 
 document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
@@ -815,6 +842,70 @@ function appendLiveLogLine(raw) {
   container.appendChild(lineEl);
   if ($('#liveLogsAutoscroll').checked) container.scrollTop = container.scrollHeight;
 }
+
+const dockerAccessors = {
+  name: c => c.name,
+  image: c => c.image,
+  status: c => c.status,
+  cpu_percent: c => c.cpu_percent,
+  mem_usage: c => c.mem_usage,
+  restart_count: c => c.restart_count,
+  ports: c => c.ports,
+  last_seen: c => new Date(c.last_seen).getTime(),
+};
+
+const systemdAccessors = {
+  name: s => s.name,
+  status: s => s.status,
+  sub_state: s => s.sub_state,
+  last_seen: s => new Date(s.last_seen).getTime(),
+};
+
+function compareValues(a, b) {
+  const aEmpty = a === null || a === undefined || a === '';
+  const bEmpty = b === null || b === undefined || b === '';
+  if (aEmpty && bEmpty) return 0;
+  if (aEmpty) return 1;  // empty values sort last regardless of direction
+  if (bEmpty) return -1;
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function sortList(list, sortState, accessors) {
+  if (!sortState.key) return list;
+  const get = accessors[sortState.key];
+  const sorted = [...list].sort((a, b) => compareValues(get(a), get(b)));
+  return sortState.dir === 'desc' ? sorted.reverse() : sorted;
+}
+
+function updateSortIndicators(tableSelector, sortState) {
+  document.querySelectorAll(tableSelector + ' [data-sort-key]').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    if (th.dataset.sortKey === sortState.key) {
+      arrow.textContent = sortState.dir === 'asc' ? '▲' : '▼';
+      th.classList.add('active');
+    } else {
+      arrow.textContent = '⇅';
+      th.classList.remove('active');
+    }
+  });
+}
+
+function setupSortableHeaders(tableSelector, sortState, onSort) {
+  document.querySelectorAll(tableSelector + ' [data-sort-key]').forEach(th => {
+    th.addEventListener('click', () => {
+      if (sortState.key === th.dataset.sortKey) {
+        sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortState.key = th.dataset.sortKey;
+        sortState.dir = 'asc';
+      }
+      onSort();
+    });
+  });
+}
+setupSortableHeaders('[data-panel="docker"] table', dockerSort, () => renderDetail(selectedVmId));
+setupSortableHeaders('[data-panel="systemd"] table', systemdSort, () => renderDetail(selectedVmId));
 
 function toggleHtml(resourceType, name, field, checked) {
   const disabled = me.role === 'admin' ? '' : 'disabled';

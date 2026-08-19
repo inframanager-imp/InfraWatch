@@ -141,6 +141,39 @@ def update_resource_setting(vm_id: str, payload: schemas.ResourceSettingUpdate, 
     return setting
 
 
+@router.put("/{vm_id}/resource-settings/bulk", status_code=204)
+def bulk_update_resource_settings(vm_id: str, payload: schemas.ResourceSettingBulkUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Sets one field (monitor_enabled/logs_enabled) to the same value for every
+    currently-known container/service on this VM in a single transaction —
+    some VMs report hundreds of systemd services, so this must not be a loop
+    of one HTTP request per resource from the frontend."""
+    vm = db.query(VM).filter(VM.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if payload.resource_type not in ("container", "service"):
+        raise HTTPException(status_code=400, detail="resource_type must be 'container' or 'service'")
+    if payload.field not in ("monitor_enabled", "logs_enabled"):
+        raise HTTPException(status_code=400, detail="field must be 'monitor_enabled' or 'logs_enabled'")
+
+    model = Container if payload.resource_type == "container" else Service
+    names = [row[0] for row in db.query(model.name).filter(model.vm_id == vm.id).all()]
+
+    existing = {
+        row.name: row for row in db.query(ResourceSetting).filter(
+            ResourceSetting.vm_id == vm.id, ResourceSetting.resource_type == payload.resource_type
+        ).all()
+    }
+    for name in names:
+        setting = existing.get(name)
+        if not setting:
+            setting = ResourceSetting(vm_id=vm.id, resource_type=payload.resource_type, name=name)
+            db.add(setting)
+        setattr(setting, payload.field, payload.value)
+
+    db.commit()
+    log_action(db, admin.email, "resource_setting.bulk_update", target=f"{vm.name}:{payload.resource_type}:{payload.field}={payload.value}")
+
+
 @router.get("/{vm_id}/log-sources", response_model=list[schemas.LogSourceOut])
 def list_log_sources(vm_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     vm = _get_accessible_vm(db, user, vm_id)

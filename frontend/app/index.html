@@ -129,6 +129,9 @@
   .toggle-switch input:disabled{ cursor:not-allowed; }
   .toggle-switch input:disabled + .toggle-slider{ opacity:.5; }
   tr.row-dimmed{ opacity:.55; }
+  .bulk-toggle-bar{ display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+  .bulk-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); margin-left:6px; }
+  .bulk-label:first-child{ margin-left:0; }
 
   .env-tag{ font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:2px 6px; border-radius:4px; flex:none; }
   .env-tag.production{ background:var(--crit-soft); color:var(--crit); }
@@ -305,6 +308,14 @@
           <div class="tab-panel active" data-panel="overview" id="panelOverview"></div>
 
           <div class="tab-panel" data-panel="docker">
+            <div class="bulk-toggle-bar" id="dockerBulkBar">
+              <span class="bulk-label">Monitor</span>
+              <button class="btn small" data-bulk="container:monitor_enabled:true">All on</button>
+              <button class="btn small" data-bulk="container:monitor_enabled:false">All off</button>
+              <span class="bulk-label">Logs</span>
+              <button class="btn small" data-bulk="container:logs_enabled:true">All on</button>
+              <button class="btn small" data-bulk="container:logs_enabled:false">All off</button>
+            </div>
             <div class="table-scroll">
               <table><thead><tr>
                 <th class="sortable-th" data-sort-key="name">Name<span class="sort-arrow">⇅</span></th>
@@ -322,6 +333,14 @@
           </div>
 
           <div class="tab-panel" data-panel="systemd">
+            <div class="bulk-toggle-bar" id="systemdBulkBar">
+              <span class="bulk-label">Monitor</span>
+              <button class="btn small" data-bulk="service:monitor_enabled:true">All on</button>
+              <button class="btn small" data-bulk="service:monitor_enabled:false">All off</button>
+              <span class="bulk-label">Logs</span>
+              <button class="btn small" data-bulk="service:logs_enabled:true">All on</button>
+              <button class="btn small" data-bulk="service:logs_enabled:false">All off</button>
+            </div>
             <div class="table-scroll">
               <table><thead><tr>
                 <th class="sortable-th" data-sort-key="name">Name<span class="sort-arrow">⇅</span></th>
@@ -509,6 +528,8 @@ async function bootApp() {
   $('#userEmail').textContent = me.email;
   $('#addVmBtn').style.display = me.role === 'admin' ? 'block' : 'none';
   $('#navUsers').style.display = me.role === 'admin' ? 'block' : 'none';
+  $('#dockerBulkBar').style.display = me.role === 'admin' ? 'flex' : 'none';
+  $('#systemdBulkBar').style.display = me.role === 'admin' ? 'flex' : 'none';
 
   environments = await api('/environments');
   $('#vmEnv').innerHTML = environments.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
@@ -906,6 +927,29 @@ function setupSortableHeaders(tableSelector, sortState, onSort) {
 }
 setupSortableHeaders('[data-panel="docker"] table', dockerSort, () => renderDetail(selectedVmId));
 setupSortableHeaders('[data-panel="systemd"] table', systemdSort, () => renderDetail(selectedVmId));
+
+function wireBulkToggles(barSelector) {
+  document.querySelectorAll(barSelector + ' [data-bulk]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const [resourceType, field, valueStr] = btn.dataset.bulk.split(':');
+      btn.disabled = true;
+      try {
+        await api('/vms/' + selectedVmId + '/resource-settings/bulk', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resource_type: resourceType, field, value: valueStr === 'true' }),
+        });
+        await loadVms();
+      } catch (err) {
+        alert('Could not update settings: ' + err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+wireBulkToggles('#dockerBulkBar');
+wireBulkToggles('#systemdBulkBar');
 
 function toggleHtml(resourceType, name, field, checked) {
   const disabled = me.role === 'admin' ? '' : 'disabled';

@@ -148,6 +148,12 @@ class ResourceSettingUpdate(BaseModel):
     logs_enabled: Optional[bool] = None
 
 
+class ResourceSettingBulkUpdate(BaseModel):
+    resource_type: str
+    field: str
+    value: bool
+
+
 class HeartbeatIn(BaseModel):
     name: str
     token: str

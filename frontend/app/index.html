@@ -196,15 +196,14 @@
   .autoscroll-label input{ accent-color:var(--accent); }
   .btn.active-toggle{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong); }
   .log-line.hidden{ display:none; }
-  .log-line{ display:flex; gap:12px; padding:2.5px 14px; white-space:pre-wrap; word-break:break-word; }
+  .log-line{ display:flex; align-items:flex-start; gap:10px; padding:2.5px 14px; }
   .log-line:hover{ background:#131C22; }
-  .log-line .ts{ color:#5D6E75; flex:none; }
-  .log-line .msg{ color:#C9D6DA; flex:1; min-width:0; }
-  .log-lvl{ font-weight:700; }
-  .log-lvl.INFO{ color:#5FB3C7; }
-  .log-lvl.WARN{ color:#E2A23B; }
-  .log-lvl.ERROR{ color:#F0564A; }
-  .log-lvl.DEBUG{ color:#6B7680; }
+  .log-line .msg{ color:#C9D6DA; flex:1; min-width:0; white-space:pre-wrap; word-break:break-word; }
+  .lvl-badge{ flex:0 0 46px; margin-top:1px; text-align:center; font-size:9.5px; font-weight:700; letter-spacing:.02em; border-radius:4px; padding:1.5px 0; }
+  .lvl-badge.INFO{ background:rgba(95,179,199,.15); color:#5FB3C7; }
+  .lvl-badge.WARN{ background:rgba(226,162,59,.15); color:#E2A23B; }
+  .lvl-badge.ERROR{ background:rgba(240,86,74,.15); color:#F0564A; }
+  .lvl-badge.DEBUG{ background:rgba(107,118,128,.15); color:#6B7680; }
   .terminal .empty-state{ color:#5D6E75; }
   .token-line{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:10px; }
   .checkbox-row{ display:flex; align-items:center; gap:8px; font-size:12.5px; padding:4px 0; }
@@ -757,8 +756,10 @@ document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', (
 // container). Trying to pattern-match every one of them is an unwinnable
 // game of whack-a-mole, and produces exactly what it looks like: some
 // lines get a tidy timestamp column and others don't, which reads as
-// broken alignment. Rendering every line the same way — full text, level
-// word highlighted inline — is less clever but actually consistent.
+// broken alignment. What we CAN align on every line, regardless of source,
+// is a fixed-width level badge column (blank when no level is detected) —
+// that's what actually makes the viewer look like a grid instead of a
+// wall of text, without pretending we can parse a column we can't.
 const LEVEL_PATTERN = /\b(ERROR|WARN(?:ING)?|INFO|DEBUG)\b/i;
 let liveLogsSocket = null;
 let liveLogsPaused = false;
@@ -776,20 +777,11 @@ function detectLevel(text) {
   return lvl === 'WARNING' ? 'WARN' : lvl;
 }
 
-// Highlights the level word inline (escapedText is already HTML-escaped) —
-// filtering already knows the level via data-level, this is purely visual
-// so INFO/WARN/ERROR/DEBUG stand out at a glance in a long, dense real line.
-function highlightLevel(escapedText) {
-  return escapedText.replace(LEVEL_PATTERN, m => {
-    const lvl = m.toUpperCase() === 'WARNING' ? 'WARN' : m.toUpperCase();
-    return `<span class="log-lvl ${lvl}">${m}</span>`;
-  });
-}
-
 function logLineHtml(line) {
   const level = detectLevel(line);
   const levelAttr = level ? ` data-level="${level}"` : '';
-  return `<div class="log-line"${levelAttr}><span class="msg">${highlightLevel(escapeHtml(line))}</span></div>`;
+  const badge = level ? `<span class="lvl-badge ${level}">${level}</span>` : `<span class="lvl-badge"></span>`;
+  return `<div class="log-line"${levelAttr}>${badge}<span class="msg">${escapeHtml(line)}</span></div>`;
 }
 
 function wsBase() {

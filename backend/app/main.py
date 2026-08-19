@@ -2,12 +2,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .database import Base, SessionLocal, engine
+from .database import SessionLocal
 from .routers import agent, auth, environments, users, vms
 from .seed import seed
 
-Base.metadata.create_all(bind=engine)
-
+# Schema is owned by Alembic (see alembic/), applied via `alembic upgrade
+# head` in the container entrypoint before this app starts — not by
+# create_all(), which can only add new tables and silently never alters
+# existing ones.
 app = FastAPI(title="InfraWatch API")
 
 # CORS_ORIGINS="*" (default, local dev) or a comma-separated list of real origins in production.

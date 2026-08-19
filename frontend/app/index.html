@@ -181,6 +181,21 @@
   .terminal{ background:#0B1013; border:1px solid #1E2A30; border-radius:8px; max-height:440px; overflow-y:auto; padding:8px 0; font-family:var(--font-mono); font-size:12px; }
   .log-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
   .log-select{ border:1px solid var(--border); background:var(--surface); border-radius:6px; padding:6px 9px; font-size:12px; font-family:var(--font-mono); }
+  .log-toolbar{ flex-wrap:wrap; }
+  .log-search{ display:flex; align-items:center; background:var(--surface-alt); border:1px solid var(--border); border-radius:6px; padding:6px 9px; flex:1; min-width:140px; }
+  .log-search input{ border:0; background:transparent; outline:0; width:100%; font-family:var(--font-mono); font-size:12px; color:var(--text); }
+  .level-toggle{ display:flex; gap:4px; }
+  .lvl-chip{ font-family:var(--font-mono); font-size:10.5px; font-weight:700; padding:4px 7px; border-radius:5px; border:1px solid var(--border); background:var(--surface); cursor:pointer; opacity:.45; }
+  .lvl-chip.on{ opacity:1; }
+  .lvl-chip.info.on{ color:#4FA8C4; border-color:#4FA8C4; }
+  .lvl-chip.warn.on{ color:var(--warn); border-color:var(--warn); }
+  .lvl-chip.error.on{ color:var(--crit); border-color:var(--crit); }
+  .lvl-chip.debug.on{ color:var(--text-faint); border-color:var(--text-faint); }
+  .log-footbar{ display:flex; align-items:center; gap:10px; margin-top:9px; flex-wrap:wrap; }
+  .autoscroll-label{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); }
+  .autoscroll-label input{ accent-color:var(--accent); }
+  .btn.active-toggle{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong); }
+  .log-line.hidden{ display:none; }
   .log-line{ display:flex; gap:12px; padding:2.5px 14px; white-space:pre-wrap; word-break:break-word; }
   .log-line:hover{ background:#131C22; }
   .log-line .ts{ color:#5D6E75; flex:none; }
@@ -287,10 +302,25 @@
             <div id="liveLogsBody" style="display:none">
               <div class="log-toolbar">
                 <select class="log-select" id="liveLogsSelect"></select>
+                <div class="log-search">
+                  <input type="text" id="liveLogsSearch" placeholder="Filter log lines…" />
+                </div>
+                <div class="level-toggle" id="liveLogsLevelToggle">
+                  <button class="lvl-chip info on" data-lvl="INFO">INFO</button>
+                  <button class="lvl-chip warn on" data-lvl="WARN">WARN</button>
+                  <button class="lvl-chip error on" data-lvl="ERROR">ERROR</button>
+                  <button class="lvl-chip debug on" data-lvl="DEBUG">DEBUG</button>
+                </div>
                 <span class="cell-sub" id="liveLogsUpdated"></span>
               </div>
               <div class="terminal" id="liveLogsContent"></div>
-              <p class="modal-hint" style="margin:8px 0 0">Live — streamed directly from the agent as new lines are written (⚙ = systemd service, ▣ = Docker container).</p>
+              <div class="log-footbar">
+                <button class="btn primary" id="liveLogsPauseBtn" style="width:auto">⏸ Pause</button>
+                <label class="autoscroll-label"><input type="checkbox" id="liveLogsAutoscroll" checked /> Auto-scroll</label>
+                <button class="btn" id="liveLogsClearBtn">Clear</button>
+                <button class="btn" id="liveLogsExportBtn">Export logs</button>
+                <span class="cell-sub" style="margin-left:auto">⚙ = systemd service, ▣ = Docker container</span>
+              </div>
             </div>
           </div>
 
@@ -656,22 +686,58 @@ document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', (
 
 /* live logs tab — real streaming over a WebSocket, agent -> server -> browser */
 const TS_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s(.*)$/s;
+const LEVEL_PATTERN = /\b(ERROR|WARN(?:ING)?|INFO|DEBUG)\b/;
 let liveLogsSocket = null;
+let liveLogsPaused = false;
+let liveLogsBuffer = [];
 
 function renderLogLines(text) {
   if (!text || !text.trim()) return '<div class="empty-state">No log output captured.</div>';
   return text.split('\n').map(line => logLineHtml(line)).join('');
 }
 
+function detectLevel(text) {
+  const m = text.match(LEVEL_PATTERN);
+  if (!m) return null;
+  const lvl = m[1].toUpperCase();
+  return lvl === 'WARNING' ? 'WARN' : lvl;
+}
+
 function logLineHtml(line) {
+  const level = detectLevel(line);
+  const levelAttr = level ? ` data-level="${level}"` : '';
   const match = line.match(TS_PATTERN);
-  if (!match) return `<div class="log-line"><span class="msg">${escapeHtml(line)}</span></div>`;
+  if (!match) return `<div class="log-line"${levelAttr}><span class="msg">${escapeHtml(line)}</span></div>`;
   const time = new Date(match[1]).toLocaleTimeString();
-  return `<div class="log-line"><span class="ts">${time}</span><span class="msg">${escapeHtml(match[2])}</span></div>`;
+  return `<div class="log-line"${levelAttr}><span class="ts">${time}</span><span class="msg">${escapeHtml(match[2])}</span></div>`;
 }
 
 function wsBase() {
   return API_BASE.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+}
+
+function lineMatchesFilters(el) {
+  const search = $('#liveLogsSearch').value.toLowerCase();
+  const activeLevels = [...document.querySelectorAll('#liveLogsLevelToggle .lvl-chip.on')].map(c => c.dataset.lvl);
+  const level = el.dataset.level;
+  const text = el.textContent.toLowerCase();
+  return (!level || activeLevels.includes(level)) && (!search || text.includes(search));
+}
+
+function applyLiveLogFilters() {
+  document.querySelectorAll('#liveLogsContent .log-line').forEach(el => {
+    el.classList.toggle('hidden', !lineMatchesFilters(el));
+  });
+}
+
+function appendLiveLogLine(raw) {
+  const container = $('#liveLogsContent');
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = logLineHtml(raw);
+  const lineEl = wrapper.firstElementChild;
+  lineEl.classList.toggle('hidden', !lineMatchesFilters(lineEl));
+  container.appendChild(lineEl);
+  if ($('#liveLogsAutoscroll').checked) container.scrollTop = container.scrollHeight;
 }
 
 function startLiveLogsPolling() {
@@ -695,6 +761,13 @@ function startLiveLogsPolling() {
 
 function connectLiveLogsStream() {
   if (liveLogsSocket) { liveLogsSocket.close(); liveLogsSocket = null; }
+  liveLogsPaused = false;
+  liveLogsBuffer = [];
+  $('#liveLogsPauseBtn').textContent = '⏸ Pause';
+  $('#liveLogsPauseBtn').classList.remove('active-toggle');
+  $('#liveLogsSearch').value = '';
+  document.querySelectorAll('#liveLogsLevelToggle .lvl-chip').forEach(c => c.classList.add('on'));
+
   const [type, name] = $('#liveLogsSelect').value.split('::');
   const vmId = selectedVmId;
   $('#liveLogsContent').innerHTML = '';
@@ -706,9 +779,8 @@ function connectLiveLogsStream() {
 
   socket.onopen = () => { $('#liveLogsUpdated').textContent = '● Live'; };
   socket.onmessage = ev => {
-    const el = $('#liveLogsContent');
-    el.insertAdjacentHTML('beforeend', logLineHtml(ev.data));
-    el.scrollTop = el.scrollHeight;
+    if (liveLogsPaused) { liveLogsBuffer.push(ev.data); return; }
+    appendLiveLogLine(ev.data);
   };
   socket.onclose = () => { if (liveLogsSocket === socket) $('#liveLogsUpdated').textContent = '○ Disconnected'; };
   socket.onerror = () => { $('#liveLogsUpdated').textContent = '⚠ Connection error'; };
@@ -717,7 +789,38 @@ function connectLiveLogsStream() {
 function stopLiveLogsPolling() {
   if (liveLogsSocket) { liveLogsSocket.close(); liveLogsSocket = null; }
 }
+
+function exportLiveLogs() {
+  const lines = [...document.querySelectorAll('#liveLogsContent .log-line')].map(el => el.textContent.trim());
+  if (lines.length === 0) return;
+  const target = ($('#liveLogsSelect').value.split('::')[1] || 'logs').replace(/[^a-z0-9_.-]/gi, '_');
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${target}-${Date.now()}.log`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 $('#liveLogsSelect').addEventListener('change', connectLiveLogsStream);
+$('#liveLogsSearch').addEventListener('input', applyLiveLogFilters);
+document.querySelectorAll('#liveLogsLevelToggle .lvl-chip').forEach(chip => {
+  chip.addEventListener('click', () => { chip.classList.toggle('on'); applyLiveLogFilters(); });
+});
+$('#liveLogsPauseBtn').addEventListener('click', () => {
+  liveLogsPaused = !liveLogsPaused;
+  $('#liveLogsPauseBtn').textContent = liveLogsPaused ? '▶ Resume' : '⏸ Pause';
+  $('#liveLogsPauseBtn').classList.toggle('active-toggle', liveLogsPaused);
+  if (!liveLogsPaused) {
+    liveLogsBuffer.forEach(raw => appendLiveLogLine(raw));
+    liveLogsBuffer = [];
+  }
+});
+$('#liveLogsClearBtn').addEventListener('click', () => { $('#liveLogsContent').innerHTML = ''; });
+$('#liveLogsExportBtn').addEventListener('click', exportLiveLogs);
 
 /* add VM modal */
 $('#addVmBtn').addEventListener('click', () => {

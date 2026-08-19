@@ -87,6 +87,7 @@ Outbound-only: this process only ever makes requests to the server; the
 server never connects into this VM.
 """
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -102,6 +103,13 @@ try:
     import websocket as ws_client  # optional — only needed for live log streaming
 except ImportError:
     ws_client = None
+
+AGENT_PATH = "/opt/infrawatch-agent/agent.py"
+# The install script is this agent's one source of truth — self-update just
+# re-reads the exact same heredoc block a fresh install would write, so
+# there's never a second copy of the source to drift out of sync.
+_SRC_START = "cat > /opt/infrawatch-agent/agent.py << 'PYEOF'\n"
+_SRC_END = "\nPYEOF\n"
 
 # Delta state between heartbeats, for CPU %.
 _last_cpu = None
@@ -313,6 +321,54 @@ def run_ws_agent(server, token, name):
         time.sleep(10)
 
 
+def extract_agent_source(install_script_text):
+    """Pulls the exact bytes the heredoc in install-agent.sh would write to
+    AGENT_PATH out of the full script text — same source, same output,
+    whether it comes from a fresh install or this function."""
+    start = install_script_text.index(_SRC_START) + len(_SRC_START)
+    end = install_script_text.index(_SRC_END, start) + 1  # +1 keeps the trailing newline the heredoc itself writes
+    return install_script_text[start:end]
+
+
+def check_for_update(server):
+    """Fetches install-agent.sh, extracts the embedded agent source, and — only
+    if it's valid Python and actually different from what's on disk — replaces
+    the running copy and restarts. The syntax check means a broken deploy on
+    the server can't crash-loop every agent in the fleet; it just gets skipped
+    until the server-side content is fixed."""
+    try:
+        with urllib.request.urlopen(server.rstrip("/") + "/install-agent.sh", timeout=20) as resp:
+            script_text = resp.read().decode("utf-8")
+        latest = extract_agent_source(script_text)
+    except Exception as e:
+        print(f"update check failed: {e}", file=sys.stderr)
+        return
+
+    try:
+        compile(latest, AGENT_PATH, "exec")
+    except SyntaxError as e:
+        print(f"update check: fetched source doesn't parse, skipping this cycle: {e}", file=sys.stderr)
+        return
+
+    try:
+        with open(AGENT_PATH) as f:
+            current = f.read()
+    except Exception:
+        current = ""
+
+    if hashlib.sha256(latest.encode()).hexdigest() == hashlib.sha256(current.encode()).hexdigest():
+        return
+
+    print("update check: newer agent version available, updating and restarting")
+    tmp_path = AGENT_PATH + ".new"
+    with open(tmp_path, "w") as f:
+        f.write(latest)
+    os.replace(tmp_path, AGENT_PATH)  # atomic — never leaves a half-written agent.py
+    subprocess.Popen(["systemctl", "restart", "--no-block", "infrawatch-agent"])
+    time.sleep(2)
+    sys.exit(0)
+
+
 def send_heartbeat(server, token, name):
     payload = {
         "name": name,
@@ -348,8 +404,13 @@ def main():
 
     threading.Thread(target=run_ws_agent, args=(args.server, args.token, args.name), daemon=True).start()
 
+    update_check_every = max(1, 600 // args.interval)  # roughly every 10 minutes
+    tick = 0
     while True:
         send_heartbeat(args.server, args.token, args.name)
+        tick += 1
+        if tick % update_check_every == 0:
+            check_for_update(args.server)
         time.sleep(args.interval)
 
 

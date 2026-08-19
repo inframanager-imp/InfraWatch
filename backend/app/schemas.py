@@ -79,6 +79,8 @@ class ContainerOut(BaseModel):
     restart_count: Optional[int]
     ports: Optional[str]
     last_seen: datetime
+    monitor_enabled: bool = True
+    logs_enabled: bool = True
 
     class Config:
         from_attributes = True
@@ -90,6 +92,8 @@ class ServiceOut(BaseModel):
     status: str
     sub_state: Optional[str]
     last_seen: datetime
+    monitor_enabled: bool = True
+    logs_enabled: bool = True
 
     class Config:
         from_attributes = True
@@ -125,6 +129,23 @@ class LogSourceOut(BaseModel):
 class LogSourceCreate(BaseModel):
     name: str
     path: str
+
+
+class ResourceSettingOut(BaseModel):
+    resource_type: str
+    name: str
+    monitor_enabled: bool
+    logs_enabled: bool
+
+    class Config:
+        from_attributes = True
+
+
+class ResourceSettingUpdate(BaseModel):
+    resource_type: str
+    name: str
+    monitor_enabled: Optional[bool] = None
+    logs_enabled: Optional[bool] = None
 
 
 class HeartbeatIn(BaseModel):

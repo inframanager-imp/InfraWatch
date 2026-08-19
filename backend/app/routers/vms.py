@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import schemas
 from ..audit import log_action
 from ..database import SessionLocal, get_db
-from ..models import Container, LogSource, Service, User, VM
+from ..models import Container, LogSource, ResourceSetting, Service, User, VM
 from ..security import get_current_user, get_user_from_token, hash_password, require_admin
 from ..streams import agent_sockets, browser_sockets
 
@@ -76,16 +76,69 @@ def create_vm(payload: schemas.VMCreate, db: Session = Depends(get_db), admin: U
     return schemas.VMCreated(**out.model_dump(), agent_token=agent_token)
 
 
+def _settings_map(db: Session, vm_id: str, resource_type: str) -> dict[str, ResourceSetting]:
+    rows = db.query(ResourceSetting).filter(
+        ResourceSetting.vm_id == vm_id, ResourceSetting.resource_type == resource_type
+    ).all()
+    return {row.name: row for row in rows}
+
+
 @router.get("/{vm_id}/containers", response_model=list[schemas.ContainerOut])
 def list_containers(vm_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     vm = _get_accessible_vm(db, user, vm_id)
-    return db.query(Container).filter(Container.vm_id == vm.id).order_by(Container.name).all()
+    containers = db.query(Container).filter(Container.vm_id == vm.id).order_by(Container.name).all()
+    settings = _settings_map(db, vm.id, "container")
+    out = []
+    for c in containers:
+        item = schemas.ContainerOut.model_validate(c)
+        s = settings.get(c.name)
+        if s:
+            item.monitor_enabled = s.monitor_enabled
+            item.logs_enabled = s.logs_enabled
+        out.append(item)
+    return out
 
 
 @router.get("/{vm_id}/services", response_model=list[schemas.ServiceOut])
 def list_services(vm_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     vm = _get_accessible_vm(db, user, vm_id)
-    return db.query(Service).filter(Service.vm_id == vm.id).order_by(Service.name).all()
+    services = db.query(Service).filter(Service.vm_id == vm.id).order_by(Service.name).all()
+    settings = _settings_map(db, vm.id, "service")
+    out = []
+    for s_row in services:
+        item = schemas.ServiceOut.model_validate(s_row)
+        s = settings.get(s_row.name)
+        if s:
+            item.monitor_enabled = s.monitor_enabled
+            item.logs_enabled = s.logs_enabled
+        out.append(item)
+    return out
+
+
+@router.put("/{vm_id}/resource-settings", response_model=schemas.ResourceSettingOut)
+def update_resource_setting(vm_id: str, payload: schemas.ResourceSettingUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    vm = db.query(VM).filter(VM.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if payload.resource_type not in ("container", "service"):
+        raise HTTPException(status_code=400, detail="resource_type must be 'container' or 'service'")
+
+    setting = db.query(ResourceSetting).filter(
+        ResourceSetting.vm_id == vm.id,
+        ResourceSetting.resource_type == payload.resource_type,
+        ResourceSetting.name == payload.name,
+    ).first()
+    if not setting:
+        setting = ResourceSetting(vm_id=vm.id, resource_type=payload.resource_type, name=payload.name)
+        db.add(setting)
+    if payload.monitor_enabled is not None:
+        setting.monitor_enabled = payload.monitor_enabled
+    if payload.logs_enabled is not None:
+        setting.logs_enabled = payload.logs_enabled
+    db.commit()
+    db.refresh(setting)
+    log_action(db, admin.email, "resource_setting.update", target=f"{vm.name}:{payload.resource_type}:{payload.name}")
+    return setting
 
 
 @router.get("/{vm_id}/log-sources", response_model=list[schemas.LogSourceOut])

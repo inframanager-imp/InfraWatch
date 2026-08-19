@@ -115,6 +115,16 @@
   .pill.failed{ background:var(--crit-soft); color:var(--crit); }
   .pill i{ width:6px; height:6px; border-radius:50%; background:currentColor; }
 
+  .toggle-switch{ position:relative; display:inline-block; width:34px; height:18px; vertical-align:middle; }
+  .toggle-switch input{ position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
+  .toggle-slider{ position:absolute; inset:0; background:var(--border); border-radius:99px; transition:background .15s; pointer-events:none; }
+  .toggle-slider::before{ content:''; position:absolute; width:14px; height:14px; left:2px; top:2px; background:#fff; border-radius:50%; transition:transform .15s; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+  .toggle-switch input:checked + .toggle-slider{ background:var(--accent); }
+  .toggle-switch input:checked + .toggle-slider::before{ transform:translateX(16px); }
+  .toggle-switch input:disabled{ cursor:not-allowed; }
+  .toggle-switch input:disabled + .toggle-slider{ opacity:.5; }
+  tr.row-dimmed{ opacity:.55; }
+
   .env-tag{ font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:2px 6px; border-radius:4px; flex:none; }
   .env-tag.production{ background:var(--crit-soft); color:var(--crit); }
   .env-tag.staging{ background:var(--warn-soft); color:var(--warn); }
@@ -291,14 +301,14 @@
 
           <div class="tab-panel" data-panel="docker">
             <div class="table-scroll">
-              <table><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>CPU</th><th>Memory</th><th>Restarts</th><th>Ports</th><th>Last seen</th><th></th></tr></thead>
+              <table><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>CPU</th><th>Memory</th><th>Restarts</th><th>Ports</th><th>Last seen</th><th>Monitor</th><th>Logs</th><th></th></tr></thead>
               <tbody id="dockerBody"></tbody></table>
             </div>
           </div>
 
           <div class="tab-panel" data-panel="systemd">
             <div class="table-scroll">
-              <table><thead><tr><th>Name</th><th>Active</th><th>Sub-state</th><th>Last seen</th><th></th></tr></thead>
+              <table><thead><tr><th>Name</th><th>Active</th><th>Sub-state</th><th>Last seen</th><th>Monitor</th><th>Logs</th><th></th></tr></thead>
               <tbody id="systemdBody"></tbody></table>
             </div>
           </div>
@@ -515,11 +525,13 @@ function renderStats() {
 
   let cTotal = 0, cRunning = 0, sTotal = 0, sRunning = 0, sFailed = 0;
   Object.values(vmDetails).forEach(d => {
-    cTotal += d.containers.length;
-    cRunning += d.containers.filter(c => /up/i.test(c.status)).length;
-    sTotal += d.services.length;
-    sRunning += d.services.filter(s => s.status === 'active').length;
-    sFailed += d.services.filter(s => s.status === 'failed').length;
+    const containers = d.containers.filter(c => c.monitor_enabled);
+    const services = d.services.filter(s => s.monitor_enabled);
+    cTotal += containers.length;
+    cRunning += containers.filter(c => /up/i.test(c.status)).length;
+    sTotal += services.length;
+    sRunning += services.filter(s => s.status === 'active').length;
+    sFailed += services.filter(s => s.status === 'failed').length;
   });
 
   $('#statGroups').innerHTML = `
@@ -699,9 +711,9 @@ function renderDetail(id) {
   }
 
   $('#dockerBody').innerHTML = data.containers.length === 0
-    ? `<tr><td colspan="9" class="empty-state">No containers reported yet.</td></tr>`
+    ? `<tr><td colspan="11" class="empty-state">No containers reported yet.</td></tr>`
     : data.containers.map(c => `
-        <tr>
+        <tr class="${c.monitor_enabled ? '' : 'row-dimmed'}">
           <td><strong>${c.name}</strong></td>
           <td class="cell-sub">${c.image || '—'}</td>
           <td>${c.status}</td>
@@ -710,25 +722,31 @@ function renderDetail(id) {
           <td class="mono">${c.restart_count != null ? c.restart_count : '—'}</td>
           <td class="cell-sub">${c.ports || '—'}</td>
           <td class="cell-sub">${new Date(c.last_seen).toLocaleTimeString()}</td>
-          <td><button class="btn small" data-live-container="${c.name}">Logs</button></td>
+          <td>${toggleHtml('container', c.name, 'monitor_enabled', c.monitor_enabled)}</td>
+          <td>${toggleHtml('container', c.name, 'logs_enabled', c.logs_enabled)}</td>
+          <td><button class="btn small" data-live-container="${c.name}" ${c.logs_enabled ? '' : 'disabled'}>Logs</button></td>
         </tr>`).join('');
   $('#dockerBody').querySelectorAll('[data-live-container]').forEach(btn => {
     btn.addEventListener('click', () => jumpToLiveLogs('container', btn.dataset.liveContainer));
   });
+  wireResourceToggles('#dockerBody');
 
   $('#systemdBody').innerHTML = data.services.length === 0
-    ? `<tr><td colspan="5" class="empty-state">No services reported yet.</td></tr>`
+    ? `<tr><td colspan="7" class="empty-state">No services reported yet.</td></tr>`
     : data.services.map(s => `
-        <tr>
+        <tr class="${s.monitor_enabled ? '' : 'row-dimmed'}">
           <td>${s.name}</td>
           <td><span class="pill ${s.status === 'active' ? 'online' : s.status === 'failed' ? 'failed' : 'offline'}">${s.status}</span></td>
           <td class="cell-sub">${s.sub_state || '—'}</td>
           <td class="cell-sub">${new Date(s.last_seen).toLocaleTimeString()}</td>
-          <td><button class="btn small" data-live-service="${s.name}">Logs</button></td>
+          <td>${toggleHtml('service', s.name, 'monitor_enabled', s.monitor_enabled)}</td>
+          <td>${toggleHtml('service', s.name, 'logs_enabled', s.logs_enabled)}</td>
+          <td><button class="btn small" data-live-service="${s.name}" ${s.logs_enabled ? '' : 'disabled'}>Logs</button></td>
         </tr>`).join('');
   $('#systemdBody').querySelectorAll('[data-live-service]').forEach(btn => {
     btn.addEventListener('click', () => jumpToLiveLogs('service', btn.dataset.liveService));
   });
+  wireResourceToggles('#systemdBody');
 }
 
 document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
@@ -798,6 +816,31 @@ function appendLiveLogLine(raw) {
   if ($('#liveLogsAutoscroll').checked) container.scrollTop = container.scrollHeight;
 }
 
+function toggleHtml(resourceType, name, field, checked) {
+  const disabled = me.role === 'admin' ? '' : 'disabled';
+  return `<label class="toggle-switch"><input type="checkbox" ${checked ? 'checked' : ''} ${disabled}
+    data-resource-type="${resourceType}" data-resource-name="${escapeHtml(name)}" data-field="${field}"><span class="toggle-slider"></span></label>`;
+}
+
+function wireResourceToggles(bodySelector) {
+  $(bodySelector).querySelectorAll('[data-resource-type]').forEach(input => {
+    input.addEventListener('change', async () => {
+      const { resourceType, resourceName, field } = input.dataset;
+      try {
+        await api('/vms/' + selectedVmId + '/resource-settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resource_type: resourceType, name: resourceName, [field]: input.checked }),
+        });
+        await loadVms();
+      } catch (err) {
+        input.checked = !input.checked;
+        alert('Could not update setting: ' + err.message);
+      }
+    });
+  });
+}
+
 function jumpToLiveLogs(type, name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -816,8 +859,8 @@ function startLiveLogsPolling() {
   stopLiveLogsPolling();
   const data = vmDetails[selectedVmId] || { containers: [], services: [], logSources: [] };
   const targets = [
-    ...data.containers.map(c => ({ type: 'container', name: c.name })),
-    ...data.services.map(s => ({ type: 'service', name: s.name })),
+    ...data.containers.filter(c => c.logs_enabled).map(c => ({ type: 'container', name: c.name })),
+    ...data.services.filter(s => s.logs_enabled).map(s => ({ type: 'service', name: s.name })),
     ...data.logSources.map(s => ({ type: 'file', name: s.path, label: s.name })),
   ];
   if (targets.length === 0) {

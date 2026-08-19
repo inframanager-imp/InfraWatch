@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -55,6 +55,7 @@ class VM(Base):
     containers = relationship("Container", back_populates="vm", cascade="all, delete-orphan")
     services = relationship("Service", back_populates="vm", cascade="all, delete-orphan")
     log_sources = relationship("LogSource", back_populates="vm", cascade="all, delete-orphan")
+    resource_settings = relationship("ResourceSetting", back_populates="vm", cascade="all, delete-orphan")
 
 
 class Container(Base):
@@ -101,6 +102,24 @@ class LogSource(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     vm = relationship("VM", back_populates="log_sources")
+
+
+class ResourceSetting(Base):
+    """Per-container/service monitor+logs toggle. Kept in its own table,
+    keyed by name rather than a column on Container/Service, because those
+    rows are fully replaced on every heartbeat (see agent.py) and would
+    lose any setting stored directly on them."""
+    __tablename__ = "resource_settings"
+    __table_args__ = (UniqueConstraint("vm_id", "resource_type", "name", name="uq_resource_setting"),)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False)
+    resource_type = Column(String, nullable=False)  # "container" | "service"
+    name = Column(String, nullable=False)
+    monitor_enabled = Column(Boolean, nullable=False, default=True)
+    logs_enabled = Column(Boolean, nullable=False, default=True)
+
+    vm = relationship("VM", back_populates="resource_settings")
 
 
 class UserVMAccess(Base):

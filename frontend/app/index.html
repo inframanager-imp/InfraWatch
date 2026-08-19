@@ -410,17 +410,6 @@
   </div>
 </div>
 
-<!-- Container logs modal -->
-<div class="modal-overlay" id="logsOverlay" style="display:none">
-  <div class="modal" style="max-width:820px">
-    <div class="modal-head"><h3 id="logsModalTitle">Logs</h3><button class="modal-close" id="logsModalClose">✕</button></div>
-    <div class="modal-body">
-      <p class="modal-hint">Snapshot from the container's last heartbeat (up to 30s old) — not a live stream.</p>
-      <div class="terminal" id="logsContent"></div>
-    </div>
-  </div>
-</div>
-
 <script src="/config.js"></script>
 <script>
 const API_BASE = window.API_BASE;
@@ -709,7 +698,7 @@ function renderDetail(id) {
 
   $('#dockerBody').innerHTML = data.containers.length === 0
     ? `<tr><td colspan="9" class="empty-state">No containers reported yet.</td></tr>`
-    : data.containers.map((c, i) => `
+    : data.containers.map(c => `
         <tr>
           <td><strong>${c.name}</strong></td>
           <td class="cell-sub">${c.image || '—'}</td>
@@ -719,10 +708,10 @@ function renderDetail(id) {
           <td class="mono">${c.restart_count != null ? c.restart_count : '—'}</td>
           <td class="cell-sub">${c.ports || '—'}</td>
           <td class="cell-sub">${new Date(c.last_seen).toLocaleTimeString()}</td>
-          <td><button class="btn small" data-log-index="${i}">Logs</button></td>
+          <td><button class="btn small" data-live-container="${c.name}">Logs</button></td>
         </tr>`).join('');
-  $('#dockerBody').querySelectorAll('[data-log-index]').forEach(btn => {
-    btn.addEventListener('click', () => openContainerLogs(data.containers[Number(btn.dataset.logIndex)]));
+  $('#dockerBody').querySelectorAll('[data-live-container]').forEach(btn => {
+    btn.addEventListener('click', () => jumpToLiveLogs('container', btn.dataset.liveContainer));
   });
 
   $('#systemdBody').innerHTML = data.services.length === 0
@@ -764,11 +753,6 @@ const LEVEL_PATTERN = /\b(ERROR|WARN(?:ING)?|INFO|DEBUG)\b/i;
 let liveLogsSocket = null;
 let liveLogsPaused = false;
 let liveLogsBuffer = [];
-
-function renderLogLines(text) {
-  if (!text || !text.trim()) return '<div class="empty-state">No log output captured.</div>';
-  return text.split('\n').map(line => logLineHtml(line)).join('');
-}
 
 function detectLevel(text) {
   const m = text.match(LEVEL_PATTERN);
@@ -987,20 +971,11 @@ $('#addUserBtn').addEventListener('click', () => {
 $('#userModalClose').addEventListener('click', () => $('#addUserOverlay').style.display = 'none');
 $('#userCancelBtn').addEventListener('click', () => $('#addUserOverlay').style.display = 'none');
 
-/* container logs modal */
-function openContainerLogs(container) {
-  $('#logsModalTitle').textContent = container.name;
-  $('#logsContent').innerHTML = renderLogLines(container.logs);
-  $('#logsOverlay').style.display = 'flex';
-  $('#logsContent').scrollTop = $('#logsContent').scrollHeight;
-}
-
 function escapeHtml(s) {
   const div = document.createElement('div');
   div.textContent = s;
   return div.innerHTML;
 }
-$('#logsModalClose').addEventListener('click', () => $('#logsOverlay').style.display = 'none');
 
 $('#userForm').addEventListener('submit', async e => {
   e.preventDefault();

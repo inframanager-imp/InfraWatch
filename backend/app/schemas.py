@@ -114,6 +114,11 @@ class ServiceIn(BaseModel):
     name: str
     status: str
     sub_state: Optional[str] = None
+    custom: Optional[bool] = None  # True if the agent found a hand-written unit file at
+    # /etc/systemd/system/<name> rather than one shipped by an OS package. Used only to pick
+    # a sensible default the FIRST time this service is ever seen for a VM — never overrides
+    # a monitor toggle the user already set. None means an older agent that doesn't report this
+    # yet, in which case the existing "monitor everything" default is left alone.
 
 
 class LogSourceOut(BaseModel):

@@ -88,6 +88,7 @@ server never connects into this VM.
 """
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -211,6 +212,18 @@ def collect_containers():
     return containers
 
 
+def is_custom_unit(name):
+    # A hand-written unit lives directly at /etc/systemd/system/<name> — this
+    # is how every OS package instead ships its units under /lib or
+    # /usr/lib/systemd/system, and it's also exactly how this agent's own
+    # service and every custom app service we've seen gets installed. Pure
+    # filesystem check, no subprocess spawned per service.
+    try:
+        return os.path.isfile("/etc/systemd/system/" + name)
+    except Exception:
+        return False
+
+
 def collect_services():
     out = run(["systemctl", "list-units", "--type=service", "--all", "--no-legend", "--plain"])
     services = []
@@ -218,7 +231,7 @@ def collect_services():
         parts = line.split(None, 4)
         if len(parts) >= 4:
             name, _load, active, sub = parts[0], parts[1], parts[2], parts[3]
-            services.append({"name": name, "status": active, "sub_state": sub})
+            services.append({"name": name, "status": active, "sub_state": sub, "custom": is_custom_unit(name)})
     return services
 
 

@@ -91,6 +91,7 @@ class ServiceOut(BaseModel):
     name: str
     status: str
     sub_state: Optional[str]
+    is_custom: Optional[bool] = None
     last_seen: datetime
     monitor_enabled: bool = True
     logs_enabled: bool = True

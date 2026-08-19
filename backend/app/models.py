@@ -84,6 +84,8 @@ class Service(Base):
     name = Column(String, nullable=False)
     status = Column(String, nullable=False)  # systemd "active" column: active | inactive | failed
     sub_state = Column(String, nullable=True)  # systemd "sub" column: running | dead | exited ...
+    is_custom = Column(Boolean, nullable=True)  # unit file under /etc/systemd/system vs an OS package;
+    # None means an older agent that hasn't reported this yet.
     last_seen = Column(DateTime, default=datetime.utcnow)
 
     vm = relationship("VM", back_populates="services")

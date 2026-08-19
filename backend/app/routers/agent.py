@@ -44,7 +44,7 @@ def heartbeat(payload: schemas.HeartbeatIn, db: Session = Depends(get_db)):
             cpu_percent=c.cpu_percent, mem_usage=c.mem_usage, restart_count=c.restart_count, ports=c.ports,
         ))
     for s in payload.services:
-        db.add(Service(vm_id=vm.id, name=s.name, status=s.status, sub_state=s.sub_state))
+        db.add(Service(vm_id=vm.id, name=s.name, status=s.status, sub_state=s.sub_state, is_custom=s.custom))
 
     # First-sight default: a service the agent flags as a hand-written unit
     # (not shipped by an OS package) starts Monitor-on; anything else starts

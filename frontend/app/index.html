@@ -142,10 +142,6 @@
   .env-tag.das{ background:var(--offline-soft); color:var(--offline); }
   .env-tag.sandbox{ background:var(--env-gold-soft); color:var(--env-gold); }
 
-  .svc-group{ font-size:9.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:2px 6px; border-radius:4px; margin-left:8px; }
-  .svc-group.app{ background:var(--accent-soft); color:var(--accent-strong); }
-  .svc-group.sys{ background:var(--offline-soft); color:var(--offline); }
-
   /* master-detail dashboard */
   .main-grid{ display:grid; grid-template-columns:320px 1fr; gap:16px; align-items:start; }
   @media (max-width:900px){ .main-grid{ grid-template-columns:1fr; } }
@@ -345,6 +341,12 @@
               <button class="btn small" data-bulk="service:logs_enabled:true">All on</button>
               <button class="btn small" data-bulk="service:logs_enabled:false">All off</button>
             </div>
+            <div class="bulk-toggle-bar" id="systemdGroupFilter">
+              <span class="bulk-label">Show</span>
+              <button class="btn small active-toggle" data-group-filter="all">All</button>
+              <button class="btn small" data-group-filter="app">Application</button>
+              <button class="btn small" data-group-filter="sys">System</button>
+            </div>
             <div class="table-scroll">
               <table><thead><tr>
                 <th class="sortable-th" data-sort-key="name">Name<span class="sort-arrow">⇅</span></th>
@@ -480,6 +482,7 @@ let vmDetails = {}; // vmId -> { containers, services }
 let selectedVmId = null;
 let dockerSort = { key: null, dir: 'asc' };
 let systemdSort = { key: null, dir: 'asc' };
+let systemdGroupFilter = 'all'; // 'all' | 'app' | 'sys'
 
 async function api(path, options = {}) {
   const headers = options.headers || {};
@@ -781,12 +784,18 @@ function renderDetail(id) {
   wireResourceToggles('#dockerBody');
   updateSortIndicators('[data-panel="docker"] table', dockerSort);
 
-  const sortedServices = sortList(data.services, systemdSort, systemdAccessors);
+  const groupFiltered = systemdGroupFilter === 'all' ? data.services
+    : systemdGroupFilter === 'app' ? data.services.filter(s => s.is_custom === true)
+    : data.services.filter(s => s.is_custom === false);
+  const sortedServices = sortList(groupFiltered, systemdSort, systemdAccessors);
+  document.querySelectorAll('#systemdGroupFilter [data-group-filter]').forEach(btn => {
+    btn.classList.toggle('active-toggle', btn.dataset.groupFilter === systemdGroupFilter);
+  });
   $('#systemdBody').innerHTML = sortedServices.length === 0
-    ? `<tr><td colspan="7" class="empty-state">No services reported yet.</td></tr>`
+    ? `<tr><td colspan="7" class="empty-state">${data.services.length === 0 ? 'No services reported yet.' : 'No services in this group.'}</td></tr>`
     : sortedServices.map(s => `
         <tr class="${s.monitor_enabled ? '' : 'row-dimmed'}">
-          <td>${s.name}${s.is_custom === true ? '<span class="svc-group app">Application</span>' : s.is_custom === false ? '<span class="svc-group sys">System</span>' : ''}</td>
+          <td>${s.name}</td>
           <td><span class="pill ${s.status === 'active' ? 'online' : s.status === 'failed' ? 'failed' : 'offline'}">${s.status}</span></td>
           <td class="cell-sub">${s.sub_state || '—'}</td>
           <td class="cell-sub">${new Date(s.last_seen).toLocaleTimeString()}</td>
@@ -954,6 +963,13 @@ function wireBulkToggles(barSelector) {
 }
 wireBulkToggles('#dockerBulkBar');
 wireBulkToggles('#systemdBulkBar');
+
+document.querySelectorAll('#systemdGroupFilter [data-group-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    systemdGroupFilter = btn.dataset.groupFilter;
+    renderDetail(selectedVmId);
+  });
+});
 
 function toggleHtml(resourceType, name, field, checked) {
   const disabled = me.role === 'admin' ? '' : 'disabled';

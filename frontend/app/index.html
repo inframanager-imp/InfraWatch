@@ -746,15 +746,15 @@ document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', (
 }));
 
 /* live logs tab — real streaming over a WebSocket, agent -> server -> browser */
-// Real log sources use very different timestamp formats — Docker's own
-// --timestamps output, this app's "YYYY-MM-DD HH:MM:SS.mmm UTC" style, and
-// journalctl's "Mon DD HH:MM:SS". Try each; fall back to showing the whole
-// line unsplit rather than mis-parsing.
-const TS_MATCHERS = [
-  { re: /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s(.*)$/s, iso: true },
-  { re: /^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\s?UTC)?)\s+(.*)$/s, iso: false },
-  { re: /^([A-Z][a-z]{2}\s+\d{1,2}\s\d{2}:\d{2}:\d{2})\s(.*)$/s, iso: false },
-];
+// Every real source formats its timestamp differently — Docker, journalctl,
+// and every application's own convention (we've seen at least 4 distinct
+// styles just from the sources tested so far, including nginx using two
+// different formats for its own access vs error logs in the *same*
+// container). Trying to pattern-match every one of them is an unwinnable
+// game of whack-a-mole, and produces exactly what it looks like: some
+// lines get a tidy timestamp column and others don't, which reads as
+// broken alignment. Rendering every line the same way — full text, level
+// word highlighted inline — is less clever but actually consistent.
 const LEVEL_PATTERN = /\b(ERROR|WARN(?:ING)?|INFO|DEBUG)\b/i;
 let liveLogsSocket = null;
 let liveLogsPaused = false;
@@ -772,14 +772,6 @@ function detectLevel(text) {
   return lvl === 'WARNING' ? 'WARN' : lvl;
 }
 
-function splitTimestamp(line) {
-  for (const { re, iso } of TS_MATCHERS) {
-    const m = line.match(re);
-    if (m) return { ts: iso ? new Date(m[1]).toLocaleTimeString() : m[1].trim(), rest: m[2] };
-  }
-  return null;
-}
-
 // Highlights the level word inline (escapedText is already HTML-escaped) —
 // filtering already knows the level via data-level, this is purely visual
 // so INFO/WARN/ERROR/DEBUG stand out at a glance in a long, dense real line.
@@ -793,9 +785,7 @@ function highlightLevel(escapedText) {
 function logLineHtml(line) {
   const level = detectLevel(line);
   const levelAttr = level ? ` data-level="${level}"` : '';
-  const split = splitTimestamp(line);
-  if (!split) return `<div class="log-line"${levelAttr}><span class="msg">${highlightLevel(escapeHtml(line))}</span></div>`;
-  return `<div class="log-line"${levelAttr}><span class="ts">${escapeHtml(split.ts)}</span><span class="msg">${highlightLevel(escapeHtml(split.rest))}</span></div>`;
+  return `<div class="log-line"${levelAttr}><span class="msg">${highlightLevel(escapeHtml(line))}</span></div>`;
 }
 
 function wsBase() {

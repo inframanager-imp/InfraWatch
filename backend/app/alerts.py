@@ -107,11 +107,23 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
     for s in services:
         if s.name in unmonitored_services:
             _upsert_alert(db, vm.id, "service", s.name, "service_failed", condition=False)
+            _upsert_alert(db, vm.id, "service", s.name, "service_inactive", condition=False)
             continue
         failed = s.status == "failed"
         _upsert_alert(
             db, vm.id, "service", s.name, "service_failed", condition=failed,
             severity="critical", message=f"Service failed (sub-state: {s.sub_state})",
+        )
+
+        # A service that's gone inactive/dead is presumed to have stopped
+        # unexpectedly -- but only for application units. System/package
+        # units sitting inactive/dead is completely normal (timers, oneshot
+        # tasks between runs) and would otherwise flood every VM with false
+        # positives, so this is deliberately scoped to custom units only.
+        unexpectedly_stopped = s.custom is True and s.status == "inactive" and s.sub_state == "dead"
+        _upsert_alert(
+            db, vm.id, "service", s.name, "service_inactive", condition=unexpectedly_stopped,
+            severity="warning", message="Application service is inactive (expected to be running)",
         )
 
 

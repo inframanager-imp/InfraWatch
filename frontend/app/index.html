@@ -62,7 +62,8 @@
   .btn.small{ padding:5px 10px; font-size:11.5px; }
 
   /* app shell */
-  #appShell{ display:none; }
+  #appShell, #loginScreen{ display:none; }
+  #bootLoading{ min-height:100vh; display:flex; align-items:center; justify-content:center; color:var(--text-faint); font-family:var(--font-mono); font-size:13px; }
   .topbar{ display:flex; align-items:center; gap:20px; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--surface); }
   .brand{ font-family:var(--font-mono); font-weight:700; font-size:15px; }
   .brand span{ color:var(--text-faint); font-weight:500; }
@@ -232,6 +233,8 @@
 </style>
 </head>
 <body>
+
+<div id="bootLoading" style="display:flex">InfraWatch</div>
 
 <div class="login-wrap" id="loginScreen">
   <div class="login-card">
@@ -491,6 +494,7 @@ function logout() {
   stopLiveLogsPolling();
   token = null; me = null; selectedVmId = null;
   sessionStorage.removeItem('iw_token');
+  $('#bootLoading').style.display = 'none';
   $('#appShell').style.display = 'none';
   $('#loginScreen').style.display = 'flex';
 }
@@ -535,6 +539,7 @@ async function bootApp() {
   await loadVms();
   if (me.role === 'admin') await loadUsers();
 
+  $('#bootLoading').style.display = 'none';
   $('#loginScreen').style.display = 'none';
   $('#appShell').style.display = 'block';
 }

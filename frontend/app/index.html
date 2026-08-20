@@ -404,7 +404,7 @@
     <div class="panel">
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Created</th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Created</th><th></th></tr></thead>
           <tbody id="userBody"></tbody>
         </table>
       </div>
@@ -442,13 +442,13 @@
 <!-- Add user modal -->
 <div class="modal-overlay" id="addUserOverlay" style="display:none">
   <div class="modal">
-    <div class="modal-head"><h3>Add a user</h3><button class="modal-close" id="userModalClose">✕</button></div>
+    <div class="modal-head"><h3 id="userModalTitle">Add a user</h3><button class="modal-close" id="userModalClose">✕</button></div>
     <div class="modal-body">
       <div class="error-box" id="userError"></div>
       <form id="userForm">
         <div class="field"><label>Name</label><input id="userName" required /></div>
         <div class="field"><label>Email</label><input id="userEmailInput" type="email" required /></div>
-        <div class="field"><label>Password</label><input id="userPassword" type="password" required /></div>
+        <div class="field"><label>Password</label><input id="userPassword" type="password" placeholder="" /></div>
         <div class="field"><label>Role</label>
           <select id="userRole">
             <option value="readonly">Read-only</option>
@@ -461,7 +461,7 @@
         </div>
         <div class="modal-actions">
           <button type="button" class="btn" id="userCancelBtn">Cancel</button>
-          <button type="submit" class="btn primary" style="width:auto">Create user</button>
+          <button type="submit" class="btn primary" style="width:auto" id="userSubmitBtn">Create user</button>
         </div>
       </form>
     </div>
@@ -1157,14 +1157,33 @@ async function loadUsers() {
 }
 function renderUsers() {
   const body = $('#userBody');
-  if (users.length === 0) { body.innerHTML = `<tr><td colspan="4" class="empty-state">No users yet.</td></tr>`; return; }
+  if (users.length === 0) { body.innerHTML = `<tr><td colspan="5" class="empty-state">No users yet.</td></tr>`; return; }
   body.innerHTML = users.map(u => `
     <tr>
       <td>${u.name}</td>
       <td class="mono">${u.email}</td>
       <td><span class="pill ${u.role}">${u.role}</span></td>
       <td class="cell-sub">${new Date(u.created_at).toLocaleDateString()}</td>
+      <td>
+        <button class="btn small" data-edit-user="${u.id}">Edit</button>
+        ${u.id === me.id ? '' : `<button class="btn small danger" data-delete-user="${u.id}">Delete</button>`}
+      </td>
     </tr>`).join('');
+  body.querySelectorAll('[data-edit-user]').forEach(btn => {
+    btn.addEventListener('click', () => openUserModal(users.find(u => u.id === btn.dataset.editUser)));
+  });
+  body.querySelectorAll('[data-delete-user]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const target = users.find(u => u.id === btn.dataset.deleteUser);
+      if (!confirm(`Delete user "${target.name}" (${target.email})? This can't be undone.`)) return;
+      try {
+        await api('/users/' + target.id, { method: 'DELETE' });
+        await loadUsers();
+      } catch (err) {
+        alert('Could not delete user: ' + err.message);
+      }
+    });
+  });
 }
 
 $('#navVms').addEventListener('click', () => {
@@ -1177,14 +1196,32 @@ $('#navUsers').addEventListener('click', () => {
   $('#viewUsers').style.display = 'block'; $('#viewVms').style.display = 'none';
 });
 
-$('#addUserBtn').addEventListener('click', () => {
+let editingUserId = null;
+
+function openUserModal(user) {
+  editingUserId = user ? user.id : null;
   $('#userForm').reset();
   $('#userError').classList.remove('show');
   $('#vmAccessList').innerHTML = vms.map(v => `
-    <label class="checkbox-row"><input type="checkbox" value="${v.id}" /><span>${v.name} <span class="cell-sub">(${v.environment.name})</span></span></label>
+    <label class="checkbox-row"><input type="checkbox" value="${v.id}" ${user && user.vm_ids.includes(v.id) ? 'checked' : ''} /><span>${v.name} <span class="cell-sub">(${v.environment.name})</span></span></label>
   `).join('') || '<div class="cell-sub">No VMs registered yet.</div>';
+
+  $('#userModalTitle').textContent = user ? 'Edit user' : 'Add a user';
+  $('#userSubmitBtn').textContent = user ? 'Save changes' : 'Create user';
+  $('#userPassword').required = !user;
+  $('#userPassword').placeholder = user ? 'Leave blank to keep current password' : '';
+  $('#userEmailInput').disabled = !!user;
+
+  if (user) {
+    $('#userName').value = user.name;
+    $('#userEmailInput').value = user.email;
+    $('#userRole').value = user.role;
+  }
+
   $('#addUserOverlay').style.display = 'flex';
-});
+}
+
+$('#addUserBtn').addEventListener('click', () => openUserModal(null));
 $('#userModalClose').addEventListener('click', () => $('#addUserOverlay').style.display = 'none');
 $('#userCancelBtn').addEventListener('click', () => $('#addUserOverlay').style.display = 'none');
 
@@ -1200,17 +1237,27 @@ $('#userForm').addEventListener('submit', async e => {
   errBox.classList.remove('show');
   try {
     const vmIds = [...document.querySelectorAll('#vmAccessList input:checked')].map(i => i.value);
-    await api('/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: $('#userName').value.trim(),
-        email: $('#userEmailInput').value.trim(),
-        password: $('#userPassword').value,
-        role: $('#userRole').value,
-        vm_ids: vmIds,
-      }),
-    });
+    if (editingUserId) {
+      const body = { name: $('#userName').value.trim(), role: $('#userRole').value, vm_ids: vmIds };
+      if ($('#userPassword').value) body.password = $('#userPassword').value;
+      await api('/users/' + editingUserId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } else {
+      await api('/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: $('#userName').value.trim(),
+          email: $('#userEmailInput').value.trim(),
+          password: $('#userPassword').value,
+          role: $('#userRole').value,
+          vm_ids: vmIds,
+        }),
+      });
+    }
     $('#addUserOverlay').style.display = 'none';
     await loadUsers();
   } catch (err) {

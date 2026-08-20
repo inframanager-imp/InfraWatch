@@ -15,6 +15,7 @@ class UserOut(BaseModel):
     name: str
     role: str
     created_at: datetime
+    vm_ids: list[str] = []
 
     class Config:
         from_attributes = True
@@ -26,6 +27,13 @@ class UserCreate(BaseModel):
     password: str
     role: str = "readonly"
     vm_ids: list[str] = []
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    password: Optional[str] = None
+    vm_ids: Optional[list[str]] = None  # omitted/None leaves access untouched; [] clears it
 
 
 class EnvironmentOut(BaseModel):

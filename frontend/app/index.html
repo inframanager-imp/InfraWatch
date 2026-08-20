@@ -333,14 +333,6 @@
           </div>
 
           <div class="tab-panel" data-panel="systemd">
-            <div class="bulk-toggle-bar" id="systemdBulkBar">
-              <span class="bulk-label">Monitor</span>
-              <button class="btn small" data-bulk="service:monitor_enabled:true">All on</button>
-              <button class="btn small" data-bulk="service:monitor_enabled:false">All off</button>
-              <span class="bulk-label">Logs</span>
-              <button class="btn small" data-bulk="service:logs_enabled:true">All on</button>
-              <button class="btn small" data-bulk="service:logs_enabled:false">All off</button>
-            </div>
             <div class="bulk-toggle-bar" id="systemdGroupFilter">
               <span class="bulk-label">Show</span>
               <button class="btn small active-toggle" data-group-filter="all">All</button>
@@ -536,7 +528,6 @@ async function bootApp() {
   $('#addVmBtn').style.display = me.role === 'admin' ? 'block' : 'none';
   $('#navUsers').style.display = me.role === 'admin' ? 'block' : 'none';
   $('#dockerBulkBar').style.display = me.role === 'admin' ? 'flex' : 'none';
-  $('#systemdBulkBar').style.display = me.role === 'admin' ? 'flex' : 'none';
 
   environments = await api('/environments');
   $('#vmEnv').innerHTML = environments.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
@@ -962,7 +953,6 @@ function wireBulkToggles(barSelector) {
   });
 }
 wireBulkToggles('#dockerBulkBar');
-wireBulkToggles('#systemdBulkBar');
 
 document.querySelectorAll('#systemdGroupFilter [data-group-filter]').forEach(btn => {
   btn.addEventListener('click', () => {

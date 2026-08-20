@@ -47,11 +47,11 @@ def heartbeat(payload: schemas.HeartbeatIn, db: Session = Depends(get_db)):
         db.add(Service(vm_id=vm.id, name=s.name, status=s.status, sub_state=s.sub_state, is_custom=s.custom))
 
     # First-sight default: a service the agent flags as a hand-written unit
-    # (not shipped by an OS package) starts Monitor-on; anything else starts
-    # Monitor-off, so a fresh VM with hundreds of OS services doesn't need a
-    # manual "all off, then re-enable a handful" pass every time. This only
-    # ever runs the first time a given service name is seen for this VM —
-    # once a ResourceSetting row exists, a user's own toggle always wins.
+    # (not shipped by an OS package) starts Monitor+Logs on; anything else
+    # starts both off, so a fresh VM with hundreds of OS services doesn't
+    # need a manual cleanup pass. This only ever runs the first time a given
+    # service name is seen for this VM — once a ResourceSetting row exists,
+    # a user's own toggle always wins.
     known_names = {
         row.name for row in db.query(ResourceSetting.name).filter(
             ResourceSetting.vm_id == vm.id, ResourceSetting.resource_type == "service"
@@ -59,7 +59,10 @@ def heartbeat(payload: schemas.HeartbeatIn, db: Session = Depends(get_db)):
     }
     for s in payload.services:
         if s.custom is not None and s.name not in known_names:
-            db.add(ResourceSetting(vm_id=vm.id, resource_type="service", name=s.name, monitor_enabled=s.custom))
+            db.add(ResourceSetting(
+                vm_id=vm.id, resource_type="service", name=s.name,
+                monitor_enabled=s.custom, logs_enabled=s.custom,
+            ))
             known_names.add(s.name)
 
     db.commit()

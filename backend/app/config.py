@@ -10,6 +10,16 @@ class Settings(BaseSettings):
     admin_password: str = "changeme123"
     cors_origins: str = "*"  # comma-separated list, or "*" for local dev
 
+    # Alert email notifications — entirely optional. Leaving smtp_host empty
+    # disables sending outright (see app/notifications.py), same "degrades
+    # gracefully" pattern as the agent's optional websocket-client dep.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    frontend_url: str = ""  # used to build a link back into the app in alert emails
+
     class Config:
         env_file = ".env"
 

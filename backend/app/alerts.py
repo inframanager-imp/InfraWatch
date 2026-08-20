@@ -31,6 +31,11 @@ RESTART_LOOP_THRESHOLD = 3
 
 def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: str, rule: str,
                    condition: bool, severity: str = "warning", message: str = ""):
+    """Returns the Alert if this call just made it newly active (a brand
+    new incident, or a resolved one recurring) -- the signal notifications
+    use to know when to actually send an email, as opposed to every
+    heartbeat an already-active incident continues to extend. Returns None
+    for every other outcome (still active, resolved, no-op)."""
     existing = db.query(Alert).filter(
         Alert.vm_id == vm_id, Alert.resource_type == resource_type,
         Alert.resource_name == resource_name, Alert.rule == rule,
@@ -42,36 +47,48 @@ def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: st
             existing.last_seen = now
             if message:
                 existing.message = message
+            return None
         elif existing:  # previously resolved, condition is true again -- reopen as a fresh incident
             existing.status = "active"
             existing.first_seen = now
             existing.last_seen = now
             existing.resolved_at = None
             existing.message = message
+            return existing
         else:
-            db.add(Alert(
+            alert = Alert(
                 vm_id=vm_id, resource_type=resource_type, resource_name=resource_name, rule=rule,
                 severity=severity, message=message, status="active", first_seen=now, last_seen=now,
-            ))
+            )
+            db.add(alert)
+            return alert
     else:
         if existing and existing.status == "active":
             existing.status = "resolved"
             existing.resolved_at = now
+        return None
 
 
-def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: list):
-    _upsert_alert(
-        db, vm.id, "vm", vm.name, "vm_cpu_high",
+def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: list) -> list[Alert]:
+    newly_opened = []
+
+    def upsert(*args, **kwargs):
+        alert = _upsert_alert(db, *args, **kwargs)
+        if alert:
+            newly_opened.append(alert)
+
+    upsert(
+        vm.id, "vm", vm.name, "vm_cpu_high",
         condition=vm.cpu_percent is not None and vm.cpu_percent >= CPU_HIGH_THRESHOLD,
         severity="warning", message=f"High CPU usage ({vm.cpu_percent}%)",
     )
-    _upsert_alert(
-        db, vm.id, "vm", vm.name, "vm_mem_high",
+    upsert(
+        vm.id, "vm", vm.name, "vm_mem_high",
         condition=vm.mem_percent is not None and vm.mem_percent >= MEM_HIGH_THRESHOLD,
         severity="warning", message=f"High memory usage ({vm.mem_percent}%)",
     )
-    _upsert_alert(
-        db, vm.id, "vm", vm.name, "vm_disk_high",
+    upsert(
+        vm.id, "vm", vm.name, "vm_disk_high",
         condition=vm.disk_percent is not None and vm.disk_percent >= DISK_HIGH_THRESHOLD,
         severity="critical", message=f"Low disk space ({vm.disk_percent}% used)",
     )
@@ -84,17 +101,17 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
     }
     for c in containers:
         if c.name in unmonitored_containers:
-            _upsert_alert(db, vm.id, "container", c.name, "container_stopped", condition=False)
-            _upsert_alert(db, vm.id, "container", c.name, "container_restart_loop", condition=False)
+            upsert(vm.id, "container", c.name, "container_stopped", condition=False)
+            upsert(vm.id, "container", c.name, "container_restart_loop", condition=False)
             continue
         stopped = not re.match(r"up", c.status or "", re.I)
-        _upsert_alert(
-            db, vm.id, "container", c.name, "container_stopped", condition=stopped,
+        upsert(
+            vm.id, "container", c.name, "container_stopped", condition=stopped,
             severity="warning", message=f"Container is not running (status: {c.status})",
         )
         restart_looping = (c.restart_count or 0) >= RESTART_LOOP_THRESHOLD
-        _upsert_alert(
-            db, vm.id, "container", c.name, "container_restart_loop", condition=restart_looping,
+        upsert(
+            vm.id, "container", c.name, "container_restart_loop", condition=restart_looping,
             severity="warning", message=f"Container has restarted {c.restart_count} times",
         )
 
@@ -106,12 +123,12 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
     }
     for s in services:
         if s.name in unmonitored_services:
-            _upsert_alert(db, vm.id, "service", s.name, "service_failed", condition=False)
-            _upsert_alert(db, vm.id, "service", s.name, "service_inactive", condition=False)
+            upsert(vm.id, "service", s.name, "service_failed", condition=False)
+            upsert(vm.id, "service", s.name, "service_inactive", condition=False)
             continue
         failed = s.status == "failed"
-        _upsert_alert(
-            db, vm.id, "service", s.name, "service_failed", condition=failed,
+        upsert(
+            vm.id, "service", s.name, "service_failed", condition=failed,
             severity="critical", message=f"Service failed (sub-state: {s.sub_state})",
         )
 
@@ -121,20 +138,26 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
         # tasks between runs) and would otherwise flood every VM with false
         # positives, so this is deliberately scoped to custom units only.
         unexpectedly_stopped = s.custom is True and s.status == "inactive" and s.sub_state == "dead"
-        _upsert_alert(
-            db, vm.id, "service", s.name, "service_inactive", condition=unexpectedly_stopped,
+        upsert(
+            vm.id, "service", s.name, "service_inactive", condition=unexpectedly_stopped,
             severity="warning", message="Application service is inactive (expected to be running)",
         )
 
+    return newly_opened
 
-def sweep_vm_offline_alerts(db: Session):
+
+def sweep_vm_offline_alerts(db: Session) -> list[tuple[VM, Alert]]:
     now = datetime.utcnow()
+    newly_opened = []
     for vm in db.query(VM).all():
         # A VM that has never sent a heartbeat is "pending", not offline --
         # it just hasn't been installed on yet, which isn't alert-worthy.
         offline = vm.last_heartbeat is not None and (now - vm.last_heartbeat) > timedelta(seconds=OFFLINE_AFTER_SECONDS)
-        _upsert_alert(
+        alert = _upsert_alert(
             db, vm.id, "vm", vm.name, "vm_offline", condition=offline,
             severity="critical", message="No heartbeat received",
         )
+        if alert:
+            newly_opened.append((vm, alert))
     db.commit()
+    return newly_opened

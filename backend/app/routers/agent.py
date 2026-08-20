@@ -1,14 +1,15 @@
 import os
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from .. import schemas
 from ..alerts import evaluate_heartbeat_alerts
 from ..database import SessionLocal, get_db
-from ..models import Container, ResourceSetting, Service, VM
+from ..models import Container, ResourceSetting, Service, User, VM
+from ..notifications import send_alert_notification
 from ..security import verify_password
 from ..streams import agent_sockets, browser_sockets
 
@@ -24,7 +25,7 @@ def install_script():
 
 
 @router.post("/agent/heartbeat")
-def heartbeat(payload: schemas.HeartbeatIn, db: Session = Depends(get_db)):
+def heartbeat(payload: schemas.HeartbeatIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     vm = db.query(VM).filter(VM.name == payload.name).first()
     if not vm or not verify_password(payload.token, vm.agent_token_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid VM name or token")
@@ -67,9 +68,20 @@ def heartbeat(payload: schemas.HeartbeatIn, db: Session = Depends(get_db)):
             known_names.add(s.name)
 
     db.flush()  # so alert evaluation's own queries see the ResourceSetting rows just added above
-    evaluate_heartbeat_alerts(db, vm, payload.containers, payload.services)
+    newly_opened = evaluate_heartbeat_alerts(db, vm, payload.containers, payload.services)
 
     db.commit()
+
+    if newly_opened:
+        # Extract plain values now, while the session is still open — the
+        # ORM objects would be detached by the time a background task runs.
+        alert_dicts = [
+            {"severity": a.severity, "resource_type": a.resource_type, "resource_name": a.resource_name, "message": a.message}
+            for a in newly_opened
+        ]
+        admin_emails = [u.email for u in db.query(User).filter(User.role == "admin").all()]
+        background_tasks.add_task(send_alert_notification, vm.name, alert_dicts, admin_emails)
+
     return {"status": "ok"}
 
 

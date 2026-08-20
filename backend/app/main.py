@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .alerts import sweep_vm_offline_alerts
 from .config import settings
 from .database import SessionLocal
+from .models import User
+from .notifications import send_alert_notification
 from .routers import agent, alerts as alerts_router, auth, environments, users, vms
 from .seed import seed
 
@@ -41,7 +43,17 @@ async def _offline_sweep_loop():
         try:
             # sweep_vm_offline_alerts does blocking DB I/O -- run it off the
             # event loop thread so a slow query never stalls request handling.
-            await asyncio.to_thread(sweep_vm_offline_alerts, db)
+            newly_opened = await asyncio.to_thread(sweep_vm_offline_alerts, db)
+            if newly_opened:
+                admin_emails = [u.email for u in db.query(User).filter(User.role == "admin").all()]
+                by_vm = {}
+                for vm, alert in newly_opened:
+                    by_vm.setdefault(vm.name, []).append({
+                        "severity": alert.severity, "resource_type": alert.resource_type,
+                        "resource_name": alert.resource_name, "message": alert.message,
+                    })
+                for vm_name, alert_dicts in by_vm.items():
+                    await asyncio.to_thread(send_alert_notification, vm_name, alert_dicts, admin_emails)
         except Exception:
             pass
         finally:

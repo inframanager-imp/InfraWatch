@@ -1,0 +1,128 @@
+"""Alert rule evaluation.
+
+Two entry points:
+- evaluate_heartbeat_alerts(db, vm, containers, services): called from the
+  heartbeat handler with this heartbeat's just-received payload data (not
+  re-queried from the DB, since Container/Service rows get fully replaced
+  every heartbeat anyway). Covers every rule except vm_offline.
+- sweep_vm_offline_alerts(db): a periodic background check (see main.py)
+  for VMs that have gone silent -- nothing reactive would ever notice that,
+  since there's no heartbeat left to react to.
+
+Both funnel through _upsert_alert, the one place that knows how to
+open/extend/resolve an alert row without ever duplicating an ongoing
+incident. One row per (vm, resource, rule) at a time; a resolved incident
+that recurs later reopens the same row as a fresh one rather than losing
+its history to a new row.
+"""
+import re
+from datetime import datetime, timedelta
+
+from sqlalchemy.orm import Session
+
+from .models import Alert, ResourceSetting, VM
+
+OFFLINE_AFTER_SECONDS = 90  # matches the online/offline threshold in routers/vms.py
+CPU_HIGH_THRESHOLD = 90
+MEM_HIGH_THRESHOLD = 90
+DISK_HIGH_THRESHOLD = 90
+RESTART_LOOP_THRESHOLD = 3
+
+
+def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: str, rule: str,
+                   condition: bool, severity: str = "warning", message: str = ""):
+    existing = db.query(Alert).filter(
+        Alert.vm_id == vm_id, Alert.resource_type == resource_type,
+        Alert.resource_name == resource_name, Alert.rule == rule,
+    ).first()
+    now = datetime.utcnow()
+
+    if condition:
+        if existing and existing.status == "active":
+            existing.last_seen = now
+            if message:
+                existing.message = message
+        elif existing:  # previously resolved, condition is true again -- reopen as a fresh incident
+            existing.status = "active"
+            existing.first_seen = now
+            existing.last_seen = now
+            existing.resolved_at = None
+            existing.message = message
+        else:
+            db.add(Alert(
+                vm_id=vm_id, resource_type=resource_type, resource_name=resource_name, rule=rule,
+                severity=severity, message=message, status="active", first_seen=now, last_seen=now,
+            ))
+    else:
+        if existing and existing.status == "active":
+            existing.status = "resolved"
+            existing.resolved_at = now
+
+
+def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: list):
+    _upsert_alert(
+        db, vm.id, "vm", vm.name, "vm_cpu_high",
+        condition=vm.cpu_percent is not None and vm.cpu_percent >= CPU_HIGH_THRESHOLD,
+        severity="warning", message=f"High CPU usage ({vm.cpu_percent}%)",
+    )
+    _upsert_alert(
+        db, vm.id, "vm", vm.name, "vm_mem_high",
+        condition=vm.mem_percent is not None and vm.mem_percent >= MEM_HIGH_THRESHOLD,
+        severity="warning", message=f"High memory usage ({vm.mem_percent}%)",
+    )
+    _upsert_alert(
+        db, vm.id, "vm", vm.name, "vm_disk_high",
+        condition=vm.disk_percent is not None and vm.disk_percent >= DISK_HIGH_THRESHOLD,
+        severity="critical", message=f"Low disk space ({vm.disk_percent}% used)",
+    )
+
+    unmonitored_containers = {
+        row.name for row in db.query(ResourceSetting.name).filter(
+            ResourceSetting.vm_id == vm.id, ResourceSetting.resource_type == "container",
+            ResourceSetting.monitor_enabled == False,  # noqa: E712
+        ).all()
+    }
+    for c in containers:
+        if c.name in unmonitored_containers:
+            _upsert_alert(db, vm.id, "container", c.name, "container_stopped", condition=False)
+            _upsert_alert(db, vm.id, "container", c.name, "container_restart_loop", condition=False)
+            continue
+        stopped = not re.match(r"up", c.status or "", re.I)
+        _upsert_alert(
+            db, vm.id, "container", c.name, "container_stopped", condition=stopped,
+            severity="warning", message=f"Container is not running (status: {c.status})",
+        )
+        restart_looping = (c.restart_count or 0) >= RESTART_LOOP_THRESHOLD
+        _upsert_alert(
+            db, vm.id, "container", c.name, "container_restart_loop", condition=restart_looping,
+            severity="warning", message=f"Container has restarted {c.restart_count} times",
+        )
+
+    unmonitored_services = {
+        row.name for row in db.query(ResourceSetting.name).filter(
+            ResourceSetting.vm_id == vm.id, ResourceSetting.resource_type == "service",
+            ResourceSetting.monitor_enabled == False,  # noqa: E712
+        ).all()
+    }
+    for s in services:
+        if s.name in unmonitored_services:
+            _upsert_alert(db, vm.id, "service", s.name, "service_failed", condition=False)
+            continue
+        failed = s.status == "failed"
+        _upsert_alert(
+            db, vm.id, "service", s.name, "service_failed", condition=failed,
+            severity="critical", message=f"Service failed (sub-state: {s.sub_state})",
+        )
+
+
+def sweep_vm_offline_alerts(db: Session):
+    now = datetime.utcnow()
+    for vm in db.query(VM).all():
+        # A VM that has never sent a heartbeat is "pending", not offline --
+        # it just hasn't been installed on yet, which isn't alert-worthy.
+        offline = vm.last_heartbeat is not None and (now - vm.last_heartbeat) > timedelta(seconds=OFFLINE_AFTER_SECONDS)
+        _upsert_alert(
+            db, vm.id, "vm", vm.name, "vm_offline", condition=offline,
+            severity="critical", message="No heartbeat received",
+        )
+    db.commit()

@@ -119,6 +119,7 @@
   .pill.pending{ background:var(--accent-soft); color:var(--accent-strong); }
   .pill.offline, .pill.readonly{ background:var(--offline-soft); color:var(--offline); }
   .pill.failed{ background:var(--crit-soft); color:var(--crit); }
+  .pill.warn{ background:var(--warn-soft); color:var(--warn); }
   .pill i{ width:6px; height:6px; border-radius:50%; background:currentColor; }
 
   .toggle-switch{ position:relative; display:inline-block; width:34px; height:18px; vertical-align:middle; }
@@ -382,7 +383,11 @@
           </div>
 
           <div class="tab-panel" data-panel="alerts">
-            <div class="agent-note">Alerting isn't built yet. The underlying data (heartbeat status, container/service state changes) already exists — nothing evaluates it into alert events or notifications yet.</div>
+            <div id="alertsEmpty" class="empty-state" style="display:none">No alerts for this VM.</div>
+            <div class="table-scroll" id="alertsTableWrap">
+              <table><thead><tr><th>Severity</th><th>Resource</th><th>Message</th><th>First seen</th><th>Last seen</th><th>Status</th></tr></thead>
+              <tbody id="alertsBody"></tbody></table>
+            </div>
           </div>
 
           <div class="modal-actions" id="dtActions" style="justify-content:flex-start; padding:0 16px 16px"></div>
@@ -547,12 +552,13 @@ async function bootApp() {
 async function loadVms() {
   vms = await api('/vms');
   const pairs = await Promise.all(vms.map(async vm => {
-    const [containers, services, logSources] = await Promise.all([
+    const [containers, services, logSources, alerts] = await Promise.all([
       api('/vms/' + vm.id + '/containers').catch(() => []),
       api('/vms/' + vm.id + '/services').catch(() => []),
       api('/vms/' + vm.id + '/log-sources').catch(() => []),
+      api('/vms/' + vm.id + '/alerts').catch(() => []),
     ]);
-    return [vm.id, { containers, services, logSources }];
+    return [vm.id, { containers, services, logSources, alerts }];
   }));
   vmDetails = Object.fromEntries(pairs);
 
@@ -570,7 +576,7 @@ function renderStats() {
   const pending = vms.filter(v => v.status === 'pending').length;
   const offline = vms.filter(v => v.status === 'offline').length;
 
-  let cTotal = 0, cRunning = 0, sTotal = 0, sRunning = 0, sFailed = 0;
+  let cTotal = 0, cRunning = 0, sTotal = 0, sRunning = 0, sFailed = 0, alertsActive = 0, alertsCritical = 0;
   Object.values(vmDetails).forEach(d => {
     const containers = d.containers.filter(c => c.monitor_enabled);
     const services = d.services.filter(s => s.monitor_enabled);
@@ -579,6 +585,9 @@ function renderStats() {
     sTotal += services.length;
     sRunning += services.filter(s => s.status === 'active').length;
     sFailed += services.filter(s => s.status === 'failed').length;
+    const active = (d.alerts || []).filter(a => a.status === 'active');
+    alertsActive += active.length;
+    alertsCritical += active.filter(a => a.severity === 'critical').length;
   });
 
   $('#statGroups').innerHTML = `
@@ -609,8 +618,8 @@ function renderStats() {
     <div class="stat-cluster">
       <h3>Alerts</h3>
       <div class="stat-row">
-        <div class="stat"><div class="n">0</div><div class="l">Active</div></div>
-        <div class="stat"><div class="n">0</div><div class="l">Critical</div></div>
+        <div class="stat ${alertsActive ? 'crit' : ''}"><div class="n">${alertsActive}</div><div class="l">Active</div></div>
+        <div class="stat ${alertsCritical ? 'crit' : ''}"><div class="n">${alertsCritical}</div><div class="l">Critical</div></div>
       </div>
     </div>`;
 
@@ -804,6 +813,19 @@ function renderDetail(id) {
   });
   wireResourceToggles('#systemdBody');
   updateSortIndicators('[data-panel="systemd"] table', systemdSort);
+
+  const alertsList = data.alerts || [];
+  $('#alertsEmpty').style.display = alertsList.length === 0 ? 'block' : 'none';
+  $('#alertsTableWrap').style.display = alertsList.length === 0 ? 'none' : 'block';
+  $('#alertsBody').innerHTML = alertsList.map(a => `
+    <tr>
+      <td><span class="pill ${a.severity === 'critical' ? 'failed' : 'warn'}">${a.severity}</span></td>
+      <td><strong>${a.resource_name}</strong><div class="cell-sub">${a.resource_type}</div></td>
+      <td>${a.message}</td>
+      <td class="cell-sub">${new Date(a.first_seen).toLocaleString()}</td>
+      <td class="cell-sub">${new Date(a.last_seen).toLocaleString()}</td>
+      <td><span class="pill ${a.status === 'active' ? (a.severity === 'critical' ? 'failed' : 'warn') : 'offline'}">${a.status}</span></td>
+    </tr>`).join('');
 }
 
 document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {

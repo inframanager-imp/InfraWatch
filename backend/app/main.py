@@ -1,9 +1,12 @@
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .alerts import sweep_vm_offline_alerts
 from .config import settings
 from .database import SessionLocal
-from .routers import agent, auth, environments, users, vms
+from .routers import agent, alerts as alerts_router, auth, environments, users, vms
 from .seed import seed
 
 # Schema is owned by Alembic (see alembic/), applied via `alembic upgrade
@@ -26,15 +29,33 @@ app.include_router(vms.router)
 app.include_router(users.router)
 app.include_router(environments.router)
 app.include_router(agent.router)
+app.include_router(alerts_router.router)
+
+OFFLINE_SWEEP_INTERVAL_SECONDS = 60
+
+
+async def _offline_sweep_loop():
+    while True:
+        await asyncio.sleep(OFFLINE_SWEEP_INTERVAL_SECONDS)
+        db = SessionLocal()
+        try:
+            # sweep_vm_offline_alerts does blocking DB I/O -- run it off the
+            # event loop thread so a slow query never stalls request handling.
+            await asyncio.to_thread(sweep_vm_offline_alerts, db)
+        except Exception:
+            pass
+        finally:
+            db.close()
 
 
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     db = SessionLocal()
     try:
         seed(db)
     finally:
         db.close()
+    asyncio.create_task(_offline_sweep_loop())
 
 
 @app.get("/health")

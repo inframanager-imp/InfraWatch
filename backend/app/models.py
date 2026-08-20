@@ -56,6 +56,7 @@ class VM(Base):
     services = relationship("Service", back_populates="vm", cascade="all, delete-orphan")
     log_sources = relationship("LogSource", back_populates="vm", cascade="all, delete-orphan")
     resource_settings = relationship("ResourceSetting", back_populates="vm", cascade="all, delete-orphan")
+    alerts = relationship("Alert", back_populates="vm", cascade="all, delete-orphan")
 
 
 class Container(Base):
@@ -122,6 +123,30 @@ class ResourceSetting(Base):
     logs_enabled = Column(Boolean, nullable=False, default=True)
 
     vm = relationship("VM", back_populates="resource_settings")
+
+
+class Alert(Base):
+    """One row per ongoing incident, not one row per heartbeat — evaluation
+    upserts by (vm_id, resource_type, resource_name, rule): extends
+    last_seen while the condition holds, opens a new row only the first
+    time it's seen, and marks resolved once the condition clears. See
+    app/alerts.py for the rules and evaluation logic."""
+    __tablename__ = "alerts"
+    __table_args__ = (UniqueConstraint("vm_id", "resource_type", "resource_name", "rule", name="uq_alert_identity"),)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False)
+    resource_type = Column(String, nullable=False)  # "vm" | "container" | "service"
+    resource_name = Column(String, nullable=False)  # the VM's own name for resource_type == "vm"
+    rule = Column(String, nullable=False)  # e.g. "vm_offline", "service_failed"
+    severity = Column(String, nullable=False)  # "warning" | "critical"
+    message = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="active")  # "active" | "resolved"
+    first_seen = Column(DateTime, default=datetime.utcnow)
+    last_seen = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+
+    vm = relationship("VM", back_populates="alerts")
 
 
 class UserVMAccess(Base):

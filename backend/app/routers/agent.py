@@ -6,6 +6,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from .. import schemas
+from ..alerts import evaluate_heartbeat_alerts
 from ..database import SessionLocal, get_db
 from ..models import Container, ResourceSetting, Service, VM
 from ..security import verify_password
@@ -64,6 +65,9 @@ def heartbeat(payload: schemas.HeartbeatIn, db: Session = Depends(get_db)):
                 monitor_enabled=s.custom, logs_enabled=s.custom,
             ))
             known_names.add(s.name)
+
+    db.flush()  # so alert evaluation's own queries see the ResourceSetting rows just added above
+    evaluate_heartbeat_alerts(db, vm, payload.containers, payload.services)
 
     db.commit()
     return {"status": "ok"}

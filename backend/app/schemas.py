@@ -154,6 +154,23 @@ class ResourceSettingUpdate(BaseModel):
     logs_enabled: Optional[bool] = None
 
 
+class AlertOut(BaseModel):
+    id: str
+    vm_id: str
+    resource_type: str
+    resource_name: str
+    rule: str
+    severity: str
+    message: str
+    status: str
+    first_seen: datetime
+    last_seen: datetime
+    resolved_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
 class ResourceSettingBulkUpdate(BaseModel):
     resource_type: str
     field: str

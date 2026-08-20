@@ -417,16 +417,20 @@
   <div class="modal">
     <div class="modal-head"><h3 id="vmModalTitle">Add a VM</h3><button class="modal-close" id="vmModalClose">✕</button></div>
     <div class="modal-body" id="vmModalForm">
-      <p class="modal-hint">Register the VM here, then install the agent on it. The server never connects into the VM — the agent connects out to you.</p>
+      <p class="modal-hint" id="vmFormHint">Register the VM here, then install the agent on it. The server never connects into the VM — the agent connects out to you.</p>
       <div class="error-box" id="vmError"></div>
       <form id="vmForm">
-        <div class="field"><label>VM name</label><input id="vmName" required placeholder="prod-cache-01" /></div>
+        <div class="field">
+          <label>VM name</label>
+          <input id="vmName" required placeholder="prod-cache-01" />
+          <div class="modal-hint" id="vmRenameHint" style="display:none;margin:4px 0 0;color:var(--warn)">Renaming stops this VM reporting in until you reinstall the agent on it with the new --name.</div>
+        </div>
         <div class="field"><label>Hostname</label><input id="vmHost" placeholder="prod-cache-01.internal" /></div>
         <div class="field"><label>IP address</label><input id="vmIp" placeholder="10.20.1.30" /></div>
         <div class="field"><label>Environment</label><select id="vmEnv"></select></div>
         <div class="modal-actions">
           <button type="button" class="btn" id="vmCancelBtn">Cancel</button>
-          <button type="submit" class="btn primary" style="width:auto">Register VM</button>
+          <button type="submit" class="btn primary" style="width:auto" id="vmSubmitBtn">Register VM</button>
         </div>
       </form>
     </div>
@@ -680,8 +684,10 @@ function renderDetail(id) {
   $('#dtCreated').textContent = new Date(vm.created_at).toLocaleString();
 
   $('#dtActions').innerHTML = me.role === 'admin'
-    ? `<button class="btn danger" id="vmDeleteBtn" style="width:auto">Delete VM</button>` : '';
+    ? `<button class="btn" id="vmEditBtn" style="width:auto">Edit VM</button>
+       <button class="btn danger" id="vmDeleteBtn" style="width:auto">Delete VM</button>` : '';
   if (me.role === 'admin') {
+    $('#vmEditBtn').addEventListener('click', () => openEditVmModal(vm));
     $('#vmDeleteBtn').addEventListener('click', async () => {
       if (!confirm(`Delete ${vm.name}? This cannot be undone.`)) return;
       await api('/vms/' + vm.id, { method: 'DELETE' });
@@ -1110,15 +1116,39 @@ $('#liveLogsPauseBtn').addEventListener('click', () => {
 $('#liveLogsClearBtn').addEventListener('click', () => { $('#liveLogsContent').innerHTML = ''; });
 $('#liveLogsExportBtn').addEventListener('click', exportLiveLogs);
 
-/* add VM modal */
+/* add / edit VM modal */
+let editingVmId = null;
+
 $('#addVmBtn').addEventListener('click', () => {
+  editingVmId = null;
   $('#vmForm').reset();
   $('#vmError').classList.remove('show');
+  $('#vmRenameHint').style.display = 'none';
+  $('#vmFormHint').textContent = 'Register the VM here, then install the agent on it. The server never connects into the VM — the agent connects out to you.';
   $('#vmModalTitle').textContent = 'Add a VM';
   $('#vmModalForm').style.display = 'block';
   $('#vmModalInstall').style.display = 'none';
+  $('#vmSubmitBtn').textContent = 'Register VM';
   $('#addVmOverlay').style.display = 'flex';
 });
+
+function openEditVmModal(vm) {
+  editingVmId = vm.id;
+  $('#vmForm').reset();
+  $('#vmError').classList.remove('show');
+  $('#vmFormHint').textContent = 'Update this VM\'s details. This only changes what InfraWatch displays — it doesn\'t touch the agent running on the VM itself.';
+  $('#vmModalTitle').textContent = 'Edit VM';
+  $('#vmModalForm').style.display = 'block';
+  $('#vmModalInstall').style.display = 'none';
+  $('#vmSubmitBtn').textContent = 'Save changes';
+  $('#vmName').value = vm.name;
+  $('#vmHost').value = vm.hostname || '';
+  $('#vmIp').value = vm.ip_address || '';
+  $('#vmEnv').value = vm.environment.id;
+  $('#vmRenameHint').style.display = 'block';
+  $('#addVmOverlay').style.display = 'flex';
+}
+
 $('#vmModalClose').addEventListener('click', () => $('#addVmOverlay').style.display = 'none');
 $('#vmCancelBtn').addEventListener('click', () => $('#addVmOverlay').style.display = 'none');
 $('#vmDoneBtn').addEventListener('click', () => $('#addVmOverlay').style.display = 'none');
@@ -1128,22 +1158,26 @@ $('#vmForm').addEventListener('submit', async e => {
   const errBox = $('#vmError');
   errBox.classList.remove('show');
   try {
-    const created = await api('/vms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: $('#vmName').value.trim(),
-        hostname: $('#vmHost').value.trim() || null,
-        ip_address: $('#vmIp').value.trim() || null,
-        environment_id: $('#vmEnv').value,
-      }),
-    });
-    const cmd = `curl -sSL ${API_BASE}/install-agent.sh | sudo bash -s -- \\\n  --server=${API_BASE} \\\n  --token=${created.agent_token} \\\n  --name=${created.name}`;
-    $('#installCmd').textContent = cmd;
-    $('#vmModalTitle').textContent = 'Install the agent';
-    $('#vmModalForm').style.display = 'none';
-    $('#vmModalInstall').style.display = 'block';
-    await loadVms();
+    const body = {
+      name: $('#vmName').value.trim(),
+      hostname: $('#vmHost').value.trim() || null,
+      ip_address: $('#vmIp').value.trim() || null,
+      environment_id: $('#vmEnv').value,
+    };
+    if (editingVmId) {
+      await api('/vms/' + editingVmId, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      $('#addVmOverlay').style.display = 'none';
+      await loadVms();
+      if (selectedVmId) renderDetail(selectedVmId);
+    } else {
+      const created = await api('/vms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const cmd = `curl -sSL ${API_BASE}/install-agent.sh | sudo bash -s -- \\\n  --server=${API_BASE} \\\n  --token=${created.agent_token} \\\n  --name=${created.name}`;
+      $('#installCmd').textContent = cmd;
+      $('#vmModalTitle').textContent = 'Install the agent';
+      $('#vmModalForm').style.display = 'none';
+      $('#vmModalInstall').style.display = 'block';
+      await loadVms();
+    }
   } catch (err) {
     errBox.textContent = err.message;
     errBox.classList.add('show');

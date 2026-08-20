@@ -76,6 +76,34 @@ def create_vm(payload: schemas.VMCreate, db: Session = Depends(get_db), admin: U
     return schemas.VMCreated(**out.model_dump(), agent_token=agent_token)
 
 
+@router.patch("/{vm_id}", response_model=schemas.VMOut)
+def update_vm(vm_id: str, payload: schemas.VMUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    vm = db.query(VM).filter(VM.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+
+    if payload.name is not None and payload.name != vm.name:
+        if db.query(VM).filter(VM.name == payload.name, VM.id != vm.id).first():
+            raise HTTPException(status_code=400, detail="A VM with this name already exists")
+        # The agent authenticates its heartbeat by this exact name (see
+        # /agent/heartbeat) — renaming here does NOT touch the already-
+        # running agent, so it'll start failing to report until reinstalled
+        # with --name matching the new value. The caller is responsible for
+        # surfacing that; this endpoint just performs the rename.
+        vm.name = payload.name
+    if payload.hostname is not None:
+        vm.hostname = payload.hostname
+    if payload.ip_address is not None:
+        vm.ip_address = payload.ip_address
+    if payload.environment_id is not None:
+        vm.environment_id = payload.environment_id
+
+    db.commit()
+    db.refresh(vm)
+    log_action(db, admin.email, "vm.update", target=vm.name)
+    return _serialize_vm(vm)
+
+
 def _settings_map(db: Session, vm_id: str, resource_type: str) -> dict[str, ResourceSetting]:
     rows = db.query(ResourceSetting).filter(
         ResourceSetting.vm_id == vm_id, ResourceSetting.resource_type == resource_type

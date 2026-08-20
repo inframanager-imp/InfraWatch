@@ -55,6 +55,13 @@ class VMCreate(BaseModel):
     environment_id: str
 
 
+class VMUpdate(BaseModel):
+    name: Optional[str] = None
+    hostname: Optional[str] = None
+    ip_address: Optional[str] = None
+    environment_id: Optional[str] = None
+
+
 class VMOut(BaseModel):
     id: str
     name: str

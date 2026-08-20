@@ -9,7 +9,11 @@
     --bg:#F4F7F8; --surface:#FFFFFF; --surface-alt:#EAF0F2;
     --border:#D6E0E3; --border-soft:#E4EAEC;
     --text:#131C22; --text-muted:#5B6E75; --text-faint:#8A9BA1;
-    --accent:#0C7C82; --accent-strong:#075A5F; --accent-soft:#E3F2F1;
+    --accent:#2563EB; --accent-strong:#1D4ED8; --accent-soft:#DBEAFE;
+    --icon-vm-bg:#DBEAFE; --icon-vm-fg:#2563EB;
+    --icon-docker-bg:#EDE9FE; --icon-docker-fg:#7C3AED;
+    --icon-systemd-bg:#DCFCE7; --icon-systemd-fg:#16A34A;
+    --icon-alert-bg:#FEE2E2; --icon-alert-fg:#DC2626;
     --ok:#1E8E5A; --ok-soft:#E3F5EC;
     --warn:#B36B00; --warn-soft:#FBEEDD;
     --crit:#C4392B; --crit-soft:#FBE7E4;
@@ -26,7 +30,11 @@
       --bg:#0A1013; --surface:#10181C; --surface-alt:#162126;
       --border:#243239; --border-soft:#1C282D;
       --text:#E4ECEE; --text-muted:#8CA0A6; --text-faint:#5F7379;
-      --accent:#33C9C2; --accent-strong:#5EDCD6; --accent-soft:rgba(51,201,194,.14);
+      --accent:#60A5FA; --accent-strong:#93C5FD; --accent-soft:rgba(96,165,250,.16);
+      --icon-vm-bg:rgba(96,165,250,.16); --icon-vm-fg:#60A5FA;
+      --icon-docker-bg:rgba(167,139,250,.16); --icon-docker-fg:#A78BFA;
+      --icon-systemd-bg:rgba(74,222,128,.16); --icon-systemd-fg:#4ADE80;
+      --icon-alert-bg:rgba(248,113,113,.16); --icon-alert-fg:#F87171;
       --ok:#3ECF8E; --ok-soft:rgba(62,207,142,.14);
       --warn:#E2A23B; --warn-soft:rgba(226,162,59,.14);
       --crit:#F0564A; --crit-soft:rgba(240,86,74,.14);
@@ -64,13 +72,18 @@
   /* app shell */
   #appShell, #loginScreen{ display:none; }
   #bootLoading{ min-height:100vh; display:flex; align-items:center; justify-content:center; color:var(--text-faint); font-family:var(--font-mono); font-size:13px; }
-  .topbar{ display:flex; align-items:center; gap:20px; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--surface); }
-  .brand{ font-family:var(--font-mono); font-weight:700; font-size:15px; }
-  .brand span{ color:var(--text-faint); font-weight:500; }
-  .topnav{ display:flex; gap:2px; }
-  .topnav button{ border:0; background:none; padding:6px 12px; border-radius:6px; font-size:13px; font-weight:600; color:var(--text-muted); cursor:pointer; }
-  .topnav button.active{ color:var(--accent-strong); background:var(--accent-soft); }
-  .topbar-right{ margin-left:auto; display:flex; align-items:center; gap:12px; }
+  .app-shell{ display:flex; min-height:100vh; align-items:stretch; }
+  .sidebar{ width:230px; flex:none; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; padding:18px 12px; }
+  .sidebar-brand{ display:flex; align-items:center; gap:9px; padding:2px 8px 20px; font-family:var(--font-mono); font-weight:700; font-size:16px; }
+  .sidebar-brand svg{ width:22px; height:22px; color:var(--accent); flex:none; }
+  .sidebar-nav{ display:flex; flex-direction:column; gap:2px; }
+  .sidebar-nav button{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:0; background:none; padding:9px 10px; border-radius:8px; font-size:13px; font-weight:600; color:var(--text-muted); cursor:pointer; }
+  .sidebar-nav button svg{ width:17px; height:17px; flex:none; }
+  .sidebar-nav button:hover{ background:var(--surface-alt); color:var(--text); }
+  .sidebar-nav button.active{ background:var(--accent-soft); color:var(--accent-strong); }
+
+  .main{ flex:1; min-width:0; }
+  .main-topbar{ display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:12px 24px; border-bottom:1px solid var(--border); background:var(--surface); }
   .role-badge{ font-family:var(--font-mono); font-size:11px; font-weight:600; padding:4px 8px; border-radius:5px; background:var(--accent-soft); color:var(--accent-strong); }
   .user-email{ font-size:12.5px; color:var(--text-muted); }
 
@@ -85,11 +98,18 @@
   .stat.ok .n{ color:var(--ok); } .stat.crit .n{ color:var(--crit); } .stat.off .n{ color:var(--offline); }
 
   .stat-groups{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
-  .stat-cluster{ flex:1 1 220px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px; box-shadow:var(--shadow); }
+  .stat-cluster{ flex:1 1 220px; display:flex; align-items:flex-start; gap:14px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; box-shadow:var(--shadow); }
   .stat-cluster h3{ margin:0 0 10px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); font-weight:700; }
   .stat-cluster .stat-row{ display:flex; gap:16px; }
   .stat-cluster .stat{ flex:1; background:none; border:none; box-shadow:none; padding:0; }
   .stat-cluster .stat .n{ font-size:19px; }
+  .stat-body{ flex:1; min-width:0; }
+  .stat-icon{ width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .stat-icon svg{ width:22px; height:22px; }
+  .stat-icon.vm{ background:var(--icon-vm-bg); color:var(--icon-vm-fg); }
+  .stat-icon.docker{ background:var(--icon-docker-bg); color:var(--icon-docker-fg); }
+  .stat-icon.systemd{ background:var(--icon-systemd-bg); color:var(--icon-systemd-fg); }
+  .stat-icon.alert{ background:var(--icon-alert-bg); color:var(--icon-alert-fg); }
 
   .health-strip{ display:flex; align-items:center; gap:16px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:18px; box-shadow:var(--shadow); flex-wrap:wrap; }
   .health-strip h3{ margin:0; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); font-weight:700; flex:none; }
@@ -158,6 +178,8 @@
   .status-dot.online{ background:var(--ok); box-shadow:0 0 0 3px var(--ok-soft); }
   .status-dot.offline{ background:var(--offline); box-shadow:0 0 0 3px var(--offline-soft); }
   .status-dot.pending{ background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .vm-row-icon{ width:32px; height:32px; border-radius:9px; background:var(--icon-vm-bg); color:var(--icon-vm-fg); display:flex; align-items:center; justify-content:center; flex:none; }
+  .vm-row-icon svg{ width:16px; height:16px; }
   .vm-row-main{ flex:1; min-width:0; }
   .vm-row-name{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .vm-row-meta{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:1px; }
@@ -250,32 +272,45 @@
   </div>
 </div>
 
-<div id="appShell">
-  <div class="topbar">
-    <div class="brand">infrawatch</div>
-    <nav class="topnav">
-      <button class="active" id="navVms">VMs</button>
-      <button id="navUsers" style="display:none">Users</button>
+<div id="appShell" class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+      InfraWatch
+    </div>
+    <nav class="sidebar-nav">
+      <button class="active" id="navOverview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Overview</button>
+      <button id="navVms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg> VMs</button>
+      <button id="navUsers" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg> Users</button>
+      <button id="navAlerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/></svg> Alerts</button>
     </nav>
-    <div class="topbar-right">
+  </aside>
+
+  <div class="main">
+    <div class="main-topbar">
       <span class="role-badge" id="roleBadge">—</span>
       <span class="user-email" id="userEmail">—</span>
       <button class="btn small" id="logoutBtn">Log out</button>
     </div>
-  </div>
 
-  <div class="page" id="viewVms">
-    <div class="page-head">
-      <h1>Fleet overview</h1>
-      <button class="btn primary" id="addVmBtn" style="display:none;width:auto">+ Add VM</button>
+    <div class="page" id="viewOverview">
+      <div class="page-head">
+        <h1>Overview</h1>
+      </div>
+
+      <div class="stat-groups" id="statGroups"></div>
+
+      <div class="health-strip">
+        <h3>Health</h3>
+        <div class="health-bar" id="healthBar"></div>
+        <div class="health-legend" id="healthLegend"></div>
+      </div>
     </div>
 
-    <div class="stat-groups" id="statGroups"></div>
-
-    <div class="health-strip">
-      <h3>Health</h3>
-      <div class="health-bar" id="healthBar"></div>
-      <div class="health-legend" id="healthLegend"></div>
+    <div class="page" id="viewVms" style="display:none">
+    <div class="page-head">
+      <h1>Virtual machines</h1>
+      <button class="btn primary" id="addVmBtn" style="display:none;width:auto">+ Add VM</button>
     </div>
 
     <div class="main-grid">
@@ -409,6 +444,20 @@
         </table>
       </div>
     </div>
+    </div>
+
+    <div class="page" id="viewAlerts" style="display:none">
+      <div class="page-head">
+        <h1>Alerts</h1>
+      </div>
+      <div class="panel">
+        <div id="fleetAlertsEmpty" class="empty-state" style="display:none">No active alerts across your fleet.</div>
+        <div class="table-scroll" id="fleetAlertsWrap">
+          <table><thead><tr><th>Severity</th><th>VM</th><th>Resource</th><th>Message</th><th>First seen</th><th>Last seen</th></tr></thead>
+          <tbody id="fleetAlertsBody"></tbody></table>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -487,6 +536,13 @@ let selectedVmId = null;
 let dockerSort = { key: null, dir: 'asc' };
 let systemdSort = { key: null, dir: 'asc' };
 let systemdGroupFilter = 'all'; // 'all' | 'app' | 'sys'
+
+const ICONS = {
+  vm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+  docker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.27 6.96 12 12l8.73-5.04M12 22.08V12"/></svg>',
+  systemd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/></svg>',
+};
 
 async function api(path, options = {}) {
   const headers = options.headers || {};
@@ -568,6 +624,7 @@ async function loadVms() {
 
   renderStats();
   renderVmList();
+  renderFleetAlerts();
 
   if (selectedVmId && vms.some(v => v.id === selectedVmId)) {
     renderDetail(selectedVmId);
@@ -596,34 +653,46 @@ function renderStats() {
 
   $('#statGroups').innerHTML = `
     <div class="stat-cluster">
-      <h3>Virtual Machines</h3>
-      <div class="stat-row">
-        <div class="stat"><div class="n">${vms.length}</div><div class="l">Total</div></div>
-        <div class="stat ok"><div class="n">${online}</div><div class="l">Online</div></div>
-        <div class="stat crit"><div class="n">${offline}</div><div class="l">Offline</div></div>
+      <div class="stat-icon vm">${ICONS.vm}</div>
+      <div class="stat-body">
+        <h3>Virtual Machines</h3>
+        <div class="stat-row">
+          <div class="stat"><div class="n">${vms.length}</div><div class="l">Total</div></div>
+          <div class="stat ok"><div class="n">${online}</div><div class="l">Online</div></div>
+          <div class="stat crit"><div class="n">${offline}</div><div class="l">Offline</div></div>
+        </div>
       </div>
     </div>
     <div class="stat-cluster">
-      <h3>Docker Containers</h3>
-      <div class="stat-row">
-        <div class="stat"><div class="n">${cTotal}</div><div class="l">Total</div></div>
-        <div class="stat ok"><div class="n">${cRunning}</div><div class="l">Running</div></div>
-        <div class="stat off"><div class="n">${cTotal - cRunning}</div><div class="l">Stopped</div></div>
+      <div class="stat-icon docker">${ICONS.docker}</div>
+      <div class="stat-body">
+        <h3>Docker Containers</h3>
+        <div class="stat-row">
+          <div class="stat"><div class="n">${cTotal}</div><div class="l">Total</div></div>
+          <div class="stat ok"><div class="n">${cRunning}</div><div class="l">Running</div></div>
+          <div class="stat off"><div class="n">${cTotal - cRunning}</div><div class="l">Stopped</div></div>
+        </div>
       </div>
     </div>
     <div class="stat-cluster">
-      <h3>Systemd Services</h3>
-      <div class="stat-row">
-        <div class="stat"><div class="n">${sTotal}</div><div class="l">Total</div></div>
-        <div class="stat ok"><div class="n">${sRunning}</div><div class="l">Running</div></div>
-        <div class="stat crit"><div class="n">${sFailed}</div><div class="l">Failed</div></div>
+      <div class="stat-icon systemd">${ICONS.systemd}</div>
+      <div class="stat-body">
+        <h3>Systemd Services</h3>
+        <div class="stat-row">
+          <div class="stat"><div class="n">${sTotal}</div><div class="l">Total</div></div>
+          <div class="stat ok"><div class="n">${sRunning}</div><div class="l">Running</div></div>
+          <div class="stat crit"><div class="n">${sFailed}</div><div class="l">Failed</div></div>
+        </div>
       </div>
     </div>
     <div class="stat-cluster">
-      <h3>Alerts</h3>
-      <div class="stat-row">
-        <div class="stat ${alertsActive ? 'crit' : ''}"><div class="n">${alertsActive}</div><div class="l">Active</div></div>
-        <div class="stat ${alertsCritical ? 'crit' : ''}"><div class="n">${alertsCritical}</div><div class="l">Critical</div></div>
+      <div class="stat-icon alert">${ICONS.alert}</div>
+      <div class="stat-body">
+        <h3>Alerts</h3>
+        <div class="stat-row">
+          <div class="stat ${alertsActive ? 'crit' : ''}"><div class="n">${alertsActive}</div><div class="l">Active</div></div>
+          <div class="stat ${alertsCritical ? 'crit' : ''}"><div class="n">${alertsCritical}</div><div class="l">Critical</div></div>
+        </div>
       </div>
     </div>`;
 
@@ -646,6 +715,7 @@ function renderVmList() {
   el.innerHTML = vms.map(vm => `
     <div class="vm-row ${vm.id === selectedVmId ? 'selected' : ''}" data-id="${vm.id}">
       <span class="status-dot ${vm.status}"></span>
+      <span class="vm-row-icon">${ICONS.vm}</span>
       <div class="vm-row-main">
         <div class="vm-row-name">${vm.name}</div>
         <div class="vm-row-meta">${vm.ip_address || vm.hostname || '—'}</div>
@@ -1220,15 +1290,41 @@ function renderUsers() {
   });
 }
 
-$('#navVms').addEventListener('click', () => {
-  $('#navVms').classList.add('active'); $('#navUsers').classList.remove('active');
-  $('#viewVms').style.display = 'block'; $('#viewUsers').style.display = 'none';
-});
-$('#navUsers').addEventListener('click', () => {
-  stopLiveLogsPolling();
-  $('#navUsers').classList.add('active'); $('#navVms').classList.remove('active');
-  $('#viewUsers').style.display = 'block'; $('#viewVms').style.display = 'none';
-});
+const NAV_PAGES = ['overview', 'vms', 'users', 'alerts'];
+function showView(name) {
+  NAV_PAGES.forEach(p => {
+    const capitalized = p.charAt(0).toUpperCase() + p.slice(1);
+    $('#nav' + capitalized).classList.toggle('active', p === name);
+    $('#view' + capitalized).style.display = p === name ? 'block' : 'none';
+  });
+  if (name !== 'vms') stopLiveLogsPolling();
+  if (name === 'alerts') renderFleetAlerts();
+}
+$('#navOverview').addEventListener('click', () => showView('overview'));
+$('#navVms').addEventListener('click', () => showView('vms'));
+$('#navUsers').addEventListener('click', () => showView('users'));
+$('#navAlerts').addEventListener('click', () => showView('alerts'));
+
+function renderFleetAlerts() {
+  const rows = [];
+  vms.forEach(vm => {
+    const d = vmDetails[vm.id];
+    if (!d) return;
+    (d.alerts || []).filter(a => a.status === 'active').forEach(a => rows.push({ ...a, vmName: vm.name }));
+  });
+  rows.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1));
+  $('#fleetAlertsEmpty').style.display = rows.length === 0 ? 'block' : 'none';
+  $('#fleetAlertsWrap').style.display = rows.length === 0 ? 'none' : 'block';
+  $('#fleetAlertsBody').innerHTML = rows.map(a => `
+    <tr>
+      <td><span class="pill ${a.severity === 'critical' ? 'failed' : 'warn'}">${a.severity}</span></td>
+      <td>${a.vmName}</td>
+      <td><strong>${a.resource_name}</strong><div class="cell-sub">${a.resource_type}</div></td>
+      <td>${a.message}</td>
+      <td class="cell-sub">${new Date(a.first_seen).toLocaleString()}</td>
+      <td class="cell-sub">${new Date(a.last_seen).toLocaleString()}</td>
+    </tr>`).join('');
+}
 
 let editingUserId = null;
 

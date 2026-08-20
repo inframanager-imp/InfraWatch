@@ -680,8 +680,8 @@ function renderDetail(id) {
   $('#dtEnv').className = 'env-tag ' + vm.environment.name;
   $('#dtHost').textContent = vm.hostname || '—';
   $('#dtIp').textContent = vm.ip_address || '—';
-  $('#dtHb').textContent = vm.last_heartbeat ? new Date(vm.last_heartbeat).toLocaleString() : '—';
-  $('#dtCreated').textContent = new Date(vm.created_at).toLocaleString();
+  $('#dtHb').textContent = vm.last_heartbeat ? new Date(vm.last_heartbeat).toLocaleDateString() : '—';
+  $('#dtCreated').textContent = new Date(vm.created_at).toLocaleDateString();
 
   $('#dtActions').innerHTML = me.role === 'admin'
     ? `<button class="btn" id="vmEditBtn" style="width:auto">Edit VM</button>

@@ -1514,12 +1514,17 @@ async function renderResourceHistory(vmId, range) {
     }
     const current = vals[vals.length - 1];
     const min = Math.min(...vals), max = Math.max(...vals), avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    // A handful of points can't show a real trend yet -- say so plainly
+    // instead of a near-blank chart that reads as broken rather than new.
+    const sparse = vals.length < 3
+      ? `<div class="cell-sub" style="margin-top:6px">Still collecting — more points appear as heartbeats arrive.</div>` : '';
     return `
       <div class="metric-card">
         <div class="metric-card-top"><span class="k">${m.label}</span><span class="v-wrap"><span class="v">${current.toFixed(1)}%</span><br><span class="v-label">Current</span></span></div>
         <div class="meter"><div class="${fillClass(current)}" style="width:${Math.min(current, 100)}%"></div></div>
         ${historyChartSvg(vals)}
         <div class="chart-stats"><span>Min <b>${min.toFixed(0)}%</b></span><span>Avg <b>${avg.toFixed(0)}%</b></span><span>Max <b>${max.toFixed(0)}%</b></span><span>Threshold <b>${RESOURCE_ALERT_THRESHOLD}%</b></span></div>
+        ${sparse}
       </div>`;
   }).join('');
 }

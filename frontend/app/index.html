@@ -384,12 +384,9 @@
             <div class="table-scroll">
               <table><thead><tr>
                 <th class="sortable-th" data-sort-key="name">Name<span class="sort-arrow">⇅</span></th>
-                <th class="sortable-th" data-sort-key="image">Image<span class="sort-arrow">⇅</span></th>
                 <th class="sortable-th" data-sort-key="status">Status<span class="sort-arrow">⇅</span></th>
                 <th class="sortable-th" data-sort-key="cpu_percent">CPU<span class="sort-arrow">⇅</span></th>
                 <th class="sortable-th" data-sort-key="mem_usage">Memory<span class="sort-arrow">⇅</span></th>
-                <th class="sortable-th" data-sort-key="restart_count">Restarts<span class="sort-arrow">⇅</span></th>
-                <th class="sortable-th" data-sort-key="ports">Ports<span class="sort-arrow">⇅</span></th>
                 <th class="sortable-th" data-sort-key="last_seen">Last seen<span class="sort-arrow">⇅</span></th>
                 <th>Monitor</th><th>Logs</th><th></th>
               </tr></thead>
@@ -870,16 +867,13 @@ function renderDetail(id) {
 
   const sortedContainers = sortList(data.containers, dockerSort, dockerAccessors);
   $('#dockerBody').innerHTML = sortedContainers.length === 0
-    ? `<tr><td colspan="11" class="empty-state">No containers reported yet.</td></tr>`
+    ? `<tr><td colspan="8" class="empty-state">No containers reported yet.</td></tr>`
     : sortedContainers.map(c => `
         <tr class="${c.monitor_enabled ? '' : 'row-dimmed'}">
           <td><strong>${c.name}</strong></td>
-          <td class="cell-sub">${c.image || '—'}</td>
           <td>${c.status}</td>
           <td class="mono">${c.cpu_percent != null ? c.cpu_percent + '%' : '—'}</td>
           <td class="cell-sub">${c.mem_usage || '—'}</td>
-          <td class="mono">${c.restart_count != null ? c.restart_count : '—'}</td>
-          <td class="cell-sub">${c.ports || '—'}</td>
           <td class="cell-sub">${new Date(c.last_seen).toLocaleTimeString()}</td>
           <td>${toggleHtml('container', c.name, 'monitor_enabled', c.monitor_enabled)}</td>
           <td>${toggleHtml('container', c.name, 'logs_enabled', c.logs_enabled)}</td>
@@ -999,12 +993,9 @@ function appendLiveLogLine(raw) {
 
 const dockerAccessors = {
   name: c => c.name,
-  image: c => c.image,
   status: c => c.status,
   cpu_percent: c => c.cpu_percent,
   mem_usage: c => c.mem_usage,
-  restart_count: c => c.restart_count,
-  ports: c => c.ports,
   last_seen: c => new Date(c.last_seen).getTime(),
 };
 

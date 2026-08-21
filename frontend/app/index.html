@@ -260,6 +260,7 @@
   .attn-row:first-child{ border-top:none; }
   .attn-stripe{ width:3px; align-self:stretch; border-radius:2px; flex:none; }
   .attn-stripe.crit{ background:var(--crit); }
+  .attn-stripe.warn{ background:var(--warn); }
   .attn-stripe.off{ background:var(--offline); }
   .attn-main{ flex:1; min-width:0; }
   .attn-name{ font-size:12.5px; font-weight:700; }
@@ -1350,11 +1351,12 @@ function renderOverviewExtras() {
       attention.push({ vmName: vm.name, reason: 'Offline — no heartbeat received', time: vm.last_heartbeat, severity: 'off' });
     }
     const d = vmDetails[vm.id];
-    (d && d.alerts || []).filter(a => a.status === 'active' && a.severity === 'critical').forEach(a => {
-      attention.push({ vmName: vm.name, reason: a.message, time: a.last_seen, severity: 'crit' });
+    (d && d.alerts || []).filter(a => a.status === 'active').forEach(a => {
+      attention.push({ vmName: vm.name, reason: a.message, time: a.last_seen, severity: a.severity === 'critical' ? 'crit' : 'warn' });
     });
   });
-  attention.sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0));
+  const attnRank = { off: 0, crit: 0, warn: 1 };
+  attention.sort((a, b) => (attnRank[a.severity] - attnRank[b.severity]) || (new Date(b.time || 0) - new Date(a.time || 0)));
   $('#needsAttentionBody').innerHTML = attention.length === 0
     ? '<div class="empty-state">Nothing needs attention right now.</div>'
     : attention.slice(0, 6).map(a => `

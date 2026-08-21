@@ -197,11 +197,6 @@
   .detail-meta .k{ color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; font-size:10px; font-weight:700; }
   .detail-meta .v{ font-family:var(--font-mono); margin-top:2px; }
 
-  .metric-row{ display:flex; gap:22px; flex-wrap:wrap; margin-bottom:18px; }
-  .metric{ flex:1; min-width:150px; }
-  .metric-top{ display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:6px; }
-  .metric-top .k{ color:var(--text-muted); font-weight:600; }
-  .metric-top .v{ font-family:var(--font-mono); font-weight:700; }
   .meter{ height:6px; border-radius:99px; background:var(--surface-alt); overflow:hidden; }
   .meter div{ height:100%; border-radius:99px; }
   .fill-ok{ background:var(--ok); } .fill-warn{ background:var(--warn); } .fill-crit{ background:var(--crit); }
@@ -220,7 +215,9 @@
   .metric-card-top .v{ font-family:var(--font-mono); font-weight:700; font-size:15px; }
   .metric-card-top .v-label{ font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em; font-weight:700; }
   .metric-card .meter{ margin-bottom:12px; }
-  .trend-svg{ width:100%; height:64px; }
+  .chart-wrap{ display:flex; gap:4px; }
+  .chart-axis{ flex:none; width:22px; display:flex; flex-direction:column; justify-content:space-between; padding:1px 0; font-size:8.5px; font-family:var(--font-mono); color:var(--text-faint); text-align:right; }
+  .trend-svg{ flex:1; min-width:0; height:64px; }
   .chart-stats{ display:flex; gap:14px; margin-top:8px; font-size:10.5px; color:var(--text-faint); flex-wrap:wrap; }
   .chart-stats b{ font-family:var(--font-mono); color:var(--text-muted); font-weight:600; }
 
@@ -816,21 +813,12 @@ function renderDetail(id) {
 
   const data = vmDetails[id] || { containers: [], services: [], logSources: [] };
 
-  const fillClass = v => v >= 85 ? 'fill-crit' : v >= 65 ? 'fill-warn' : 'fill-ok';
-  const meter = (label, value) => value === null || value === undefined ? '' : `
-    <div class="metric">
-      <div class="metric-top"><span class="k">${label}</span><span class="v">${value}%</span></div>
-      <div class="meter"><div class="${fillClass(value)}" style="width:${Math.min(value, 100)}%"></div></div>
-    </div>`;
-  const metricsHtml = [meter('CPU', vm.cpu_percent), meter('Memory', vm.mem_percent), meter('Disk', vm.disk_percent)].join('');
-
   $('#panelOverview').innerHTML = `
-    ${metricsHtml ? `<div class="metric-row">${metricsHtml}</div>` : ''}
     <div class="history-head">
       <h4>Resource history</h4>
       <div class="range-pills" id="historyRangePills">
-        <button class="range-pill" data-range="1h">1h</button>
-        <button class="range-pill active" data-range="24h">24h</button>
+        <button class="range-pill active" data-range="1h">1h</button>
+        <button class="range-pill" data-range="24h">24h</button>
         <button class="range-pill" data-range="7d">7d</button>
       </div>
     </div>
@@ -1448,10 +1436,14 @@ function wireAlertActions(scopeSelector) {
 // to the actual alerting behavior, not an arbitrary decoration.
 const RESOURCE_ALERT_THRESHOLD = 90;
 
-function historyChartSvg(values) {
+function historyChartBlock(values) {
   const W = 280, H = 64, PAD = 4;
-  const min = Math.min(...values), max = Math.max(...values);
-  const span = Math.max(max - min, 5);
+  // Fixed 0-100 scale, not auto-fit to this series' own min/max -- CPU/
+  // memory/disk are all inherently bounded percentages, and auto-scaling
+  // would make a real 58-59% memory blip look as dramatic as an actual
+  // 14-40% CPU swing. Axis labels are plain HTML beside the svg (not SVG
+  // text) so they stay legible under preserveAspectRatio="none" stretch.
+  const min = 0, max = 100, span = 100;
   const xy = (i, v) => ({
     x: PAD + (i / Math.max(values.length - 1, 1)) * (W - PAD * 2),
     y: PAD + (1 - (v - min) / span) * (H - PAD * 2),
@@ -1466,22 +1458,27 @@ function historyChartSvg(values) {
   d += ` L ${pts[pts.length - 1].x.toFixed(1)} ${pts[pts.length - 1].y.toFixed(1)}`;
   const area = d + ` L ${pts[pts.length - 1].x.toFixed(1)} ${H - PAD} L ${pts[0].x.toFixed(1)} ${H - PAD} Z`;
   const last = pts[pts.length - 1];
-  let thresholdY = null;
-  if (RESOURCE_ALERT_THRESHOLD >= min - span * 0.15 && RESOURCE_ALERT_THRESHOLD <= max + span * 0.15) {
-    thresholdY = (PAD + (1 - (RESOURCE_ALERT_THRESHOLD - min) / span) * (H - PAD * 2)).toFixed(1);
-  }
+  const gridY = pct => (PAD + (1 - pct / 100) * (H - PAD * 2)).toFixed(1);
+  const gridLines = [0, 50, 100].map(pct =>
+    `<line x1="${PAD}" y1="${gridY(pct)}" x2="${W - PAD}" y2="${gridY(pct)}" stroke="var(--border-soft)" stroke-width="1"/>`
+  ).join('');
+  const thresholdY = gridY(RESOURCE_ALERT_THRESHOLD);
   const gid = 'hg' + Math.random().toString(36).slice(2, 8);
   return `
-    <svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28"/>
-        <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
-      </linearGradient></defs>
-      ${thresholdY !== null ? `<line x1="${PAD}" y1="${thresholdY}" x2="${W - PAD}" y2="${thresholdY}" stroke="var(--crit)" stroke-width="1" stroke-dasharray="3,3" opacity="0.55"/>` : ''}
-      <path d="${area}" fill="url(#${gid})" stroke="none"/>
-      <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="3.2" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.5"/>
-    </svg>`;
+    <div class="chart-wrap">
+      <div class="chart-axis"><span>100%</span><span>50%</span><span>0%</span></div>
+      <svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+        <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28"/>
+          <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+        </linearGradient></defs>
+        ${gridLines}
+        <line x1="${PAD}" y1="${thresholdY}" x2="${W - PAD}" y2="${thresholdY}" stroke="var(--crit)" stroke-width="1" stroke-dasharray="3,3" opacity="0.55"/>
+        <path d="${area}" fill="url(#${gid})" stroke="none"/>
+        <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="3.2" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.5"/>
+      </svg>
+    </div>`;
 }
 
 const HISTORY_METRICS = [
@@ -1506,13 +1503,18 @@ async function renderResourceHistory(vmId, range) {
     $('#historyMetricGrid').innerHTML = '<div class="cell-sub">Not enough history yet — check back after a few more heartbeats.</div>';
     return;
   }
+  const liveVm = vms.find(v => v.id === vmId);
   const fillClass = v => v >= 85 ? 'fill-crit' : v >= 65 ? 'fill-warn' : 'fill-ok';
   $('#historyMetricGrid').innerHTML = HISTORY_METRICS.map(m => {
     const vals = points.map(p => p[m.key]).filter(v => v !== null && v !== undefined);
     if (vals.length === 0) {
       return `<div class="metric-card"><div class="metric-card-top"><span class="k">${m.label}</span></div><div class="cell-sub">No data for this range.</div></div>`;
     }
-    const current = vals[vals.length - 1];
+    // The chart's rightmost point is a bucket average (smoothed); "Current"
+    // is the VM's own latest heartbeat, unsmoothed -- they can differ
+    // slightly by design, so this reads from the live VM, not the bucket.
+    const liveValue = liveVm ? liveVm[m.key] : null;
+    const current = (liveValue !== null && liveValue !== undefined) ? liveValue : vals[vals.length - 1];
     const min = Math.min(...vals), max = Math.max(...vals), avg = vals.reduce((a, b) => a + b, 0) / vals.length;
     // A handful of points can't show a real trend yet -- say so plainly
     // instead of a near-blank chart that reads as broken rather than new.
@@ -1522,7 +1524,7 @@ async function renderResourceHistory(vmId, range) {
       <div class="metric-card">
         <div class="metric-card-top"><span class="k">${m.label}</span><span class="v-wrap"><span class="v">${current.toFixed(1)}%</span><br><span class="v-label">Current</span></span></div>
         <div class="meter"><div class="${fillClass(current)}" style="width:${Math.min(current, 100)}%"></div></div>
-        ${historyChartSvg(vals)}
+        ${historyChartBlock(vals)}
         <div class="chart-stats"><span>Min <b>${min.toFixed(0)}%</b></span><span>Avg <b>${avg.toFixed(0)}%</b></span><span>Max <b>${max.toFixed(0)}%</b></span><span>Threshold <b>${RESOURCE_ALERT_THRESHOLD}%</b></span></div>
         ${sparse}
       </div>`;
@@ -1537,7 +1539,7 @@ function wireResourceHistory(vmId) {
       renderResourceHistory(vmId, btn.dataset.range);
     });
   });
-  renderResourceHistory(vmId, '24h');
+  renderResourceHistory(vmId, '1h');
 }
 
 function renderOverviewExtras() {

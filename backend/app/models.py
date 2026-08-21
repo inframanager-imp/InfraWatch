@@ -145,6 +145,9 @@ class Alert(Base):
     first_seen = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, default=datetime.utcnow)
     resolved_at = Column(DateTime, nullable=True)
+    acknowledged_at = Column(DateTime, nullable=True)
+    acknowledged_by = Column(String, nullable=True)  # acknowledging user's email
+    snoozed_until = Column(DateTime, nullable=True)  # notifications + "needs attention" surfacing suppressed until this passes
 
     vm = relationship("VM", back_populates="alerts")
 

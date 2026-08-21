@@ -181,9 +181,16 @@ class AlertOut(BaseModel):
     first_seen: datetime
     last_seen: datetime
     resolved_at: Optional[datetime]
+    acknowledged_at: Optional[datetime]
+    acknowledged_by: Optional[str]
+    snoozed_until: Optional[datetime]
 
     class Config:
         from_attributes = True
+
+
+class AlertSnoozeRequest(BaseModel):
+    hours: float
 
 
 class ResourceSettingBulkUpdate(BaseModel):

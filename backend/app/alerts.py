@@ -49,11 +49,22 @@ def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: st
                 existing.message = message
             return None
         elif existing:  # previously resolved, condition is true again -- reopen as a fresh incident
+            still_snoozed = existing.snoozed_until is not None and existing.snoozed_until > now
             existing.status = "active"
             existing.first_seen = now
             existing.last_seen = now
             existing.resolved_at = None
             existing.message = message
+            # A reopened incident is functionally new -- last occurrence's
+            # acknowledgment shouldn't silently apply to this one.
+            existing.acknowledged_at = None
+            existing.acknowledged_by = None
+            if still_snoozed:
+                # Honor an in-progress mute across a resolve/reactivate flap
+                # instead of re-notifying on every flap -- that's the whole
+                # point of snoozing. Snooze itself is left in place.
+                return None
+            existing.snoozed_until = None
             return existing
         else:
             alert = Alert(

@@ -151,6 +151,11 @@
   .toggle-switch input:disabled{ cursor:not-allowed; }
   .toggle-switch input:disabled + .toggle-slider{ opacity:.5; }
   tr.row-dimmed{ opacity:.55; }
+  .ack-actions{ display:flex; gap:6px; align-items:center; white-space:nowrap; }
+  .ack-actions select{ font-size:11.5px; font-weight:600; border:1px solid var(--border); background:var(--surface); border-radius:6px; padding:5px 7px; cursor:pointer; }
+  .status-badge{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; color:var(--text-muted); white-space:nowrap; }
+  .status-badge i{ width:6px; height:6px; border-radius:50%; background:var(--ok); flex:none; }
+  .status-badge.snoozed i{ background:var(--warn); }
   .bulk-toggle-bar{ display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
   .bulk-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); margin-left:6px; }
   .bulk-label:first-child{ margin-left:0; }
@@ -443,7 +448,7 @@
           <div class="tab-panel" data-panel="alerts">
             <div id="alertsEmpty" class="empty-state" style="display:none">No alerts for this VM.</div>
             <div class="table-scroll" id="alertsTableWrap">
-              <table><thead><tr><th>Severity</th><th>Resource</th><th>Message</th><th>First seen</th><th>Last seen</th><th>Status</th></tr></thead>
+              <table><thead><tr><th>Severity</th><th>Resource</th><th>Message</th><th>First seen</th><th>Last seen</th><th>Status</th><th>Action</th></tr></thead>
               <tbody id="alertsBody"></tbody></table>
             </div>
           </div>
@@ -476,7 +481,7 @@
       <div class="panel">
         <div id="fleetAlertsEmpty" class="empty-state" style="display:none">No active alerts across your fleet.</div>
         <div class="table-scroll" id="fleetAlertsWrap">
-          <table><thead><tr><th>Severity</th><th>VM</th><th>Resource</th><th>Message</th><th>First seen</th><th>Last seen</th></tr></thead>
+          <table><thead><tr><th>Severity</th><th>VM</th><th>Resource</th><th>Message</th><th>First seen</th><th>Last seen</th><th>Action</th></tr></thead>
           <tbody id="fleetAlertsBody"></tbody></table>
         </div>
       </div>
@@ -914,14 +919,16 @@ function renderDetail(id) {
   $('#alertsEmpty').style.display = alertsList.length === 0 ? 'block' : 'none';
   $('#alertsTableWrap').style.display = alertsList.length === 0 ? 'none' : 'block';
   $('#alertsBody').innerHTML = alertsList.map(a => `
-    <tr>
+    <tr class="${isSnoozed(a) ? 'row-dimmed' : ''}">
       <td><span class="pill ${a.severity === 'critical' ? 'failed' : 'warn'}">${a.severity}</span></td>
       <td><strong>${a.resource_name}</strong><div class="cell-sub">${a.resource_type}</div></td>
       <td>${a.message}</td>
       <td class="cell-sub">${new Date(a.first_seen).toLocaleString()}</td>
       <td class="cell-sub">${new Date(a.last_seen).toLocaleString()}</td>
       <td><span class="pill ${a.status === 'active' ? (a.severity === 'critical' ? 'failed' : 'warn') : 'offline'}">${a.status}</span></td>
+      <td>${alertActionsHtml(a)}</td>
     </tr>`).join('');
+  wireAlertActions('#alertsBody');
 }
 
 document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
@@ -1312,14 +1319,16 @@ function renderFleetAlerts() {
   $('#fleetAlertsEmpty').style.display = rows.length === 0 ? 'block' : 'none';
   $('#fleetAlertsWrap').style.display = rows.length === 0 ? 'none' : 'block';
   $('#fleetAlertsBody').innerHTML = rows.map(a => `
-    <tr>
+    <tr class="${isSnoozed(a) ? 'row-dimmed' : ''}">
       <td><span class="pill ${a.severity === 'critical' ? 'failed' : 'warn'}">${a.severity}</span></td>
       <td>${a.vmName}</td>
       <td><strong>${a.resource_name}</strong><div class="cell-sub">${a.resource_type}</div></td>
       <td>${a.message}</td>
       <td class="cell-sub">${new Date(a.first_seen).toLocaleString()}</td>
       <td class="cell-sub">${new Date(a.last_seen).toLocaleString()}</td>
+      <td>${alertActionsHtml(a)}</td>
     </tr>`).join('');
+  wireAlertActions('#fleetAlertsBody');
 }
 
 function timeAgo(isoString) {
@@ -1334,6 +1343,77 @@ function timeAgo(isoString) {
   return Math.floor(hours / 24) + 'd ago';
 }
 
+function parseServerDate(isoString) {
+  // Same naive-UTC quirk as timeAgo() above -- backend emits no Z/offset.
+  const withZone = /[Zz]|[+-]\d\d:\d\d$/.test(isoString) ? isoString : isoString + 'Z';
+  return new Date(withZone);
+}
+
+function isSnoozed(a) {
+  return !!a.snoozed_until && parseServerDate(a.snoozed_until).getTime() > Date.now();
+}
+
+// Renders the acknowledge/snooze controls (or current ack/snooze state) for one
+// active alert row. Resolved alerts and non-admins get nothing -- the backend
+// enforces the same rules, this just avoids showing controls that would 403.
+function alertActionsHtml(a) {
+  if (a.status !== 'active' || !me || me.role !== 'admin') return '';
+  if (isSnoozed(a)) {
+    const until = parseServerDate(a.snoozed_until).toLocaleString([], { hour: 'numeric', minute: '2-digit' });
+    return `<span class="status-badge snoozed"><i></i>Snoozed until ${until}</span> <button class="btn small ghost" data-unsnooze-alert="${a.id}">Undo</button>`;
+  }
+  if (a.acknowledged_at) {
+    return `<span class="status-badge"><i></i>Acked by ${a.acknowledged_by} · ${timeAgo(a.acknowledged_at)}</span> <button class="btn small ghost" data-unack-alert="${a.id}">Undo</button>`;
+  }
+  return `
+    <div class="ack-actions">
+      <button class="btn small" data-ack-alert="${a.id}">Acknowledge</button>
+      <select data-snooze-alert="${a.id}">
+        <option value="">Snooze…</option>
+        <option value="1">1 hour</option>
+        <option value="8">8 hours</option>
+        <option value="24">24 hours</option>
+      </select>
+    </div>`;
+}
+
+function wireAlertActions(scopeSelector) {
+  document.querySelectorAll(scopeSelector + ' [data-ack-alert]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await api('/alerts/' + btn.dataset.ackAlert + '/acknowledge', { method: 'POST' }); await loadVms(); }
+      catch (err) { btn.disabled = false; alert('Could not acknowledge: ' + err.message); }
+    });
+  });
+  document.querySelectorAll(scopeSelector + ' [data-unack-alert]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await api('/alerts/' + btn.dataset.unackAlert + '/unacknowledge', { method: 'POST' }); await loadVms(); }
+      catch (err) { btn.disabled = false; alert('Could not undo: ' + err.message); }
+    });
+  });
+  document.querySelectorAll(scopeSelector + ' [data-unsnooze-alert]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await api('/alerts/' + btn.dataset.unsnoozeAlert + '/unsnooze', { method: 'POST' }); await loadVms(); }
+      catch (err) { btn.disabled = false; alert('Could not undo: ' + err.message); }
+    });
+  });
+  document.querySelectorAll(scopeSelector + ' [data-snooze-alert]').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const hours = sel.value;
+      if (!hours) return;
+      sel.disabled = true;
+      try {
+        await api('/alerts/' + sel.dataset.snoozeAlert + '/snooze', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hours: Number(hours) }),
+        });
+        await loadVms();
+      } catch (err) { sel.disabled = false; sel.value = ''; alert('Could not snooze: ' + err.message); }
+    });
+  });
+}
+
 function renderOverviewExtras() {
   // Needs attention: offline VMs + VMs currently carrying an active critical alert.
   const attention = [];
@@ -1342,7 +1422,8 @@ function renderOverviewExtras() {
       attention.push({ vmName: vm.name, reason: 'Offline — no heartbeat received', time: vm.last_heartbeat, severity: 'off' });
     }
     const d = vmDetails[vm.id];
-    (d && d.alerts || []).filter(a => a.status === 'active').forEach(a => {
+    // Snoozed alerts are deliberately muted -- excluding them here is the whole point.
+    (d && d.alerts || []).filter(a => a.status === 'active' && !isSnoozed(a)).forEach(a => {
       attention.push({ vmName: vm.name, reason: a.message, time: a.last_seen, severity: a.severity === 'critical' ? 'crit' : 'warn' });
     });
   });
@@ -1362,7 +1443,7 @@ function renderOverviewExtras() {
   vms.forEach(vm => {
     const d = vmDetails[vm.id];
     if (!d) return;
-    (d.alerts || []).filter(a => a.status === 'active').forEach(a => recent.push({ ...a, vmName: vm.name }));
+    (d.alerts || []).filter(a => a.status === 'active' && !isSnoozed(a)).forEach(a => recent.push({ ...a, vmName: vm.name }));
   });
   recent.sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
   $('#recentAlertsBody').innerHTML = recent.length === 0

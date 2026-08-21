@@ -206,6 +206,24 @@
   .meter div{ height:100%; border-radius:99px; }
   .fill-ok{ background:var(--ok); } .fill-warn{ background:var(--warn); } .fill-crit{ background:var(--crit); }
 
+  .history-head{ display:flex; align-items:center; justify-content:space-between; margin:22px 0 12px; }
+  .history-head h4{ margin:0; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); font-weight:700; }
+  .range-pills{ display:flex; gap:4px; background:var(--surface-alt); padding:3px; border-radius:8px; }
+  .range-pill{ font-size:11px; font-weight:700; padding:5px 11px; border-radius:6px; border:none; background:none; color:var(--text-muted); cursor:pointer; }
+  .range-pill.active{ background:var(--surface); color:var(--accent-strong); box-shadow:0 1px 2px rgba(19,28,34,.08); }
+  .metric-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px; }
+  @media (max-width:820px){ .metric-grid{ grid-template-columns:1fr; } }
+  .metric-card{ border:1px solid var(--border-soft); border-radius:10px; padding:14px; }
+  .metric-card-top{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+  .metric-card-top .k{ font-size:11.5px; font-weight:700; color:var(--text-muted); }
+  .metric-card-top .v-wrap{ text-align:right; }
+  .metric-card-top .v{ font-family:var(--font-mono); font-weight:700; font-size:15px; }
+  .metric-card-top .v-label{ font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em; font-weight:700; }
+  .metric-card .meter{ margin-bottom:12px; }
+  .trend-svg{ width:100%; height:64px; }
+  .chart-stats{ display:flex; gap:14px; margin-top:8px; font-size:10.5px; color:var(--text-faint); flex-wrap:wrap; }
+  .chart-stats b{ font-family:var(--font-mono); color:var(--text-muted); font-weight:600; }
+
   .tabs{ display:flex; gap:2px; padding:0 16px; border-bottom:1px solid var(--border-soft); overflow-x:auto; }
   .tab{ padding:11px 6px; margin-right:18px; font-size:12.5px; font-weight:700; color:var(--text-muted); background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; white-space:nowrap; }
   .tab.active{ color:var(--accent-strong); border-bottom-color:var(--accent); }
@@ -808,6 +826,15 @@ function renderDetail(id) {
 
   $('#panelOverview').innerHTML = `
     ${metricsHtml ? `<div class="metric-row">${metricsHtml}</div>` : ''}
+    <div class="history-head">
+      <h4>Resource history</h4>
+      <div class="range-pills" id="historyRangePills">
+        <button class="range-pill" data-range="1h">1h</button>
+        <button class="range-pill active" data-range="24h">24h</button>
+        <button class="range-pill" data-range="7d">7d</button>
+      </div>
+    </div>
+    <div class="metric-grid" id="historyMetricGrid"><div class="cell-sub">Loading…</div></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">
       <div><div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Containers</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px">${data.containers.length}</div></div>
       <div><div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Services</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px">${data.services.length}</div></div>
@@ -837,6 +864,8 @@ function renderDetail(id) {
               ${me.role === 'admin' ? `<button class="btn small" data-delete-source="${s.id}">Remove</button>` : ''}
             </div>`).join('')}
     </div>`;
+
+  wireResourceHistory(id);
 
   if (me.role === 'admin') {
     $('#addLogSourceBtn').addEventListener('click', () => {
@@ -1412,6 +1441,98 @@ function wireAlertActions(scopeSelector) {
       } catch (err) { sel.disabled = false; sel.value = ''; alert('Could not snooze: ' + err.message); }
     });
   });
+}
+
+// Matches CPU_HIGH_THRESHOLD/MEM_HIGH_THRESHOLD/DISK_HIGH_THRESHOLD in
+// backend/app/alerts.py -- shown as a reference line so the chart connects
+// to the actual alerting behavior, not an arbitrary decoration.
+const RESOURCE_ALERT_THRESHOLD = 90;
+
+function historyChartSvg(values) {
+  const W = 280, H = 64, PAD = 4;
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = Math.max(max - min, 5);
+  const xy = (i, v) => ({
+    x: PAD + (i / Math.max(values.length - 1, 1)) * (W - PAD * 2),
+    y: PAD + (1 - (v - min) / span) * (H - PAD * 2),
+  });
+  const pts = values.map((v, i) => xy(i, v));
+  let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i], p1 = pts[i + 1];
+    const mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
+    d += ` Q ${p0.x.toFixed(1)} ${p0.y.toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)}`;
+  }
+  d += ` L ${pts[pts.length - 1].x.toFixed(1)} ${pts[pts.length - 1].y.toFixed(1)}`;
+  const area = d + ` L ${pts[pts.length - 1].x.toFixed(1)} ${H - PAD} L ${pts[0].x.toFixed(1)} ${H - PAD} Z`;
+  const last = pts[pts.length - 1];
+  let thresholdY = null;
+  if (RESOURCE_ALERT_THRESHOLD >= min - span * 0.15 && RESOURCE_ALERT_THRESHOLD <= max + span * 0.15) {
+    thresholdY = (PAD + (1 - (RESOURCE_ALERT_THRESHOLD - min) / span) * (H - PAD * 2)).toFixed(1);
+  }
+  const gid = 'hg' + Math.random().toString(36).slice(2, 8);
+  return `
+    <svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28"/>
+        <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+      </linearGradient></defs>
+      ${thresholdY !== null ? `<line x1="${PAD}" y1="${thresholdY}" x2="${W - PAD}" y2="${thresholdY}" stroke="var(--crit)" stroke-width="1" stroke-dasharray="3,3" opacity="0.55"/>` : ''}
+      <path d="${area}" fill="url(#${gid})" stroke="none"/>
+      <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="3.2" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.5"/>
+    </svg>`;
+}
+
+const HISTORY_METRICS = [
+  { key: 'cpu_percent', label: 'CPU' },
+  { key: 'mem_percent', label: 'Memory' },
+  { key: 'disk_percent', label: 'Disk used' },
+];
+
+async function renderResourceHistory(vmId, range) {
+  const grid = $('#historyMetricGrid');
+  if (!grid) return;
+  let points;
+  try {
+    points = await api('/vms/' + vmId + '/metrics?range=' + range);
+  } catch (err) {
+    if (selectedVmId !== vmId) return;
+    $('#historyMetricGrid').innerHTML = '<div class="cell-sub">Could not load history: ' + err.message + '</div>';
+    return;
+  }
+  if (selectedVmId !== vmId) return; // VM switched away while this was in flight -- discard
+  if (points.length === 0) {
+    $('#historyMetricGrid').innerHTML = '<div class="cell-sub">Not enough history yet — check back after a few more heartbeats.</div>';
+    return;
+  }
+  const fillClass = v => v >= 85 ? 'fill-crit' : v >= 65 ? 'fill-warn' : 'fill-ok';
+  $('#historyMetricGrid').innerHTML = HISTORY_METRICS.map(m => {
+    const vals = points.map(p => p[m.key]).filter(v => v !== null && v !== undefined);
+    if (vals.length === 0) {
+      return `<div class="metric-card"><div class="metric-card-top"><span class="k">${m.label}</span></div><div class="cell-sub">No data for this range.</div></div>`;
+    }
+    const current = vals[vals.length - 1];
+    const min = Math.min(...vals), max = Math.max(...vals), avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    return `
+      <div class="metric-card">
+        <div class="metric-card-top"><span class="k">${m.label}</span><span class="v-wrap"><span class="v">${current.toFixed(1)}%</span><br><span class="v-label">Current</span></span></div>
+        <div class="meter"><div class="${fillClass(current)}" style="width:${Math.min(current, 100)}%"></div></div>
+        ${historyChartSvg(vals)}
+        <div class="chart-stats"><span>Min <b>${min.toFixed(0)}%</b></span><span>Avg <b>${avg.toFixed(0)}%</b></span><span>Max <b>${max.toFixed(0)}%</b></span><span>Threshold <b>${RESOURCE_ALERT_THRESHOLD}%</b></span></div>
+      </div>`;
+  }).join('');
+}
+
+function wireResourceHistory(vmId) {
+  document.querySelectorAll('#historyRangePills .range-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#historyRangePills .range-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderResourceHistory(vmId, btn.dataset.range);
+    });
+  });
+  renderResourceHistory(vmId, '24h');
 }
 
 function renderOverviewExtras() {

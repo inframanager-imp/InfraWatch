@@ -57,6 +57,7 @@ class VM(Base):
     log_sources = relationship("LogSource", back_populates="vm", cascade="all, delete-orphan")
     resource_settings = relationship("ResourceSetting", back_populates="vm", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="vm", cascade="all, delete-orphan")
+    metric_samples = relationship("MetricSample", back_populates="vm", cascade="all, delete-orphan")
 
 
 class Container(Base):
@@ -150,6 +151,24 @@ class Alert(Base):
     snoozed_until = Column(DateTime, nullable=True)  # notifications + "needs attention" surfacing suppressed until this passes
 
     vm = relationship("VM", back_populates="alerts")
+
+
+class MetricSample(Base):
+    """One row per heartbeat's resource snapshot -- feeds the VM detail
+    page's resource-history charts. Pruned after METRIC_RETENTION_DAYS
+    (see main.py's background loop) so this doesn't grow unbounded; the
+    prune window is deliberately a bit larger than the longest range the
+    UI offers (7d) so that range's oldest edge is never half-empty."""
+    __tablename__ = "metric_samples"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False, index=True)
+    recorded_at = Column(DateTime, default=datetime.utcnow, index=True)
+    cpu_percent = Column(Float, nullable=True)
+    mem_percent = Column(Float, nullable=True)
+    disk_percent = Column(Float, nullable=True)
+
+    vm = relationship("VM", back_populates="metric_samples")
 
 
 class UserVMAccess(Base):

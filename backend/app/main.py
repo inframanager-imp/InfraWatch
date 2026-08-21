@@ -6,9 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from .alerts import sweep_vm_offline_alerts
 from .config import settings
 from .database import SessionLocal
+from .metrics import prune_old_metric_samples
 from .models import User
 from .notifications import send_alert_notification
-from .routers import agent, alerts as alerts_router, auth, environments, users, vms
+from .routers import agent, alerts as alerts_router, auth, environments, metrics as metrics_router, users, vms
 from .seed import seed
 
 # Schema is owned by Alembic (see alembic/), applied via `alembic upgrade
@@ -32,6 +33,7 @@ app.include_router(users.router)
 app.include_router(environments.router)
 app.include_router(agent.router)
 app.include_router(alerts_router.router)
+app.include_router(metrics_router.router)
 
 OFFLINE_SWEEP_INTERVAL_SECONDS = 60
 
@@ -41,9 +43,10 @@ async def _offline_sweep_loop():
         await asyncio.sleep(OFFLINE_SWEEP_INTERVAL_SECONDS)
         db = SessionLocal()
         try:
-            # sweep_vm_offline_alerts does blocking DB I/O -- run it off the
-            # event loop thread so a slow query never stalls request handling.
+            # Both do blocking DB I/O -- run them off the event loop thread
+            # so a slow query never stalls request handling.
             newly_opened = await asyncio.to_thread(sweep_vm_offline_alerts, db)
+            await asyncio.to_thread(prune_old_metric_samples, db)
             if newly_opened:
                 admin_emails = [u.email for u in db.query(User).filter(User.role == "admin").all()]
                 by_vm = {}

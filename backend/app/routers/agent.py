@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import schemas
 from ..alerts import evaluate_heartbeat_alerts
 from ..database import SessionLocal, get_db
-from ..models import Container, ResourceSetting, Service, User, VM
+from ..models import Container, MetricSample, ResourceSetting, Service, User, VM
 from ..notifications import send_alert_notification
 from ..security import verify_password
 from ..streams import agent_sockets, browser_sockets
@@ -30,11 +30,20 @@ def heartbeat(payload: schemas.HeartbeatIn, background_tasks: BackgroundTasks, d
     if not vm or not verify_password(payload.token, vm.agent_token_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid VM name or token")
 
-    vm.last_heartbeat = datetime.utcnow()
+    now = datetime.utcnow()
+    vm.last_heartbeat = now
     vm.status = "online"
     vm.cpu_percent = payload.cpu_percent
     vm.mem_percent = payload.mem_percent
     vm.disk_percent = payload.disk_percent
+
+    # Feeds the resource-history charts. One row per heartbeat, same
+    # replace-nothing append-only shape as Alert's audit trail -- pruned
+    # separately (see main.py) rather than capped here.
+    db.add(MetricSample(
+        vm_id=vm.id, recorded_at=now,
+        cpu_percent=payload.cpu_percent, mem_percent=payload.mem_percent, disk_percent=payload.disk_percent,
+    ))
 
     # Full replace each heartbeat — simplest correct approach at this scale;
     # revisit with a diff/upsert if container/service counts grow large.

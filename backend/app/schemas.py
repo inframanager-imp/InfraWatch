@@ -193,6 +193,13 @@ class AlertSnoozeRequest(BaseModel):
     hours: float
 
 
+class MetricPointOut(BaseModel):
+    t: datetime
+    cpu_percent: Optional[float]
+    mem_percent: Optional[float]
+    disk_percent: Optional[float]
+
+
 class ResourceSettingBulkUpdate(BaseModel):
     resource_type: str
     field: str

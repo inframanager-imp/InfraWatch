@@ -186,7 +186,7 @@
   .vm-row-icon{ width:32px; height:32px; border-radius:9px; background:var(--icon-vm-bg); color:var(--icon-vm-fg); display:flex; align-items:center; justify-content:center; flex:none; }
   .vm-row-icon svg{ width:16px; height:16px; }
   .vm-row-main{ flex:1; min-width:0; }
-  .vm-row-name{ font-size:13px; font-weight:600; overflow-wrap:break-word; }
+  .vm-row-name{ font-size:13px; font-weight:600; line-height:1.4; overflow-wrap:break-word; }
   .vm-row-meta{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:1px; }
 
   .detail-head{ padding:16px; border-bottom:1px solid var(--border-soft); }
@@ -764,7 +764,6 @@ function renderVmList() {
         <div class="vm-row-meta">${vm.ip_address || vm.hostname || '—'}</div>
       </div>
       <span class="env-tag ${vm.environment.name}">${vm.environment.name.slice(0, 4)}</span>
-      <span class="pill ${vm.status}"><i></i>${vm.status}</span>
     </div>`).join('');
   el.querySelectorAll('.vm-row').forEach(row => row.addEventListener('click', () => selectVm(row.dataset.id)));
 }

@@ -4,548 +4,921 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>InfraWatch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <style>
+  /* ============================================================
+     DESIGN TOKENS — every colour in the UI resolves through these.
+     Light is the base; dark redefines only the token values, so no
+     component rule below ever needs to know which theme is active.
+     ============================================================ */
   :root{
-    --bg:#F4F7F8; --surface:#FFFFFF; --surface-alt:#EAF0F2;
-    --border:#D6E0E3; --border-soft:#E4EAEC;
-    --text:#131C22; --text-muted:#5B6E75; --text-faint:#8A9BA1;
-    --accent:#2563EB; --accent-strong:#1D4ED8; --accent-soft:#DBEAFE;
-    --icon-vm-bg:#DBEAFE; --icon-vm-fg:#2563EB;
-    --icon-docker-bg:#EDE9FE; --icon-docker-fg:#7C3AED;
-    --icon-systemd-bg:#DCFCE7; --icon-systemd-fg:#16A34A;
-    --icon-alert-bg:#FEE2E2; --icon-alert-fg:#DC2626;
-    --ok:#1E8E5A; --ok-soft:#E3F5EC;
-    --warn:#B36B00; --warn-soft:#FBEEDD;
-    --crit:#C4392B; --crit-soft:#FBE7E4;
-    --offline:#6B7680; --offline-soft:#EEF1F3;
-    --env-violet:#6E4FC9; --env-violet-soft:#EFE9F9;
-    --env-rose:#C23B7A; --env-rose-soft:#FBE8F0;
-    --env-gold:#9C7A12; --env-gold-soft:#FBF3DC;
-    --shadow: 0 1px 2px rgba(19,28,34,.04), 0 6px 16px rgba(19,28,34,.06);
-    --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, "SFMono-Regular", monospace;
-    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "IBM Plex Sans", Roboto, sans-serif;
+    color-scheme: light;
+    --page:    oklch(0.94 0.004 250);
+    --surface: oklch(1 0 0);
+    --raised:  oklch(0.978 0.004 250);
+    --border:  oklch(0.88 0.006 250);
+    --divider: oklch(0.935 0.005 250);
+    --text:    oklch(0.28 0.01 250);
+    --muted:   oklch(0.48 0.01 250);
+
+    /* Base hues drive fills (bars, dots, stripes). The -ink variants are
+       the same hue darkened to clear 4.5:1 as text on --surface, because
+       the fill-weight values are too light to read as small type. */
+    --accent:     oklch(0.52 0.16 255);
+    --accent-ink: oklch(0.47 0.16 255);
+    --ok:         oklch(0.62 0.15 150);
+    --ok-ink:     oklch(0.46 0.13 150);
+    --warn:       oklch(0.75 0.15 70);
+    --warn-ink:   oklch(0.47 0.12 70);
+    --crit:       oklch(0.55 0.19 25);
+    --crit-ink:   oklch(0.47 0.18 25);
+    --neutral:    oklch(0.60 0.012 250);
+    --neutral-ink:oklch(0.45 0.012 250);
+
+    --accent-soft:  color-mix(in oklab, var(--accent) 13%, var(--surface));
+    --ok-soft:      color-mix(in oklab, var(--ok) 15%, var(--surface));
+    --warn-soft:    color-mix(in oklab, var(--warn) 20%, var(--surface));
+    --crit-soft:    color-mix(in oklab, var(--crit) 13%, var(--surface));
+    --neutral-soft: color-mix(in oklab, var(--neutral) 14%, var(--surface));
+
+    --env-production:  oklch(0.47 0.18 25);
+    --env-staging:     oklch(0.47 0.12 70);
+    --env-development: oklch(0.47 0.16 255);
+    --env-qa:          oklch(0.47 0.17 300);
+    --env-demo:        oklch(0.47 0.16 350);
+    --env-das:         oklch(0.45 0.012 250);
+    --env-sandbox:     oklch(0.47 0.12 95);
+
+    /* The log viewer stays dark in both themes — every console UI does. */
+    --term-bg:    oklch(0.18 0.012 250);
+    --term-row:   oklch(0.23 0.014 250);
+    --term-edge:  oklch(0.30 0.014 250);
+    --term-fg:    oklch(0.88 0.008 250);
+    --term-dim:   oklch(0.62 0.012 250);
+    --term-info:  oklch(0.76 0.10 230);
+    --term-warn:  oklch(0.82 0.13 70);
+    --term-error: oklch(0.72 0.17 25);
+    --term-debug: oklch(0.66 0.010 250);
+
+    --mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+    --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --r-sm: 4px; --r-md: 6px; --r-lg: 8px;
   }
-  @media (prefers-color-scheme: dark){
-    :root{
-      --bg:#0A1013; --surface:#10181C; --surface-alt:#162126;
-      --border:#243239; --border-soft:#1C282D;
-      --text:#E4ECEE; --text-muted:#8CA0A6; --text-faint:#5F7379;
-      --accent:#60A5FA; --accent-strong:#93C5FD; --accent-soft:rgba(96,165,250,.16);
-      --icon-vm-bg:rgba(96,165,250,.16); --icon-vm-fg:#60A5FA;
-      --icon-docker-bg:rgba(167,139,250,.16); --icon-docker-fg:#A78BFA;
-      --icon-systemd-bg:rgba(74,222,128,.16); --icon-systemd-fg:#4ADE80;
-      --icon-alert-bg:rgba(248,113,113,.16); --icon-alert-fg:#F87171;
-      --ok:#3ECF8E; --ok-soft:rgba(62,207,142,.14);
-      --warn:#E2A23B; --warn-soft:rgba(226,162,59,.14);
-      --crit:#F0564A; --crit-soft:rgba(240,86,74,.14);
-      --offline:#7C8A92; --offline-soft:rgba(124,138,146,.14);
-      --env-violet:#B39DFF; --env-violet-soft:rgba(151,120,255,.16);
-      --env-rose:#F48FC0; --env-rose-soft:rgba(240,100,160,.16);
-      --env-gold:#E0C25E; --env-gold-soft:rgba(224,194,94,.16);
-      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
-    }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --page:    oklch(0.17 0.008 250);
+    --surface: oklch(0.21 0.010 250);
+    --raised:  oklch(0.25 0.012 250);
+    --border:  oklch(0.32 0.014 250);
+    --divider: oklch(0.27 0.012 250);
+    --text:    oklch(0.93 0.008 250);
+    --muted:   oklch(0.72 0.012 250);
+
+    --accent:     oklch(0.70 0.14 255);
+    --accent-ink: oklch(0.78 0.13 255);
+    --ok:         oklch(0.72 0.15 150);
+    --ok-ink:     oklch(0.80 0.14 150);
+    --warn:       oklch(0.80 0.14 70);
+    --warn-ink:   oklch(0.85 0.13 70);
+    --crit:       oklch(0.66 0.18 25);
+    --crit-ink:   oklch(0.76 0.16 25);
+    --neutral:    oklch(0.58 0.012 250);
+    --neutral-ink:oklch(0.74 0.012 250);
+
+    --accent-soft:  color-mix(in oklab, var(--accent) 22%, var(--surface));
+    --ok-soft:      color-mix(in oklab, var(--ok) 20%, var(--surface));
+    --warn-soft:    color-mix(in oklab, var(--warn) 20%, var(--surface));
+    --crit-soft:    color-mix(in oklab, var(--crit) 22%, var(--surface));
+    --neutral-soft: color-mix(in oklab, var(--neutral) 24%, var(--surface));
+
+    --env-production:  oklch(0.76 0.15 25);
+    --env-staging:     oklch(0.80 0.13 70);
+    --env-development: oklch(0.78 0.13 255);
+    --env-qa:          oklch(0.78 0.14 300);
+    --env-demo:        oklch(0.78 0.13 350);
+    --env-das:         oklch(0.74 0.012 250);
+    --env-sandbox:     oklch(0.80 0.11 95);
   }
+
+  /* ============================================================ BASE */
   *{ box-sizing:border-box; }
-  body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--font-sans); font-size:14px; line-height:1.5; }
-  button, input, select{ font-family:inherit; font-size:inherit; color:inherit; }
+  html,body{ height:100%; }
+  body{
+    margin:0; background:var(--page); color:var(--text);
+    font-family:var(--sans); font-size:13px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  button,input,select,textarea{ font-family:inherit; font-size:inherit; color:inherit; }
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--r-sm); }
+  .mono{ font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .num{ font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .visually-hidden{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{ animation-duration:.01ms !important; transition-duration:.01ms !important; }
+  }
 
-  /* login */
-  .login-wrap{ min-height:100vh; display:flex; align-items:center; justify-content:center; }
-  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:28px; box-shadow:var(--shadow); }
-  .login-brand{ font-family:var(--font-mono); font-weight:700; font-size:18px; margin-bottom:4px; }
-  .login-sub{ color:var(--text-muted); font-size:12.5px; margin-bottom:20px; }
-  .field{ display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
-  .field > label{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); }
-  .field > input, .field > select{ border:1px solid var(--border); background:var(--surface-alt); border-radius:6px; padding:9px 10px; outline:0; width:100%; }
-  .field > input:focus, .field > select:focus{ border-color:var(--accent); }
-  .error-box{ background:var(--crit-soft); color:var(--crit); font-size:12.5px; padding:8px 10px; border-radius:6px; margin-bottom:14px; display:none; }
-  .error-box.show{ display:block; }
+  /* Column headers and other machine-ish labels share one treatment. */
+  .label{
+    font-family:var(--mono); font-size:10px; font-weight:600;
+    text-transform:uppercase; letter-spacing:.07em; color:var(--muted);
+  }
 
-  .btn{ font-size:12.5px; font-weight:600; padding:8px 14px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
-  .btn:hover{ background:var(--surface-alt); }
-  .btn.primary{ background:var(--accent); border-color:var(--accent); color:#fff; width:100%; }
-  .btn.primary:hover{ background:var(--accent-strong); }
-  .btn.danger{ color:var(--crit); border-color:var(--crit-soft); }
+  /* ============================================================ BUTTONS */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    font-size:12.5px; font-weight:600; padding:8px 13px; border-radius:var(--r-md);
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+    cursor:pointer; white-space:nowrap;
+  }
+  .btn:hover{ background:var(--raised); }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:oklch(1 0 0); }
+  .btn.primary:hover{ filter:brightness(1.08); }
+  .btn.danger{ color:var(--crit-ink); border-color:var(--border); }
   .btn.danger:hover{ background:var(--crit-soft); }
-  .btn.small{ padding:5px 10px; font-size:11.5px; }
+  .btn.small{ padding:5px 9px; font-size:11.5px; }
+  .btn.block{ width:100%; }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+  .btn.on{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  /* Logs is a text link, not a button — it navigates, it does not mutate. */
+  .link{
+    background:none; border:0; padding:0; cursor:pointer;
+    color:var(--accent-ink); font-size:12px; font-weight:600;
+  }
+  .link:hover{ text-decoration:underline; }
+  .link:disabled{ color:var(--muted); cursor:not-allowed; text-decoration:none; }
+  @media (pointer:coarse){
+    .btn,.tab,.sidebar-nav button,.link{ min-height:44px; }
+  }
 
-  /* app shell */
-  #appShell, #loginScreen{ display:none; }
-  #bootLoading{ min-height:100vh; display:flex; align-items:center; justify-content:center; color:var(--text-faint); font-family:var(--font-mono); font-size:13px; }
-  .app-shell{ display:flex; min-height:100vh; align-items:stretch; }
-  .sidebar{ width:230px; flex:none; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; padding:18px 12px; }
-  .sidebar-brand{ display:flex; align-items:center; gap:9px; padding:2px 8px 20px; font-family:var(--font-mono); font-weight:700; font-size:16px; }
-  .sidebar-brand svg{ width:22px; height:22px; color:var(--accent); flex:none; }
+  /* ============================================================ FIELDS */
+  .field{ display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+  .field > label{ font-size:12px; font-weight:600; color:var(--text); }
+  .field input,.field select,.input{
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+    border-radius:var(--r-md); padding:9px 11px; outline:0; width:100%;
+  }
+  .field input::placeholder,.input::placeholder{ color:var(--muted); }
+  .field input:focus,.field select:focus,.input:focus{ border-color:var(--accent); }
+  .help{ font-size:11px; color:var(--muted); line-height:1.5; }
+  .help.warn{ color:var(--warn-ink); }
+  .error-box{
+    background:var(--crit-soft); color:var(--crit-ink); font-size:12px;
+    padding:9px 11px; border-radius:var(--r-md); margin-bottom:14px; display:none;
+  }
+  .error-box.show{ display:block; }
+  .callout{
+    background:var(--warn-soft); color:var(--warn-ink); font-size:11.5px; line-height:1.55;
+    border:1px solid color-mix(in oklab, var(--warn) 40%, var(--surface));
+    border-radius:var(--r-md); padding:10px 12px;
+  }
+
+  /* ============================================================ LOGIN */
+  .login-wrap{ min-height:100dvh; display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr); }
+  @media (max-width:900px){ .login-wrap{ grid-template-columns:minmax(0,1fr); } .login-pitch{ display:none; } }
+  .login-pitch{
+    display:flex; flex-direction:column; justify-content:center; padding:56px 48px;
+    background:
+      radial-gradient(90rem 50rem at -10% -10%, var(--accent-soft), transparent 60%),
+      var(--raised);
+    border-right:1px solid var(--border);
+  }
+  .login-pitch-inner{ width:100%; max-width:660px; margin:0 auto; }
+  .login-lockup{ display:flex; align-items:center; gap:14px; margin-bottom:44px; }
+  .login-mark{
+    width:46px; height:46px; border-radius:10px; flex:none; display:flex;
+    align-items:center; justify-content:center; background:var(--accent); color:oklch(1 0 0);
+  }
+  .login-mark svg{ width:24px; height:24px; }
+  .login-wordmark{ font-size:27px; font-weight:700; letter-spacing:-.02em; line-height:1.1; }
+  .login-wordmark span{ color:var(--accent-ink); }
+  .login-kicker{ font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-top:3px; }
+  .login-headline{ font-size:clamp(30px,4.2vw,46px); font-weight:700; letter-spacing:-.03em; line-height:1.1; margin:0 0 18px; text-wrap:balance; }
+  .login-headline em{ font-style:normal; color:var(--accent-ink); }
+  .login-lede{ font-size:15px; color:var(--muted); margin:0 0 40px; max-width:44ch; }
+  .login-tiles{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:26px 22px; margin-bottom:48px; }
+  @media (max-width:640px){ .login-tiles{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  .login-tile-icon{
+    width:44px; height:44px; border-radius:var(--r-lg); display:flex; align-items:center;
+    justify-content:center; margin-bottom:11px; background:var(--accent-soft); color:var(--accent-ink);
+  }
+  .login-tile-icon svg{ width:20px; height:20px; }
+  .login-tile-icon.t-ok{   background:var(--ok-soft);      color:var(--ok-ink); }
+  .login-tile-icon.t-warn{ background:var(--warn-soft);    color:var(--warn-ink); }
+  .login-tile-icon.t-crit{ background:var(--crit-soft);    color:var(--crit-ink); }
+  .login-tile-icon.t-neut{ background:var(--neutral-soft); color:var(--neutral-ink); }
+  .login-tile b{ display:block; font-size:13.5px; font-weight:600; }
+  .login-tile span{ display:block; font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-top:3px; }
+  .login-foot{ font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
+  .login-panel{ display:flex; flex-direction:column; justify-content:space-between; padding:56px 44px; background:var(--surface); }
+  .login-form-wrap{ width:100%; max-width:380px; margin:auto; }
+  .login-form-wrap h1{ font-size:29px; font-weight:700; letter-spacing:-.02em; margin:0 0 6px; }
+  .login-form-wrap > p{ font-size:13.5px; color:var(--muted); margin:0 0 30px; }
+  .login-form-wrap .field input{ border-radius:var(--r-lg); padding:12px 12px 12px 40px; }
+  .input-icon{ position:relative; display:block; }
+  .input-icon svg{
+    position:absolute; left:13px; top:50%; transform:translateY(-50%);
+    width:16px; height:16px; color:var(--accent-ink); pointer-events:none;
+  }
+  .login-submit{ padding:13px; border-radius:var(--r-lg); font-size:14px; margin-top:6px; }
+  .login-copyright{ font-size:11px; color:var(--muted); text-align:right; }
+  @media (max-width:900px){ .login-copyright{ text-align:center; } }
+
+  /* ============================================================ SHELL */
+  #appShell,#loginScreen{ display:none; }
+  #bootLoading{
+    min-height:100dvh; display:flex; align-items:center; justify-content:center;
+    color:var(--muted); font-family:var(--mono); font-size:13px; letter-spacing:.08em;
+  }
+  .app-shell{ display:grid; grid-template-columns:216px minmax(0,1fr); min-height:100dvh; }
+  @media (max-width:820px){ .app-shell{ grid-template-columns:minmax(0,1fr); } }
+  .sidebar{
+    display:flex; flex-direction:column; background:var(--surface);
+    border-right:1px solid var(--border); padding:18px 12px 14px;
+    position:sticky; top:0; height:100dvh;
+  }
+  @media (max-width:820px){ .sidebar{ position:static; height:auto; } }
+  .sidebar-brand{ display:flex; align-items:center; gap:9px; padding:2px 8px 22px; font-size:15px; font-weight:700; letter-spacing:-.01em; }
+  .sidebar-mark{ width:20px; height:20px; border-radius:5px; flex:none; background:var(--accent); }
   .sidebar-nav{ display:flex; flex-direction:column; gap:2px; }
-  .sidebar-nav button{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:0; background:none; padding:9px 10px; border-radius:8px; font-size:13px; font-weight:600; color:var(--text-muted); cursor:pointer; }
-  .sidebar-nav button svg{ width:17px; height:17px; flex:none; }
-  .sidebar-nav button:hover{ background:var(--surface-alt); color:var(--text); }
-  .sidebar-nav button.active{ background:var(--accent-soft); color:var(--accent-strong); }
+  .sidebar-nav button{
+    display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+    border:0; background:none; padding:9px 10px; border-radius:var(--r-md);
+    font-size:13px; font-weight:500; color:var(--muted); cursor:pointer;
+  }
+  .sidebar-nav button svg{ width:16px; height:16px; flex:none; }
+  .sidebar-nav button:hover{ background:var(--raised); color:var(--text); }
+  .sidebar-nav button.active{ background:var(--accent-soft); color:var(--accent-ink); font-weight:600; }
+  .nav-count{ margin-left:auto; font-family:var(--mono); font-size:11px; font-weight:600; color:var(--muted); }
+  .sidebar-nav button.active .nav-count{ color:var(--accent-ink); }
+  .nav-count.crit{ color:var(--crit-ink); }
+  .sidebar-foot{ margin-top:auto; padding:14px 10px 0; border-top:1px solid var(--divider); display:flex; flex-direction:column; gap:10px; }
+  .sidebar-user b{ display:block; font-size:12.5px; font-weight:600; }
+  .sidebar-user span{ display:block; font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-top:2px; overflow-wrap:anywhere; }
+  .sidebar-logout{ background:none; border:0; padding:0; text-align:left; font-size:12.5px; font-weight:500; color:var(--muted); cursor:pointer; }
+  .sidebar-logout:hover{ color:var(--text); text-decoration:underline; }
+  .theme-switch{ display:flex; gap:3px; background:var(--raised); border:1px solid var(--border); border-radius:var(--r-md); padding:3px; }
+  .theme-switch button{
+    flex:1; display:flex; align-items:center; justify-content:center; gap:5px;
+    border:0; background:none; cursor:pointer; border-radius:var(--r-sm); padding:6px 4px;
+    font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--muted);
+  }
+  .theme-switch button[aria-pressed="true"]{ background:var(--surface); color:var(--text); }
+  .theme-switch svg{ width:12px; height:12px; }
 
-  .main{ flex:1; min-width:0; }
-  .main-topbar{ display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:12px 24px; border-bottom:1px solid var(--border); background:var(--surface); }
-  .role-badge{ font-family:var(--font-mono); font-size:11px; font-weight:600; padding:4px 8px; border-radius:5px; background:var(--accent-soft); color:var(--accent-strong); }
-  .user-email{ font-size:12.5px; color:var(--text-muted); }
+  .page{ padding:24px 26px 48px; max-width:1720px; }
+  .page-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+  .page-head h1{ font-size:22px; font-weight:600; letter-spacing:-.02em; margin:0; }
+  .page-sub{ font-size:12px; color:var(--muted); margin-top:3px; }
+  .page-head-actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 
-  .page{ max-width:1760px; margin:0 auto; padding:22px 28px 60px; }
-  .page-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
-  .page-head h1{ font-family:var(--font-mono); font-size:19px; margin:0; }
+  /* Shared segmented control: range pills, show-filters, active/resolved. */
+  .seg{ display:inline-flex; gap:3px; background:var(--raised); border:1px solid var(--border); border-radius:var(--r-md); padding:3px; }
+  .seg button{
+    border:0; background:none; cursor:pointer; border-radius:var(--r-sm); padding:6px 12px;
+    font-family:var(--mono); font-size:11px; font-weight:600; color:var(--muted);
+  }
+  .seg button[aria-pressed="true"]{ background:var(--surface); color:var(--accent-ink); }
 
-  .stat-row{ display:flex; gap:18px; }
-  .stat{ flex:1 1 140px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px; box-shadow:var(--shadow); }
-  .stat .n{ font-family:var(--font-mono); font-size:22px; font-weight:700; }
-  .stat .l{ font-size:11.5px; color:var(--text-muted); margin-top:4px; }
-  .stat.ok .n{ color:var(--ok); } .stat.crit .n{ color:var(--crit); } .stat.off .n{ color:var(--offline); }
+  /* ============================================================ SURFACES */
+  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); }
+  .panel-head{ padding:13px 16px; border-bottom:1px solid var(--divider); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .panel-head h2{ margin:0; font-size:14px; font-weight:600; }
+  .panel-head .count{ font-family:var(--mono); font-size:11.5px; color:var(--muted); }
+  .empty-state{ padding:34px 16px; text-align:center; color:var(--muted); font-size:12.5px; }
 
-  .stat-groups{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
-  .stat-cluster{ flex:1 1 220px; display:flex; align-items:flex-start; gap:14px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; box-shadow:var(--shadow); }
-  .stat-cluster h3{ margin:0 0 10px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); font-weight:700; }
-  .stat-cluster .stat-row{ display:flex; gap:16px; }
-  .stat-cluster .stat{ flex:1; background:none; border:none; box-shadow:none; padding:0; }
-  .stat-cluster .stat .n{ font-size:19px; }
-  .stat-body{ flex:1; min-width:0; }
-  .stat-icon{ width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex:none; }
-  .stat-icon svg{ width:22px; height:22px; }
-  .stat-icon.vm{ background:var(--icon-vm-bg); color:var(--icon-vm-fg); }
-  .stat-icon.docker{ background:var(--icon-docker-bg); color:var(--icon-docker-fg); }
-  .stat-icon.systemd{ background:var(--icon-systemd-bg); color:var(--icon-systemd-fg); }
-  .stat-icon.alert{ background:var(--icon-alert-bg); color:var(--icon-alert-fg); }
-
-  .health-strip{ display:flex; align-items:center; gap:16px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:18px; box-shadow:var(--shadow); flex-wrap:wrap; }
-  .health-strip h3{ margin:0; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); font-weight:700; flex:none; }
-  .health-bar{ flex:1 1 160px; display:flex; height:8px; border-radius:99px; overflow:hidden; background:var(--surface-alt); }
-  .health-bar div{ height:100%; }
-  .health-legend{ display:flex; gap:14px; flex:none; flex-wrap:wrap; }
-  .health-legend span{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); }
-  .health-legend i{ width:8px; height:8px; border-radius:50%; display:inline-block; }
-
-  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow); }
-  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
-  thead th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); font-weight:700; padding:12px 14px 8px; }
-  th.sortable-th{ cursor:pointer; user-select:none; white-space:nowrap; }
-  th.sortable-th:hover{ color:var(--text); }
-  th.sortable-th .sort-arrow{ margin-left:4px; font-size:9px; opacity:.4; }
-  th.sortable-th.active{ color:var(--accent-strong); }
-  th.sortable-th.active .sort-arrow{ opacity:1; }
-  tbody td{ padding:10px 14px; border-top:1px solid var(--border-soft); vertical-align:middle; }
-  tbody tr:hover{ background:var(--surface-alt); }
-  .mono{ font-family:var(--font-mono); }
-  .cell-sub{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); }
+  /* ============================================================ TABLES */
   .table-scroll{ overflow-x:auto; }
-  .empty-state{ padding:36px 10px; text-align:center; color:var(--text-faint); font-size:12.5px; }
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  thead th{
+    text-align:left; font-family:var(--mono); font-size:10px; font-weight:600;
+    text-transform:uppercase; letter-spacing:.07em; color:var(--muted);
+    padding:11px 14px; border-bottom:1px solid var(--divider); white-space:nowrap;
+  }
+  th.sortable-th{ cursor:pointer; user-select:none; }
+  th.sortable-th:hover{ color:var(--text); }
+  th.sortable-th .sort-arrow{ margin-left:5px; font-size:9px; opacity:.45; }
+  th.sortable-th.active{ color:var(--accent-ink); }
+  th.sortable-th.active .sort-arrow{ opacity:1; }
+  tbody td{ padding:12px 14px; border-top:1px solid var(--divider); vertical-align:middle; }
+  tbody tr:first-child td{ border-top:0; }
+  tbody tr:hover{ background:var(--raised); }
+  .cell-name{ font-family:var(--mono); font-size:12.5px; font-weight:500; }
+  .cell-sub{ font-family:var(--mono); font-size:11px; color:var(--muted); }
+  tr.row-dimmed{ opacity:.5; }
 
-  .pill{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:3px 8px; border-radius:99px; text-transform:uppercase; letter-spacing:.02em; }
-  .pill.online, .pill.admin{ background:var(--ok-soft); color:var(--ok); }
-  .pill.pending{ background:var(--accent-soft); color:var(--accent-strong); }
-  .pill.offline, .pill.readonly{ background:var(--offline-soft); color:var(--offline); }
-  .pill.failed{ background:var(--crit-soft); color:var(--crit); }
-  .pill.warn{ background:var(--warn-soft); color:var(--warn); }
-  .pill i{ width:6px; height:6px; border-radius:50%; background:currentColor; }
+  /* ============================================================ STATUS */
+  /* Never colour alone: a pill carries its own uppercase word, and a dot is
+     always paired with adjacent text naming the state. */
+  .pill{
+    display:inline-flex; align-items:center; gap:5px; font-family:var(--mono);
+    font-size:10px; font-weight:600; padding:3px 7px; border-radius:var(--r-sm);
+    text-transform:uppercase; letter-spacing:.06em; white-space:nowrap;
+  }
+  .pill.ok,.pill.online,.pill.active,.pill.admin{ background:var(--ok-soft);      color:var(--ok-ink); }
+  .pill.warn,.pill.degraded,.pill.warning{        background:var(--warn-soft);    color:var(--warn-ink); }
+  .pill.crit,.pill.failed,.pill.critical{         background:var(--crit-soft);    color:var(--crit-ink); }
+  .pill.neutral,.pill.offline,.pill.readonly,.pill.resolved,.pill.inactive{ background:var(--neutral-soft); color:var(--neutral-ink); }
+  .pill.pending{ background:var(--accent-soft); color:var(--accent-ink); }
+  .status-dot{ width:7px; height:7px; border-radius:50%; flex:none; }
+  .status-dot.online{ background:var(--ok); }
+  .status-dot.degraded{ background:var(--warn); }
+  .status-dot.offline{ background:var(--crit); }
+  .status-dot.pending{ background:var(--neutral); }
+  .env-tag{
+    font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.06em;
+    text-transform:uppercase; padding:3px 7px; border-radius:var(--r-sm); flex:none; white-space:nowrap;
+    color:var(--env-c, var(--neutral-ink)); background:color-mix(in oklab, var(--env-c, var(--neutral)) 14%, var(--surface));
+  }
+  .env-production{  --env-c:var(--env-production); }
+  .env-staging{     --env-c:var(--env-staging); }
+  .env-development{ --env-c:var(--env-development); }
+  .env-qa{          --env-c:var(--env-qa); }
+  .env-demo{        --env-c:var(--env-demo); }
+  .env-das{         --env-c:var(--env-das); }
+  .env-sandbox{     --env-c:var(--env-sandbox); }
 
-  .toggle-switch{ position:relative; display:inline-block; width:34px; height:18px; vertical-align:middle; }
+  .toggle-switch{ position:relative; display:inline-block; width:32px; height:18px; vertical-align:middle; }
   .toggle-switch input{ position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
   .toggle-slider{ position:absolute; inset:0; background:var(--border); border-radius:99px; transition:background .15s; pointer-events:none; }
-  .toggle-slider::before{ content:''; position:absolute; width:14px; height:14px; left:2px; top:2px; background:#fff; border-radius:50%; transition:transform .15s; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+  .toggle-slider::before{ content:""; position:absolute; width:14px; height:14px; left:2px; top:2px; background:var(--surface); border-radius:50%; transition:transform .15s; }
   .toggle-switch input:checked + .toggle-slider{ background:var(--accent); }
-  .toggle-switch input:checked + .toggle-slider::before{ transform:translateX(16px); }
+  .toggle-switch input:checked + .toggle-slider::before{ transform:translateX(14px); }
+  .toggle-switch input:focus-visible + .toggle-slider{ outline:2px solid var(--accent); outline-offset:2px; }
   .toggle-switch input:disabled{ cursor:not-allowed; }
   .toggle-switch input:disabled + .toggle-slider{ opacity:.5; }
-  tr.row-dimmed{ opacity:.55; }
+
   .ack-actions{ display:flex; gap:6px; align-items:center; white-space:nowrap; }
-  .ack-actions select{ font-size:11.5px; font-weight:600; border:1px solid var(--border); background:var(--surface); border-radius:6px; padding:5px 7px; cursor:pointer; }
-  .status-badge{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; color:var(--text-muted); white-space:nowrap; }
+  .ack-actions select{ font-size:11.5px; font-weight:600; border:1px solid var(--border); background:var(--surface); border-radius:var(--r-md); padding:5px 7px; cursor:pointer; }
+  .status-badge{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:500; color:var(--muted); white-space:nowrap; }
   .status-badge i{ width:6px; height:6px; border-radius:50%; background:var(--ok); flex:none; }
   .status-badge.snoozed i{ background:var(--warn); }
-  .bulk-toggle-bar{ display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
-  .bulk-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); margin-left:6px; }
-  .bulk-label:first-child{ margin-left:0; }
 
-  .env-tag{ font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:2px 6px; border-radius:4px; flex:none; }
-  .env-tag.production{ background:var(--crit-soft); color:var(--crit); }
-  .env-tag.staging{ background:var(--warn-soft); color:var(--warn); }
-  .env-tag.development{ background:var(--accent-soft); color:var(--accent-strong); }
-  .env-tag.qa{ background:var(--env-violet-soft); color:var(--env-violet); }
-  .env-tag.demo{ background:var(--env-rose-soft); color:var(--env-rose); }
-  .env-tag.das{ background:var(--offline-soft); color:var(--offline); }
-  .env-tag.sandbox{ background:var(--env-gold-soft); color:var(--env-gold); }
+  /* ============================================================ OVERVIEW */
+  .tile-row{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:16px; }
+  @media (max-width:1100px){ .tile-row{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:560px){ .tile-row{ grid-template-columns:minmax(0,1fr); } }
+  .tile{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:15px 16px; display:flex; flex-direction:column; gap:9px; }
+  .tile-figure{ display:flex; align-items:baseline; gap:8px; }
+  .tile-figure b{ font-family:var(--mono); font-size:31px; font-weight:600; line-height:1; letter-spacing:-.02em; }
+  .tile-figure span{ font-size:12.5px; color:var(--muted); }
+  .tile.t-ok .tile-figure b{ color:var(--ok-ink); }
+  .tile.t-warn .tile-figure b{ color:var(--warn-ink); }
+  .tile.t-crit .tile-figure b{ color:var(--crit-ink); }
+  .tile-note{ font-size:11.5px; color:var(--muted); overflow-wrap:anywhere; }
+  .tile-note .mono{ font-size:11px; }
+  .split-bar{ display:flex; height:6px; border-radius:99px; overflow:hidden; background:var(--divider); gap:1px; }
+  .split-bar div{ height:100%; }
 
-  /* master-detail dashboard */
-  .main-grid{ display:grid; grid-template-columns:320px 1fr; gap:16px; align-items:start; }
-  @media (max-width:900px){ .main-grid{ grid-template-columns:1fr; } }
-  .panel-head{ padding:13px 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; }
-  .panel-head h2{ margin:0; font-size:13px; font-weight:700; }
-  .panel-head .count{ font-family:var(--font-mono); font-size:11.5px; color:var(--text-faint); }
-  .vm-list{ max-height:660px; overflow-y:auto; }
-  .vm-row{ display:flex; align-items:center; gap:10px; padding:11px 16px; border-bottom:1px solid var(--border-soft); cursor:pointer; }
-  .vm-row:hover{ background:var(--surface-alt); }
-  .vm-row.selected{ background:var(--accent-soft); box-shadow:inset 3px 0 0 var(--accent); }
-  .status-dot{ width:8px; height:8px; border-radius:50%; flex:none; }
-  .status-dot.online{ background:var(--ok); box-shadow:0 0 0 3px var(--ok-soft); }
-  .status-dot.offline{ background:var(--offline); box-shadow:0 0 0 3px var(--offline-soft); }
-  .status-dot.pending{ background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
-  .vm-row-icon{ width:32px; height:32px; border-radius:9px; background:var(--icon-vm-bg); color:var(--icon-vm-fg); display:flex; align-items:center; justify-content:center; flex:none; }
-  .vm-row-icon svg{ width:16px; height:16px; }
+  .overview-grid{ display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:16px; align-items:start; }
+  @media (max-width:1000px){ .overview-grid{ grid-template-columns:minmax(0,1fr); } }
+  .overview-col{ display:flex; flex-direction:column; gap:16px; }
+
+  .attn-row{ display:flex; align-items:center; gap:12px; padding:12px 16px; border-top:1px solid var(--divider); }
+  .attn-row:first-child{ border-top:0; }
+  .attn-main{ flex:1; min-width:0; }
+  .attn-name{ font-family:var(--mono); font-size:12.5px; font-weight:500; overflow-wrap:anywhere; }
+  .attn-reason{ font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .attn-figs{ display:flex; gap:14px; flex:none; }
+  .attn-figs span{ font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums; min-width:38px; text-align:right; }
+  .attn-time{ font-family:var(--mono); font-size:11px; color:var(--muted); flex:none; white-space:nowrap; min-width:62px; text-align:right; }
+
+  .alert-row{ display:flex; align-items:flex-start; gap:11px; padding:12px 16px; border-top:1px solid var(--divider); }
+  .alert-row:first-child{ border-top:0; }
+  .alert-main{ flex:1; min-width:0; }
+  .alert-msg{ font-size:12.5px; line-height:1.45; }
+  .alert-msg b{ font-family:var(--mono); font-weight:500; }
+  .alert-meta{ font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-top:3px; }
+  .alert-age{ font-family:var(--mono); font-size:10.5px; color:var(--muted); flex:none; white-space:nowrap; }
+
+  .env-bars{ padding:6px 16px 14px; display:flex; flex-direction:column; gap:9px; }
+  .env-bar-row{ display:grid; grid-template-columns:minmax(88px,auto) minmax(0,1fr) auto; align-items:center; gap:12px; }
+  .env-bar-row .k{ font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .env-bar-track{ height:8px; border-radius:99px; background:var(--divider); overflow:hidden; }
+  .env-bar-fill{ height:100%; border-radius:99px; background:var(--env-c, var(--accent)); }
+  .env-bar-row .n{ font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums; }
+
+  /* ============================================================ VMs PAGE */
+  .vms-layout{ display:grid; grid-template-columns:340px minmax(0,1fr); gap:16px; align-items:start; }
+  @media (max-width:1000px){ .vms-layout{ grid-template-columns:minmax(0,1fr); } }
+  .vm-pane{ display:flex; flex-direction:column; overflow:hidden; }
+  .vm-filter{ padding:12px 14px 10px; display:flex; flex-direction:column; gap:9px; border-bottom:1px solid var(--divider); }
+  .vm-chips{ display:flex; gap:6px; flex-wrap:wrap; }
+  .vm-chip{
+    display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border);
+    background:var(--surface); border-radius:var(--r-sm); padding:4px 8px; cursor:pointer;
+    font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--muted);
+  }
+  .vm-chip:hover{ background:var(--raised); }
+  .vm-chip[aria-pressed="true"]{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  .vm-chip b{ font-weight:600; color:var(--text); }
+  .vm-chip[aria-pressed="true"] b{ color:var(--accent-ink); }
+  /* A scroll container, not a text box — capping it is what makes the list
+     scroll independently of the detail pane beside it. */
+  .vm-list{ overflow-y:auto; max-height:calc(100dvh - 232px); min-height:140px; }
+  .vm-row{
+    display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+    padding:11px 14px; border:0; border-top:1px solid var(--divider);
+    background:none; color:inherit; cursor:pointer;
+  }
+  .vm-row:first-child{ border-top:0; }
+  .vm-row:hover{ background:var(--raised); }
+  .vm-row[aria-current="true"]{ background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent); }
   .vm-row-main{ flex:1; min-width:0; }
-  .vm-row-name{ font-size:13px; font-weight:600; line-height:1.4; overflow-wrap:break-word; }
-  .vm-row-meta{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:1px; }
+  .vm-row-name{ font-family:var(--mono); font-size:12.5px; font-weight:500; overflow-wrap:anywhere; }
+  .vm-row-meta{ font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-top:2px; overflow-wrap:anywhere; }
+  .vm-row-right{ flex:none; text-align:right; }
+  /* These are spans inside a button (a button cannot contain divs), so they
+     need blockifying by hand to stack the way the layout expects. */
+  .vm-row-main,.vm-row-name,.vm-row-meta,.vm-row-cpu,.vm-row-seen{ display:block; }
+  .env-bar-track,.env-bar-fill,.mount-row .meter{ display:block; }
+  .vm-row-cpu{ font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums; }
+  .vm-row-seen{ font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-top:2px; }
 
-  .detail-head{ padding:16px; border-bottom:1px solid var(--border-soft); }
-  .detail-head-top{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  .detail-head-top h2{ margin:0; font-family:var(--font-mono); font-size:17px; }
-  .detail-meta{ display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; }
-  .detail-meta div{ font-size:12px; }
-  .detail-meta .k{ color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; font-size:10px; font-weight:700; }
-  .detail-meta .v{ font-family:var(--font-mono); margin-top:2px; }
+  /* ============================================================ VM DETAIL */
+  .detail-head{ padding:16px; border-bottom:1px solid var(--divider); }
+  .detail-head-top{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+  .detail-head-top h2{ margin:0; font-family:var(--mono); font-size:18px; font-weight:600; overflow-wrap:anywhere; }
+  .detail-meta{ display:flex; gap:28px; flex-wrap:wrap; margin-top:14px; }
+  .detail-meta .k{ font-family:var(--mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); }
+  .detail-meta .v{ font-family:var(--mono); font-size:12.5px; margin-top:3px; overflow-wrap:anywhere; }
 
-  .meter{ height:6px; border-radius:99px; background:var(--surface-alt); overflow:hidden; }
-  .meter div{ height:100%; border-radius:99px; }
-  .fill-ok{ background:var(--ok); } .fill-warn{ background:var(--warn); } .fill-crit{ background:var(--crit); }
-
-  .history-head{ display:flex; align-items:center; justify-content:space-between; margin:22px 0 12px; }
-  .history-head h4{ margin:0; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); font-weight:700; }
-  .range-pills{ display:flex; gap:4px; background:var(--surface-alt); padding:3px; border-radius:8px; }
-  .range-pill{ font-size:11px; font-weight:700; padding:5px 11px; border-radius:6px; border:none; background:none; color:var(--text-muted); cursor:pointer; }
-  .range-pill.active{ background:var(--surface); color:var(--accent-strong); box-shadow:0 1px 2px rgba(19,28,34,.08); }
-  .metric-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px; }
-  @media (max-width:820px){ .metric-grid{ grid-template-columns:1fr; } }
-  .metric-card{ border:1px solid var(--border-soft); border-radius:10px; padding:14px; }
-  .metric-card-top{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
-  .metric-card-top .k{ font-size:11.5px; font-weight:700; color:var(--text-muted); }
-  .metric-card-top .v-wrap{ text-align:right; }
-  .metric-card-top .v{ font-family:var(--font-mono); font-weight:700; font-size:15px; }
-  .metric-card-top .v-label{ font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em; font-weight:700; }
-  .metric-card .meter{ margin-bottom:12px; }
-  .chart-wrap{ display:flex; gap:4px; }
-  .chart-axis{ flex:none; width:22px; display:flex; flex-direction:column; justify-content:space-between; padding:1px 0; font-size:8.5px; font-family:var(--font-mono); color:var(--text-faint); text-align:right; }
-  .trend-svg{ flex:1; min-width:0; height:64px; }
-  .chart-stats{ display:flex; gap:14px; margin-top:8px; font-size:10.5px; color:var(--text-faint); flex-wrap:wrap; }
-  .chart-stats b{ font-family:var(--font-mono); color:var(--text-muted); font-weight:600; }
-
-  .tabs{ display:flex; gap:2px; padding:0 16px; border-bottom:1px solid var(--border-soft); overflow-x:auto; }
-  .tab{ padding:11px 6px; margin-right:18px; font-size:12.5px; font-weight:700; color:var(--text-muted); background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; white-space:nowrap; }
-  .tab.active{ color:var(--accent-strong); border-bottom-color:var(--accent); }
+  .tabs{ display:flex; gap:22px; padding:0 16px; border-bottom:1px solid var(--divider); overflow-x:auto; }
+  .tab{
+    display:inline-flex; align-items:center; gap:6px; padding:12px 2px; font-size:12.5px;
+    font-weight:600; color:var(--muted); background:none; border:0;
+    border-bottom:2px solid transparent; cursor:pointer; white-space:nowrap; margin-bottom:-1px;
+  }
+  .tab:hover{ color:var(--text); }
+  .tab.active{ color:var(--accent-ink); border-bottom-color:var(--accent); }
+  .tab-count{ font-family:var(--mono); font-size:10.5px; font-weight:600; color:var(--crit-ink); }
+  .tab-glyph{ font-family:var(--mono); font-size:12px; }
   .tab-panel{ display:none; padding:16px; }
   .tab-panel.active{ display:block; }
 
-  .modal-overlay{ position:fixed; inset:0; background:rgba(8,12,14,.55); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50; }
-  .modal{ width:100%; max-width:440px; background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); max-height:88vh; overflow-y:auto; }
-  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border-soft); }
-  .modal-head h3{ margin:0; font-family:var(--font-mono); font-size:15px; }
-  .modal-close{ border:0; background:none; color:var(--text-faint); font-size:16px; cursor:pointer; }
-  .modal-body{ padding:18px; }
-  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
-  .modal-hint{ font-size:12px; color:var(--text-muted); margin:0 0 14px; line-height:1.5; }
+  .section-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 12px; flex-wrap:wrap; }
+  .section-head h4{ margin:0; font-family:var(--mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); }
+  .glyph-legend{ font-family:var(--mono); font-size:10px; color:var(--muted); }
 
-  .code-block{ margin:0; background:#0B1013; border:1px solid #1E2A30; border-radius:8px; padding:12px 14px; font-family:var(--font-mono); font-size:11.5px; color:#C9D6DA; white-space:pre-wrap; word-break:break-all; line-height:1.6; }
+  .metric-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-bottom:18px; }
+  @media (max-width:860px){ .metric-grid{ grid-template-columns:minmax(0,1fr); } }
+  .metric-card{ border:1px solid var(--border); border-radius:var(--r-lg); padding:14px; }
+  .metric-card-top{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:10px; }
+  .metric-card-top .k{ font-family:var(--mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); }
+  .metric-card-top .v{ font-family:var(--mono); font-size:19px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .metric-card-top .v.s-ok{ color:var(--ok-ink); }
+  .metric-card-top .v.s-warn{ color:var(--warn-ink); }
+  .metric-card-top .v.s-crit{ color:var(--crit-ink); }
+  .chart-wrap{ display:flex; gap:6px; }
+  .chart-axis{
+    flex:none; width:26px; display:flex; flex-direction:column; justify-content:space-between;
+    padding:1px 0; font-family:var(--mono); font-size:9px; color:var(--muted); text-align:right;
+  }
+  .trend-svg{ flex:1; min-width:0; height:60px; }
+  .chart-stats{ display:flex; gap:14px; margin-top:9px; font-family:var(--mono); font-size:10px; color:var(--muted); flex-wrap:wrap; }
+  .chart-stats b{ color:var(--text); font-weight:600; }
+  .meter{ height:6px; border-radius:99px; background:var(--divider); overflow:hidden; }
+  .meter div{ height:100%; border-radius:99px; }
+  .fill-ok{ background:var(--ok); } .fill-warn{ background:var(--warn); } .fill-crit{ background:var(--crit); }
+  .mount-row{ display:grid; grid-template-columns:minmax(44px,auto) minmax(0,1fr) auto; align-items:center; gap:10px; margin-top:9px; }
+  .mount-row .k{ font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .mount-row .n{ font-family:var(--mono); font-size:11.5px; font-variant-numeric:tabular-nums; }
 
-  /* terminal-style log viewer — intentionally fixed-dark regardless of page theme,
-     matching the conventional look of every other log/console UI (VS Code, CI logs, etc). */
-  .terminal{ background:#0B1013; border:1px solid #1E2A30; border-radius:8px; max-height:440px; overflow-y:auto; padding:8px 0; font-family:var(--font-mono); font-size:12px; }
-  .log-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
-  .log-select{ border:1px solid var(--border); background:var(--surface); border-radius:6px; padding:6px 9px; font-size:12px; font-family:var(--font-mono); }
-  .log-toolbar{ flex-wrap:wrap; }
-  .log-search{ display:flex; align-items:center; background:var(--surface-alt); border:1px solid var(--border); border-radius:6px; padding:6px 9px; flex:1; min-width:140px; }
-  .log-search input{ border:0; background:transparent; outline:0; width:100%; font-family:var(--font-mono); font-size:12px; color:var(--text); }
+  .unit-glyph{ font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .log-path-row{ display:flex; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--divider); }
+  .log-path-row:first-of-type{ border-top:0; }
+  .log-path-row b{ font-size:12.5px; font-weight:600; }
+  .log-path-row .p{ font-family:var(--mono); font-size:11px; color:var(--muted); overflow-wrap:anywhere; }
+  .note{ background:var(--raised); border:1px solid var(--border); border-radius:var(--r-md); padding:12px 14px; font-size:12.5px; color:var(--muted); line-height:1.55; }
+
+  /* ============================================================ LIVE LOGS */
+  .log-toolbar{ display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+  .log-select{
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+    border-radius:var(--r-md); padding:7px 9px; font-family:var(--mono); font-size:11.5px; max-width:230px;
+  }
+  .log-search{ flex:1; min-width:150px; }
+  .log-search input{
+    width:100%; border:1px solid var(--border); background:var(--surface); color:var(--text);
+    border-radius:var(--r-md); padding:7px 10px; font-family:var(--mono); font-size:11.5px; outline:0;
+  }
+  .log-search input:focus{ border-color:var(--accent); }
   .level-toggle{ display:flex; gap:4px; }
-  .lvl-chip{ font-family:var(--font-mono); font-size:10.5px; font-weight:700; padding:4px 7px; border-radius:5px; border:1px solid var(--border); background:var(--surface); cursor:pointer; opacity:.45; }
-  .lvl-chip.on{ opacity:1; }
-  .lvl-chip.info.on{ color:#4FA8C4; border-color:#4FA8C4; }
-  .lvl-chip.warn.on{ color:var(--warn); border-color:var(--warn); }
-  .lvl-chip.error.on{ color:var(--crit); border-color:var(--crit); }
-  .lvl-chip.debug.on{ color:var(--text-faint); border-color:var(--text-faint); }
-  .log-footbar{ display:flex; align-items:center; gap:10px; margin-top:9px; flex-wrap:wrap; }
-  .autoscroll-label{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); }
+  .lvl-chip{
+    font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.06em;
+    padding:5px 8px; border-radius:var(--r-sm); border:1px solid var(--border);
+    background:var(--surface); color:var(--muted); cursor:pointer;
+  }
+  .lvl-chip[aria-pressed="true"].info{  background:var(--accent-soft);  border-color:var(--accent);  color:var(--accent-ink); }
+  .lvl-chip[aria-pressed="true"].warn{  background:var(--warn-soft);    border-color:var(--warn);    color:var(--warn-ink); }
+  .lvl-chip[aria-pressed="true"].error{ background:var(--crit-soft);    border-color:var(--crit);    color:var(--crit-ink); }
+  .lvl-chip[aria-pressed="true"].debug{ background:var(--neutral-soft); border-color:var(--neutral); color:var(--neutral-ink); }
+  .autoscroll-label{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); white-space:nowrap; cursor:pointer; }
   .autoscroll-label input{ accent-color:var(--accent); }
-  .btn.active-toggle{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong); }
+
+  .terminal{
+    background:var(--term-bg); border:1px solid var(--term-edge); border-radius:var(--r-lg);
+    max-height:min(58dvh,520px); overflow:auto; padding:6px 0;
+    font-family:var(--mono); font-size:11.5px; line-height:1.65;
+  }
+  .log-line{ display:grid; grid-template-columns:56px minmax(0,1fr); gap:10px; padding:2px 14px; border-left:2px solid transparent; }
+  .log-line:hover{ background:var(--term-row); }
+  .log-line .msg{ color:var(--term-fg); min-width:0; white-space:pre-wrap; overflow-wrap:anywhere; }
   .log-line.hidden{ display:none; }
-  .log-line{ display:flex; align-items:flex-start; gap:10px; padding:2.5px 14px; }
-  .log-line:hover{ background:#131C22; }
-  .log-line .msg{ color:#C9D6DA; flex:1; min-width:0; white-space:pre-wrap; word-break:break-word; }
-  .lvl-badge{ flex:0 0 46px; margin-top:1px; text-align:center; font-size:9.5px; font-weight:700; letter-spacing:.02em; border-radius:4px; padding:1.5px 0; }
-  .lvl-badge.INFO{ background:rgba(95,179,199,.15); color:#5FB3C7; }
-  .lvl-badge.WARN{ background:rgba(226,162,59,.15); color:#E2A23B; }
-  .lvl-badge.ERROR{ background:rgba(240,86,74,.15); color:#F0564A; }
-  .lvl-badge.DEBUG{ background:rgba(107,118,128,.15); color:#6B7680; }
-  .terminal .empty-state{ color:#5D6E75; }
-  .token-line{ font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:10px; }
-  .checkbox-row{ display:flex; align-items:flex-start; gap:8px; font-size:12.5px; font-weight:400; text-transform:none; letter-spacing:normal; color:var(--text); padding:5px 0; }
-  .checkbox-row input{ flex:none; margin-top:3px; }
-  .checkbox-row > span{ flex:1; min-width:0; overflow-wrap:break-word; }
+  .log-line[data-level="WARN"]{ background:color-mix(in oklab, var(--term-warn) 10%, var(--term-bg)); border-left-color:var(--term-warn); }
+  .log-line[data-level="ERROR"]{ background:color-mix(in oklab, var(--term-error) 12%, var(--term-bg)); border-left-color:var(--term-error); }
+  .lvl-badge{ font-size:9.5px; font-weight:600; letter-spacing:.06em; text-align:center; border-radius:var(--r-sm); padding:1px 0; margin-top:2px; align-self:start; }
+  .lvl-badge.INFO{  background:color-mix(in oklab, var(--term-info) 20%,  var(--term-bg)); color:var(--term-info); }
+  .lvl-badge.WARN{  background:color-mix(in oklab, var(--term-warn) 22%,  var(--term-bg)); color:var(--term-warn); }
+  .lvl-badge.ERROR{ background:color-mix(in oklab, var(--term-error) 22%, var(--term-bg)); color:var(--term-error); }
+  .lvl-badge.DEBUG{ background:color-mix(in oklab, var(--term-debug) 18%, var(--term-bg)); color:var(--term-debug); }
+  .terminal .empty-state{ color:var(--term-dim); }
+  .log-foot{ display:flex; align-items:center; gap:8px; margin-top:9px; font-family:var(--mono); font-size:10.5px; color:var(--muted); flex-wrap:wrap; }
+  .log-foot .sep{ opacity:.5; }
+  .log-status{ font-family:var(--mono); font-size:10.5px; color:var(--muted); white-space:nowrap; }
 
-  .agent-note{ background:var(--surface-alt); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-muted); line-height:1.5; }
-
-  .overview-grid{ display:grid; grid-template-columns:1fr 1.3fr; gap:16px; margin-bottom:16px; align-items:start; }
-  @media (max-width:900px){ .overview-grid{ grid-template-columns:1fr; } }
-  .attn-row{ display:flex; align-items:center; gap:11px; padding:10px 16px; border-top:1px solid var(--border-soft); }
-  .attn-row:first-child{ border-top:none; }
-  .attn-stripe{ width:3px; align-self:stretch; border-radius:2px; flex:none; }
-  .attn-stripe.crit{ background:var(--crit); }
-  .attn-stripe.warn{ background:var(--warn); }
-  .attn-stripe.off{ background:var(--offline); }
-  .attn-main{ flex:1; min-width:0; }
-  .attn-name{ font-size:12.5px; font-weight:700; }
-  .attn-reason{ font-size:11.5px; color:var(--text-muted); margin-top:1px; }
-  .attn-time{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-faint); flex:none; white-space:nowrap; }
-  .alert-row{ display:flex; align-items:flex-start; gap:11px; padding:10px 16px; border-top:1px solid var(--border-soft); }
-  .alert-row:first-child{ border-top:none; }
-  .alert-main{ flex:1; min-width:0; }
-  .alert-msg{ font-size:12.5px; }
-  .alert-meta{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-faint); margin-top:2px; }
+  /* ============================================================ MODALS */
+  .modal-overlay{
+    position:fixed; inset:0; background:color-mix(in oklab, oklch(0.2 0.01 250) 55%, transparent);
+    display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;
+  }
+  .modal{
+    width:100%; max-width:420px; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--r-lg); max-height:88dvh; overflow-y:auto;
+  }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:20px 22px 0; }
+  .modal-head h3{ margin:0; font-size:17px; font-weight:600; letter-spacing:-.01em; }
+  .modal-close{ border:0; background:none; color:var(--muted); font-size:15px; cursor:pointer; line-height:1; padding:4px; }
+  .modal-close:hover{ color:var(--text); }
+  .modal-body{ padding:16px 22px 22px; }
+  .modal-hint{ font-size:12px; color:var(--muted); margin:0 0 16px; line-height:1.55; }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+  .modal-grid2{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
+  @media (max-width:420px){ .modal-grid2{ grid-template-columns:minmax(0,1fr); } }
+  .code-block{
+    position:relative; margin:0; background:var(--term-bg); border:1px solid var(--term-edge);
+    border-radius:var(--r-md); padding:13px 14px; font-family:var(--mono); font-size:11px;
+    color:var(--term-fg); white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.65;
+  }
+  .copy-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:12px; }
+  .checkbox-row{ display:flex; align-items:flex-start; gap:8px; font-size:12.5px; padding:5px 0; cursor:pointer; }
+  .checkbox-row input{ flex:none; margin-top:3px; accent-color:var(--accent); }
+  .checkbox-row > span{ flex:1; min-width:0; overflow-wrap:anywhere; }
+  .vm-access-list{ max-height:180px; overflow-y:auto; border:1px solid var(--border); border-radius:var(--r-md); padding:6px 10px; }
 </style>
 </head>
+
 <body>
 
 <div id="bootLoading" style="display:flex">InfraWatch</div>
 
 <div class="login-wrap" id="loginScreen">
-  <div class="login-card">
-    <div class="login-brand">InfraWatch</div>
-    <div class="login-sub">Sign in to the fleet console</div>
-    <div class="error-box" id="loginError"></div>
-    <form id="loginForm">
-      <div class="field"><label>Email</label><input type="email" id="loginEmail" required autofocus /></div>
-      <div class="field"><label>Password</label><input type="password" id="loginPassword" required /></div>
-      <button type="submit" class="btn primary">Sign in</button>
-    </form>
-  </div>
+  <section class="login-pitch">
+    <div class="login-pitch-inner">
+      <div class="login-lockup">
+        <span class="login-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6"/></svg>
+        </span>
+        <div>
+          <div class="login-wordmark">Infra<span>Watch</span></div>
+          <div class="login-kicker">Infrastructure observability console</div>
+        </div>
+      </div>
+
+      <h2 class="login-headline">Your infrastructure,<br>visible at a glance<em>.</em></h2>
+      <p class="login-lede">Monitor VMs, services, containers, metrics, and logs from one console.</p>
+
+      <div class="login-tiles">
+        <div class="login-tile">
+          <span class="login-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <b>Virtual Machines</b>
+        </div>
+        <div class="login-tile">
+          <span class="login-tile-icon t-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 3-4 3 3 4-6"/></svg></span>
+          <b>Metrics</b><span>CPU · Memory · Disk</span>
+        </div>
+        <div class="login-tile">
+          <span class="login-tile-icon t-neut"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.27 6.96 12 12l8.73-5.04M12 22.08V12"/></svg></span>
+          <b>Docker</b><span>Containers</span>
+        </div>
+        <div class="login-tile">
+          <span class="login-tile-icon t-warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></span>
+          <b>Services</b><span>systemd / Daemons</span>
+        </div>
+        <div class="login-tile">
+          <span class="login-tile-icon t-crit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+          <b>Logs</b><span>Application &amp; System</span>
+        </div>
+        <div class="login-tile">
+          <span class="login-tile-icon t-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+          <b>Health</b><span>Real-time Monitoring</span>
+        </div>
+      </div>
+
+      <div class="login-foot">Reliable · Secure · Always on</div>
+    </div>
+  </section>
+
+  <section class="login-panel">
+    <div class="login-form-wrap">
+      <h1>Sign in</h1>
+      <p>Sign in to the fleet console</p>
+      <div class="error-box" id="loginError" role="alert"></div>
+      <form id="loginForm">
+        <div class="field">
+          <label for="loginEmail">Email</label>
+          <span class="input-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>
+            <input type="email" id="loginEmail" class="mono" required autofocus autocomplete="username" />
+          </span>
+        </div>
+        <div class="field">
+          <label for="loginPassword">Password</label>
+          <span class="input-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <input type="password" id="loginPassword" required autocomplete="current-password" />
+          </span>
+        </div>
+        <button type="submit" class="btn primary block login-submit">Sign in</button>
+      </form>
+    </div>
+    <div class="login-copyright">&copy; 2026 InfraWatch. All rights reserved.</div>
+  </section>
 </div>
 
 <div id="appShell" class="app-shell">
   <aside class="sidebar">
-    <div class="sidebar-brand">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-      InfraWatch
-    </div>
-    <nav class="sidebar-nav">
+    <div class="sidebar-brand"><span class="sidebar-mark"></span> InfraWatch</div>
+    <nav class="sidebar-nav" aria-label="Sections">
       <button class="active" id="navOverview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Overview</button>
-      <button id="navVms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg> VMs</button>
+      <button id="navVms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg> VMs <span class="nav-count" id="navVmCount"></span></button>
+      <button id="navAlerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/></svg> Alerts <span class="nav-count" id="navAlertCount"></span></button>
       <button id="navUsers" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg> Users</button>
-      <button id="navAlerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/></svg> Alerts</button>
     </nav>
+    <div class="sidebar-foot">
+      <div class="sidebar-user"><b id="userName">—</b><span id="userEmail">—</span></div>
+      <button class="sidebar-logout" id="logoutBtn">Log out</button>
+      <div class="theme-switch" role="group" aria-label="Colour theme">
+        <button id="themeLight" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg> Day</button>
+        <button id="themeDark" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg> Night</button>
+      </div>
+    </div>
   </aside>
 
-  <div class="main">
-    <div class="main-topbar">
-      <span class="role-badge" id="roleBadge">—</span>
-      <span class="user-email" id="userEmail">—</span>
-      <button class="btn small" id="logoutBtn">Log out</button>
-    </div>
-
+  <main>
     <div class="page" id="viewOverview">
       <div class="page-head">
-        <h1>Overview</h1>
+        <div>
+          <h1>Overview</h1>
+          <div class="page-sub" id="overviewSub">—</div>
+        </div>
       </div>
 
-      <div class="stat-groups" id="statGroups"></div>
-
-      <div class="health-strip">
-        <h3>Health</h3>
-        <div class="health-bar" id="healthBar"></div>
-        <div class="health-legend" id="healthLegend"></div>
-      </div>
+      <div class="tile-row" id="statTiles"></div>
 
       <div class="overview-grid">
-        <div class="panel">
-          <div class="panel-head"><h2>Needs attention</h2></div>
-          <div id="needsAttentionBody"></div>
+        <div class="overview-col">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Needs attention</h2>
+              <button class="link" id="viewAllVmsLink">View all VMs</button>
+            </div>
+            <div id="needsAttentionBody"></div>
+          </section>
+          <section class="panel" id="envPanel">
+            <div class="panel-head"><h2>Fleet by environment</h2></div>
+            <div class="env-bars" id="envBars"></div>
+          </section>
         </div>
-        <div class="panel">
+        <section class="panel">
           <div class="panel-head"><h2>Recent alerts</h2></div>
           <div id="recentAlertsBody"></div>
-        </div>
-      </div>
-
-      <div class="health-strip" id="envStrip" style="display:none">
-        <h3>Fleet by environment</h3>
-        <div id="envChips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        </section>
       </div>
     </div>
 
     <div class="page" id="viewVms" style="display:none">
-    <div class="page-head">
-      <h1>Virtual machines</h1>
-      <button class="btn primary" id="addVmBtn" style="display:none;width:auto">+ Add VM</button>
-    </div>
-
-    <div class="main-grid">
-      <div class="panel">
-        <div class="panel-head"><h2>Virtual machines</h2><span class="count" id="vmCount">0</span></div>
-        <div class="vm-list" id="vmList"></div>
-      </div>
-
-      <div class="panel">
-        <div class="empty-state" id="detailEmpty" style="padding:80px 10px">Select a VM from the list to see details.</div>
-        <div id="detailContent" style="display:none">
-          <div class="detail-head">
-            <div class="detail-head-top">
-              <h2 id="dtName">—</h2>
-              <span class="pill" id="dtStatus">—</span>
-              <span class="env-tag" id="dtEnv">—</span>
-            </div>
-            <div class="detail-meta">
-              <div><div class="k">Hostname</div><div class="v" id="dtHost">—</div></div>
-              <div><div class="k">IP address</div><div class="v" id="dtIp">—</div></div>
-              <div><div class="k">Last heartbeat</div><div class="v" id="dtHb">—</div></div>
-              <div><div class="k">Registered</div><div class="v" id="dtCreated">—</div></div>
-            </div>
-          </div>
-
-          <div class="tabs">
-            <button class="tab active" data-tab="overview">Overview</button>
-            <button class="tab" data-tab="docker">Docker</button>
-            <button class="tab" data-tab="systemd">Systemd</button>
-            <button class="tab" data-tab="logs">Live logs</button>
-            <button class="tab" data-tab="alerts">Alerts</button>
-          </div>
-
-          <div class="tab-panel active" data-panel="overview" id="panelOverview"></div>
-
-          <div class="tab-panel" data-panel="docker">
-            <div class="table-scroll">
-              <table><thead><tr>
-                <th class="sortable-th" data-sort-key="name">Name<span class="sort-arrow">⇅</span></th>
-                <th class="sortable-th" data-sort-key="status">Status<span class="sort-arrow">⇅</span></th>
-                <th class="sortable-th" data-sort-key="cpu_percent">CPU<span class="sort-arrow">⇅</span></th>
-                <th class="sortable-th" data-sort-key="mem_usage">Memory<span class="sort-arrow">⇅</span></th>
-                <th class="sortable-th" data-sort-key="last_seen">Last seen<span class="sort-arrow">⇅</span></th>
-                <th>Monitor</th><th>Logs</th><th></th>
-              </tr></thead>
-              <tbody id="dockerBody"></tbody></table>
-            </div>
-          </div>
-
-          <div class="tab-panel" data-panel="systemd">
-            <div class="bulk-toggle-bar" id="systemdGroupFilter">
-              <span class="bulk-label">Show</span>
-              <button class="btn small active-toggle" data-group-filter="all">All</button>
-              <button class="btn small" data-group-filter="app">Application</button>
-              <button class="btn small" data-group-filter="sys">System</button>
-            </div>
-            <div class="table-scroll">
-              <table><thead><tr>
-                <th class="sortable-th" data-sort-key="name">Name<span class="sort-arrow">⇅</span></th>
-                <th class="sortable-th" data-sort-key="status">Active<span class="sort-arrow">⇅</span></th>
-                <th class="sortable-th" data-sort-key="sub_state">Sub-state<span class="sort-arrow">⇅</span></th>
-                <th class="sortable-th" data-sort-key="last_seen">Last seen<span class="sort-arrow">⇅</span></th>
-                <th>Monitor</th><th>Logs</th><th></th>
-              </tr></thead>
-              <tbody id="systemdBody"></tbody></table>
-            </div>
-          </div>
-
-          <div class="tab-panel" data-panel="logs">
-            <div id="liveLogsEmpty" class="agent-note" style="display:none">No containers reported yet — nothing to show logs for.</div>
-            <div id="liveLogsBody" style="display:none">
-              <div class="log-toolbar">
-                <select class="log-select" id="liveLogsSelect"></select>
-                <div class="log-search">
-                  <input type="text" id="liveLogsSearch" placeholder="Filter log lines…" />
-                </div>
-                <div class="level-toggle" id="liveLogsLevelToggle">
-                  <button class="lvl-chip info on" data-lvl="INFO">INFO</button>
-                  <button class="lvl-chip warn on" data-lvl="WARN">WARN</button>
-                  <button class="lvl-chip error on" data-lvl="ERROR">ERROR</button>
-                  <button class="lvl-chip debug on" data-lvl="DEBUG">DEBUG</button>
-                </div>
-                <span class="cell-sub" id="liveLogsUpdated"></span>
-              </div>
-              <div class="terminal" id="liveLogsContent"></div>
-              <div class="log-footbar">
-                <button class="btn primary" id="liveLogsPauseBtn" style="width:auto">⏸ Pause</button>
-                <label class="autoscroll-label"><input type="checkbox" id="liveLogsAutoscroll" checked /> Auto-scroll</label>
-                <button class="btn" id="liveLogsClearBtn">Clear</button>
-                <button class="btn" id="liveLogsExportBtn">Export logs</button>
-                <span class="cell-sub" style="margin-left:auto">⚙ = systemd service, ▣ = Docker container</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="tab-panel" data-panel="alerts">
-            <div id="alertsEmpty" class="empty-state" style="display:none">No alerts for this VM.</div>
-            <div class="table-scroll" id="alertsTableWrap">
-              <table><thead><tr><th>Severity</th><th>Resource</th><th>Message</th><th>First seen</th><th>Last seen</th><th>Status</th><th>Action</th></tr></thead>
-              <tbody id="alertsBody"></tbody></table>
-            </div>
-          </div>
-
-          <div class="modal-actions" id="dtActions" style="justify-content:flex-start; padding:0 16px 16px"></div>
+      <div class="page-head">
+        <div><h1>Virtual machines</h1></div>
+        <div class="page-head-actions">
+          <button class="btn primary" id="addVmBtn" style="display:none">+ Add VM</button>
         </div>
       </div>
-    </div>
-  </div>
 
-  <div class="page" id="viewUsers" style="display:none">
-    <div class="page-head">
-      <h1>Users</h1>
-      <button class="btn primary" id="addUserBtn" style="width:auto">+ Add user</button>
-    </div>
-    <div class="panel">
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Created</th><th></th></tr></thead>
-          <tbody id="userBody"></tbody>
-        </table>
+      <div class="vms-layout">
+        <section class="panel vm-pane">
+          <div class="vm-filter">
+            <label class="visually-hidden" for="vmFilterInput">Filter virtual machines</label>
+            <input class="input mono" id="vmFilterInput" placeholder="Filter by name, IP, environment" />
+            <div class="vm-chips" id="vmStatusChips"></div>
+          </div>
+          <div class="vm-list" id="vmList"></div>
+        </section>
+
+        <section class="panel">
+          <div class="empty-state" id="detailEmpty" style="display:none">No virtual machines registered yet.</div>
+          <div id="detailContent" style="display:none">
+            <div class="detail-head">
+              <div class="detail-head-top">
+                <h2 id="dtName">—</h2>
+                <span class="pill" id="dtStatus">—</span>
+                <span class="env-tag" id="dtEnv">—</span>
+              </div>
+              <div class="detail-meta">
+                <div><div class="k">Hostname</div><div class="v" id="dtHost">—</div></div>
+                <div><div class="k">IP address</div><div class="v" id="dtIp">—</div></div>
+                <div><div class="k">Last heartbeat</div><div class="v" id="dtHb">—</div></div>
+                <div><div class="k">Registered</div><div class="v" id="dtCreated">—</div></div>
+              </div>
+            </div>
+
+            <div class="tabs" role="tablist">
+              <button class="tab active" data-tab="overview">Overview</button>
+              <button class="tab" data-tab="docker"><span class="tab-glyph" aria-hidden="true">&#9635;</span> Docker</button>
+              <button class="tab" data-tab="systemd"><span class="tab-glyph" aria-hidden="true">&#9881;</span> Systemd</button>
+              <button class="tab" data-tab="logs">Live logs</button>
+              <button class="tab" data-tab="alerts">Alerts <span class="tab-count" id="tabAlertCount"></span></button>
+            </div>
+
+            <div class="tab-panel active" data-panel="overview" id="panelOverview"></div>
+
+            <div class="tab-panel" data-panel="docker">
+              <div class="table-scroll">
+                <table><thead><tr>
+                  <th class="sortable-th" data-sort-key="name">Name<span class="sort-arrow">&#8645;</span></th>
+                  <th class="sortable-th" data-sort-key="status">Status<span class="sort-arrow">&#8645;</span></th>
+                  <th class="sortable-th" data-sort-key="cpu_percent">CPU<span class="sort-arrow">&#8645;</span></th>
+                  <th class="sortable-th" data-sort-key="mem_usage">Memory<span class="sort-arrow">&#8645;</span></th>
+                  <th class="sortable-th" data-sort-key="last_seen">Last seen<span class="sort-arrow">&#8645;</span></th>
+                  <th>Monitor</th><th>Logs</th><th></th>
+                </tr></thead>
+                <tbody id="dockerBody"></tbody></table>
+              </div>
+            </div>
+
+            <div class="tab-panel" data-panel="systemd">
+              <div class="section-head">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span class="label">Show</span>
+                  <div class="seg" id="systemdGroupFilter">
+                    <button data-group-filter="all" aria-pressed="true">All</button>
+                    <button data-group-filter="app" aria-pressed="false">Application</button>
+                    <button data-group-filter="sys" aria-pressed="false">System</button>
+                  </div>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table><thead><tr>
+                  <th class="sortable-th" data-sort-key="name">Name<span class="sort-arrow">&#8645;</span></th>
+                  <th class="sortable-th" data-sort-key="status">Active<span class="sort-arrow">&#8645;</span></th>
+                  <th class="sortable-th" data-sort-key="sub_state">Sub-state<span class="sort-arrow">&#8645;</span></th>
+                  <th class="sortable-th" data-sort-key="last_seen">Last seen<span class="sort-arrow">&#8645;</span></th>
+                  <th>Monitor</th><th>Logs</th><th></th>
+                </tr></thead>
+                <tbody id="systemdBody"></tbody></table>
+              </div>
+            </div>
+
+            <div class="tab-panel" data-panel="logs">
+              <div id="liveLogsEmpty" class="note" style="display:none">No log sources enabled yet — turn on Logs for a container or unit, or add a custom log path.</div>
+              <div id="liveLogsBody" style="display:none">
+                <div class="log-toolbar">
+                  <label class="visually-hidden" for="liveLogsSelect">Log source</label>
+                  <select class="log-select" id="liveLogsSelect"></select>
+                  <div class="level-toggle" id="liveLogsLevelToggle">
+                    <button class="lvl-chip info"  data-lvl="INFO"  aria-pressed="true">INFO</button>
+                    <button class="lvl-chip warn"  data-lvl="WARN"  aria-pressed="true">WARN</button>
+                    <button class="lvl-chip error" data-lvl="ERROR" aria-pressed="true">ERROR</button>
+                    <button class="lvl-chip debug" data-lvl="DEBUG" aria-pressed="true">DEBUG</button>
+                  </div>
+                  <div class="log-search">
+                    <label class="visually-hidden" for="liveLogsSearch">Filter log lines</label>
+                    <input type="text" id="liveLogsSearch" placeholder="grep &hellip;" />
+                  </div>
+                  <button class="btn small" id="liveLogsPauseBtn">&#10073;&#10073; Pause</button>
+                  <label class="autoscroll-label"><input type="checkbox" id="liveLogsAutoscroll" checked /> Auto-scroll</label>
+                  <button class="btn small" id="liveLogsClearBtn">Clear</button>
+                  <button class="btn small" id="liveLogsExportBtn">Export logs</button>
+                  <span class="log-status" id="liveLogsUpdated"></span>
+                </div>
+                <div class="terminal" id="liveLogsContent"></div>
+                <div class="log-foot">
+                  <span>&#9881; = systemd unit</span><span class="sep">·</span>
+                  <span>&#9635; = Docker container</span><span class="sep">·</span>
+                  <span id="liveLogsFootSource">—</span><span class="sep">·</span>
+                  <span id="liveLogsFootCount">0 lines buffered</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="tab-panel" data-panel="alerts">
+              <div id="alertsEmpty" class="empty-state" style="display:none">No alerts for this VM.</div>
+              <div class="table-scroll" id="alertsTableWrap">
+                <table><thead><tr><th>Severity</th><th>Resource</th><th>Message</th><th>First seen</th><th>Last seen</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody id="alertsBody"></tbody></table>
+              </div>
+            </div>
+
+            <div class="modal-actions" id="dtActions" style="justify-content:flex-start; padding:0 16px 16px"></div>
+          </div>
+        </section>
       </div>
     </div>
+
+    <div class="page" id="viewUsers" style="display:none">
+      <div class="page-head">
+        <div><h1>Users</h1></div>
+        <div class="page-head-actions"><button class="btn primary" id="addUserBtn">+ Add user</button></div>
+      </div>
+      <section class="panel">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Name · Email</th><th>Role</th><th>Created</th><th></th></tr></thead>
+            <tbody id="userBody"></tbody>
+          </table>
+        </div>
+      </section>
     </div>
 
     <div class="page" id="viewAlerts" style="display:none">
       <div class="page-head">
-        <h1>Alerts</h1>
-      </div>
-      <div class="panel">
-        <div id="fleetAlertsEmpty" class="empty-state" style="display:none">No active alerts across your fleet.</div>
-        <div class="table-scroll" id="fleetAlertsWrap">
-          <table><thead><tr><th>Severity</th><th>VM</th><th>Resource</th><th>Message</th><th>First seen</th><th>Last seen</th><th>Action</th></tr></thead>
-          <tbody id="fleetAlertsBody"></tbody></table>
+        <div>
+          <h1>Alerts</h1>
+          <div class="page-sub" id="alertsSub">—</div>
+        </div>
+        <div class="page-head-actions">
+          <div class="seg" id="alertScopeFilter">
+            <button data-alert-scope="active" aria-pressed="true">Active</button>
+            <button data-alert-scope="resolved" aria-pressed="false">Resolved</button>
+          </div>
         </div>
       </div>
+      <section class="panel">
+        <div id="fleetAlertsEmpty" class="empty-state" style="display:none">No active alerts across your fleet.</div>
+        <div class="table-scroll" id="fleetAlertsWrap">
+          <table><thead><tr><th>Severity</th><th>VM</th><th>Resource · Message</th><th>First seen</th><th>Last seen</th><th>Action</th></tr></thead>
+          <tbody id="fleetAlertsBody"></tbody></table>
+        </div>
+      </section>
     </div>
-  </div>
+  </main>
 </div>
 
 <!-- Add VM modal -->
 <div class="modal-overlay" id="addVmOverlay" style="display:none">
-  <div class="modal">
-    <div class="modal-head"><h3 id="vmModalTitle">Add a VM</h3><button class="modal-close" id="vmModalClose">✕</button></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="vmModalTitle">
+    <div class="modal-head"><h3 id="vmModalTitle">Add a VM</h3><button class="modal-close" id="vmModalClose" aria-label="Close">&#10005;</button></div>
     <div class="modal-body" id="vmModalForm">
       <p class="modal-hint" id="vmFormHint">Register the VM here, then install the agent on it. The server never connects into the VM — the agent connects out to you.</p>
-      <div class="error-box" id="vmError"></div>
+      <div class="error-box" id="vmError" role="alert"></div>
       <form id="vmForm">
         <div class="field">
-          <label>VM name</label>
-          <input id="vmName" required placeholder="prod-cache-01" />
-          <div class="modal-hint" id="vmRenameHint" style="display:none;margin:4px 0 0;color:var(--warn)">Renaming stops this VM reporting in until you reinstall the agent on it with the new --name.</div>
+          <label for="vmName">VM name</label>
+          <input id="vmName" class="mono" required placeholder="prod-cache-01" />
+          <div class="help warn" id="vmRenameHint" style="display:none">Renaming stops this VM reporting in until you reinstall the agent on it with the new --name.</div>
         </div>
-        <div class="field"><label>Hostname</label><input id="vmHost" placeholder="prod-cache-01.internal" /></div>
-        <div class="field"><label>IP address</label><input id="vmIp" placeholder="10.20.1.30" /></div>
-        <div class="field"><label>Environment</label><select id="vmEnv"></select></div>
+        <div class="modal-grid2">
+          <div class="field"><label for="vmHost">Hostname</label><input id="vmHost" class="mono" placeholder="optional" /></div>
+          <div class="field"><label for="vmIp">IP address</label><input id="vmIp" class="mono" placeholder="10.20.1.30" /></div>
+        </div>
+        <div class="field"><label for="vmEnv">Environment</label><select id="vmEnv"></select></div>
         <div class="modal-actions">
           <button type="button" class="btn" id="vmCancelBtn">Cancel</button>
-          <button type="submit" class="btn primary" style="width:auto" id="vmSubmitBtn">Register VM</button>
+          <button type="submit" class="btn primary" id="vmSubmitBtn">Register VM</button>
         </div>
       </form>
     </div>
     <div class="modal-body" id="vmModalInstall" style="display:none">
       <p class="modal-hint">Run this once on the target VM (needs sudo):</p>
       <div class="code-block" id="installCmd"></div>
-      <div class="token-line">This token is shown once. Store it securely — it authenticates the agent going forward.</div>
-      <div class="modal-actions"><button type="button" class="btn primary" id="vmDoneBtn" style="width:auto">Done</button></div>
+      <div class="copy-row">
+        <button type="button" class="link" id="copyInstallBtn">Copy command</button>
+      </div>
+      <div class="callout" style="margin-top:14px">This token is shown once. Store it securely — it authenticates the agent going forward.</div>
+      <div class="modal-actions"><button type="button" class="btn primary" id="vmDoneBtn">Done</button></div>
     </div>
   </div>
 </div>
 
 <!-- Add user modal -->
 <div class="modal-overlay" id="addUserOverlay" style="display:none">
-  <div class="modal">
-    <div class="modal-head"><h3 id="userModalTitle">Add a user</h3><button class="modal-close" id="userModalClose">✕</button></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="userModalTitle">
+    <div class="modal-head"><h3 id="userModalTitle">Add a user</h3><button class="modal-close" id="userModalClose" aria-label="Close">&#10005;</button></div>
     <div class="modal-body">
-      <div class="error-box" id="userError"></div>
+      <div class="error-box" id="userError" role="alert"></div>
       <form id="userForm">
-        <div class="field"><label>Name</label><input id="userName" required /></div>
-        <div class="field"><label>Email</label><input id="userEmailInput" type="email" required /></div>
-        <div class="field"><label>Password</label><input id="userPassword" type="password" placeholder="" /></div>
-        <div class="field"><label>Role</label>
+        <div class="modal-grid2">
+          <div class="field"><label for="userNameInput">Name</label><input id="userNameInput" required /></div>
+          <div class="field"><label for="userEmailInput">Email</label><input id="userEmailInput" class="mono" type="email" required /></div>
+        </div>
+        <div class="field"><label for="userPassword">Password</label><input id="userPassword" type="password" placeholder="" /></div>
+        <div class="field"><label for="userRole">Role</label>
           <select id="userRole">
             <option value="readonly">Read-only</option>
             <option value="admin">Admin</option>
@@ -553,11 +926,11 @@
         </div>
         <div class="field" id="vmAccessField">
           <label>VM access (read-only users only)</label>
-          <div id="vmAccessList"></div>
+          <div class="vm-access-list" id="vmAccessList"></div>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn" id="userCancelBtn">Cancel</button>
-          <button type="submit" class="btn primary" style="width:auto" id="userSubmitBtn">Create user</button>
+          <button type="submit" class="btn primary" id="userSubmitBtn">Create user</button>
         </div>
       </form>
     </div>
@@ -587,6 +960,56 @@ const ICONS = {
   alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/></svg>',
 };
 
+/* ---------- fleet health model ----------
+   "Degraded" is not a backend status -- it is online while carrying at least
+   one unsnoozed active alert. Derived in one place so the overview tiles, the
+   list chips, the row dots and the detail pill can never disagree. */
+function activeAlerts(vmId) {
+  const d = vmDetails[vmId];
+  return (d && d.alerts || []).filter(a => a.status === 'active' && !isSnoozed(a));
+}
+function vmHealth(vm) {
+  if (vm.status === 'offline') return 'offline';
+  if (vm.status === 'pending') return 'pending';
+  return activeAlerts(vm.id).length ? 'degraded' : 'online';
+}
+const HEALTH_LABEL = { online: 'Online', degraded: 'Degraded', offline: 'Down', pending: 'Pending' };
+const HEALTH_PILL = { online: 'ok', degraded: 'warn', offline: 'crit', pending: 'neutral' };
+
+/* Compact age for dense columns ("4s", "41m") -- timeAgo() stays the prose
+   form used in sentences. Both correct for the backend's naive-UTC stamps. */
+function shortAgo(isoString) {
+  if (!isoString) return '—';
+  const withZone = /[Zz]|[+-]\d\d:\d\d$/.test(isoString) ? isoString : isoString + 'Z';
+  const s = Math.max(0, Math.floor((Date.now() - new Date(withZone).getTime()) / 1000));
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm';
+  if (s < 86400) return Math.floor(s / 3600) + 'h';
+  return Math.floor(s / 86400) + 'd';
+}
+
+/* ---------- theme ----------
+   An explicit Day/Night choice persists and wins; with nothing stored we
+   follow the OS. The attribute is always stamped, so no component rule ever
+   has to fall back to a media query. */
+function applyTheme(mode) {
+  document.documentElement.setAttribute('data-theme', mode);
+  $('#themeLight').setAttribute('aria-pressed', String(mode === 'light'));
+  $('#themeDark').setAttribute('aria-pressed', String(mode === 'dark'));
+}
+function setTheme(mode) {
+  applyTheme(mode);
+  try { localStorage.setItem('iw_theme', mode); } catch (e) { /* storage blocked -- session-only theme */ }
+}
+(function initTheme() {
+  let stored = null;
+  try { stored = localStorage.getItem('iw_theme'); } catch (e) { /* storage blocked */ }
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(stored === 'dark' || stored === 'light' ? stored : (prefersDark ? 'dark' : 'light'));
+})();
+$('#themeLight').addEventListener('click', () => setTheme('light'));
+$('#themeDark').addEventListener('click', () => setTheme('dark'));
+
 async function api(path, options = {}) {
   const headers = options.headers || {};
   if (token) headers['Authorization'] = 'Bearer ' + token;
@@ -604,7 +1027,7 @@ function logout() {
   sessionStorage.removeItem('iw_token');
   $('#bootLoading').style.display = 'none';
   $('#appShell').style.display = 'none';
-  $('#loginScreen').style.display = 'flex';
+  $('#loginScreen').style.display = 'grid';
 }
 
 $('#loginForm').addEventListener('submit', async e => {
@@ -635,10 +1058,10 @@ $('#logoutBtn').addEventListener('click', logout);
 
 async function bootApp() {
   me = await api('/auth/me');
-  $('#roleBadge').textContent = me.role.toUpperCase();
+  $('#userName').textContent = me.name;
   $('#userEmail').textContent = me.email;
-  $('#addVmBtn').style.display = me.role === 'admin' ? 'block' : 'none';
-  $('#navUsers').style.display = me.role === 'admin' ? 'block' : 'none';
+  $('#addVmBtn').style.display = me.role === 'admin' ? 'inline-flex' : 'none';
+  $('#navUsers').style.display = me.role === 'admin' ? 'flex' : 'none';
 
   environments = await api('/environments');
   $('#vmEnv').innerHTML = environments.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
@@ -648,7 +1071,7 @@ async function bootApp() {
 
   $('#bootLoading').style.display = 'none';
   $('#loginScreen').style.display = 'none';
-  $('#appShell').style.display = 'flex';
+  $('#appShell').style.display = 'grid';
 }
 
 async function loadVms() {
@@ -664,113 +1087,152 @@ async function loadVms() {
   }));
   vmDetails = Object.fromEntries(pairs);
 
+  // Never leave the detail pane empty: honour a deep link if it still
+  // resolves, otherwise open whatever most needs looking at.
+  if (!selectedVmId || !vms.some(v => v.id === selectedVmId)) {
+    const fromHash = (location.hash.match(/vm=([^&]+)/) || [])[1];
+    selectedVmId = (fromHash && vms.some(v => v.id === fromHash)) ? fromHash : leastHealthyVmId();
+  }
+
   renderStats();
   renderVmList();
   renderFleetAlerts();
   renderOverviewExtras();
 
-  if (selectedVmId && vms.some(v => v.id === selectedVmId)) {
-    renderDetail(selectedVmId);
-  }
+  $('#detailEmpty').style.display = selectedVmId ? 'none' : 'block';
+  $('#detailContent').style.display = selectedVmId ? 'block' : 'none';
+  if (selectedVmId) renderDetail(selectedVmId);
+}
+
+function leastHealthyVmId() {
+  const rank = { offline: 0, degraded: 1, pending: 2, online: 3 };
+  const sorted = [...vms].sort((a, b) => {
+    const byHealth = rank[vmHealth(a)] - rank[vmHealth(b)];
+    if (byHealth) return byHealth;
+    const byAlerts = activeAlerts(b.id).length - activeAlerts(a.id).length;
+    if (byAlerts) return byAlerts;
+    return (b.cpu_percent || 0) - (a.cpu_percent || 0);
+  });
+  return sorted.length ? sorted[0].id : null;
 }
 
 function renderStats() {
-  $('#vmCount').textContent = vms.length;
-  const online = vms.filter(v => v.status === 'online').length;
-  const pending = vms.filter(v => v.status === 'pending').length;
-  const offline = vms.filter(v => v.status === 'offline').length;
+  const total = vms.length || 1;
+  const health = { online: 0, degraded: 0, offline: 0, pending: 0 };
+  vms.forEach(vm => { health[vmHealth(vm)]++; });
 
-  let cTotal = 0, cRunning = 0, sTotal = 0, sRunning = 0, sFailed = 0, alertsActive = 0, alertsCritical = 0;
-  Object.values(vmDetails).forEach(d => {
-    const containers = d.containers.filter(c => c.monitor_enabled);
-    const services = d.services.filter(s => s.monitor_enabled);
-    cTotal += containers.length;
-    cRunning += containers.filter(c => /up/i.test(c.status)).length;
-    sTotal += services.length;
-    sRunning += services.filter(s => s.status === 'active').length;
-    sFailed += services.filter(s => s.status === 'failed').length;
-    const active = (d.alerts || []).filter(a => a.status === 'active');
-    alertsActive += active.length;
-    alertsCritical += active.filter(a => a.severity === 'critical').length;
+  const attention = vms.filter(vm => ['offline', 'degraded'].includes(vmHealth(vm)));
+  let open = 0, critical = 0;
+  vms.forEach(vm => {
+    const list = activeAlerts(vm.id);
+    open += list.length;
+    critical += list.filter(a => a.severity === 'critical').length;
   });
 
-  $('#statGroups').innerHTML = `
-    <div class="stat-cluster">
-      <div class="stat-icon vm">${ICONS.vm}</div>
-      <div class="stat-body">
-        <h3>Virtual Machines</h3>
-        <div class="stat-row">
-          <div class="stat"><div class="n">${vms.length}</div><div class="l">Total</div></div>
-          <div class="stat ok"><div class="n">${online}</div><div class="l">Online</div></div>
-          <div class="stat crit"><div class="n">${offline}</div><div class="l">Offline</div></div>
-        </div>
-      </div>
-    </div>
-    <div class="stat-cluster">
-      <div class="stat-icon docker">${ICONS.docker}</div>
-      <div class="stat-body">
-        <h3>Docker Containers</h3>
-        <div class="stat-row">
-          <div class="stat"><div class="n">${cTotal}</div><div class="l">Total</div></div>
-          <div class="stat ok"><div class="n">${cRunning}</div><div class="l">Running</div></div>
-          <div class="stat off"><div class="n">${cTotal - cRunning}</div><div class="l">Stopped</div></div>
-        </div>
-      </div>
-    </div>
-    <div class="stat-cluster">
-      <div class="stat-icon systemd">${ICONS.systemd}</div>
-      <div class="stat-body">
-        <h3>Systemd Services</h3>
-        <div class="stat-row">
-          <div class="stat"><div class="n">${sTotal}</div><div class="l">Total</div></div>
-          <div class="stat ok"><div class="n">${sRunning}</div><div class="l">Running</div></div>
-          <div class="stat crit"><div class="n">${sFailed}</div><div class="l">Failed</div></div>
-        </div>
-      </div>
-    </div>
-    <div class="stat-cluster">
-      <div class="stat-icon alert">${ICONS.alert}</div>
-      <div class="stat-body">
-        <h3>Alerts</h3>
-        <div class="stat-row">
-          <div class="stat ${alertsActive ? 'crit' : ''}"><div class="n">${alertsActive}</div><div class="l">Active</div></div>
-          <div class="stat ${alertsCritical ? 'crit' : ''}"><div class="n">${alertsCritical}</div><div class="l">Critical</div></div>
-        </div>
-      </div>
-    </div>`;
+  const reporting = vms.filter(vm => vm.status === 'online').length;
+  const silent = vms.filter(vm => vm.status === 'offline' && vm.last_heartbeat)
+    .sort((a, b) => new Date(b.last_heartbeat) - new Date(a.last_heartbeat));
 
-  const buckets = [['online', 'Online', online], ['pending', 'Pending', pending], ['offline', 'Offline', offline]];
-  const present = buckets.filter(([, , n]) => n > 0);
-  const total = vms.length || 1;
-  const colorFor = k => k === 'online' ? 'var(--ok)' : k === 'pending' ? 'var(--accent)' : 'var(--offline)';
-  $('#healthBar').innerHTML = present.map(([k, , n]) =>
-    `<div style="width:${(n / total * 100).toFixed(1)}%;background:${colorFor(k)}" title="${k}: ${n}"></div>`).join('');
-  $('#healthLegend').innerHTML = present.map(([k, label, n]) =>
-    `<span><i style="background:${colorFor(k)}"></i>${label} · ${n}</span>`).join('');
+  $('#navVmCount').textContent = vms.length || '';
+  $('#navAlertCount').textContent = open || '';
+  $('#navAlertCount').classList.toggle('crit', critical > 0);
+  $('#overviewSub').textContent =
+    `${vms.length} VM${vms.length === 1 ? '' : 's'} registered · ${reporting} reporting`;
+  $('#alertsSub').textContent = open
+    ? `${open} active across your fleet · ${critical} critical`
+    : 'Nothing firing across your fleet';
+
+  const seg = (tok, n) => n ? `<div style="width:${(n / total * 100).toFixed(1)}%;background:var(--${tok})"></div>` : '';
+  const names = list => list.slice(0, 3).map(v => escapeHtml(v.name)).join(' · ') + (list.length > 3 ? ` +${list.length - 3}` : '');
+
+  $('#statTiles').innerHTML = `
+    <div class="tile t-ok">
+      <div class="label">Health</div>
+      <div class="tile-figure"><b>${health.online}</b><span>healthy</span></div>
+      <div class="split-bar">${seg('ok', health.online)}${seg('warn', health.degraded)}${seg('crit', health.offline)}${seg('neutral', health.pending)}</div>
+      <div class="tile-note">${health.degraded} degraded · ${health.offline} down${health.pending ? ` · ${health.pending} pending` : ''}</div>
+    </div>
+    <div class="tile ${attention.length ? 't-warn' : ''}">
+      <div class="label">Needs attention</div>
+      <div class="tile-figure"><b>${attention.length}</b><span>VM${attention.length === 1 ? '' : 's'}</span></div>
+      <div class="tile-note mono">${attention.length ? names(attention) : 'All clear'}</div>
+    </div>
+    <div class="tile ${critical ? 't-crit' : open ? 't-warn' : ''}">
+      <div class="label">Active alerts</div>
+      <div class="tile-figure"><b>${open}</b><span>open</span></div>
+      <div class="tile-note">${open ? `${critical} critical · ${open - critical} warning` : 'Nothing firing'}</div>
+    </div>
+    <div class="tile">
+      <div class="label">Agents</div>
+      <div class="tile-figure"><b>${reporting}</b><span>/ ${vms.length} checked in</span></div>
+      <div class="tile-note mono">${silent.length
+        ? `${escapeHtml(silent[0].name)} silent ${shortAgo(silent[0].last_heartbeat)}`
+        : 'All agents reporting'}</div>
+    </div>`;
+}
+
+let vmFilterText = '';
+let vmStatusFilter = 'all';
+
+function filteredVms() {
+  const q = vmFilterText.trim().toLowerCase();
+  return vms.filter(vm => {
+    const h = vmHealth(vm);
+    if (vmStatusFilter === 'down' && h !== 'offline') return false;
+    if (vmStatusFilter === 'degraded' && h !== 'degraded') return false;
+    if (!q) return true;
+    return [vm.name, vm.ip_address, vm.hostname, vm.environment.name]
+      .some(v => v && String(v).toLowerCase().includes(q));
+  });
 }
 
 function renderVmList() {
+  const counts = { all: vms.length, down: 0, degraded: 0 };
+  vms.forEach(vm => {
+    const h = vmHealth(vm);
+    if (h === 'offline') counts.down++;
+    if (h === 'degraded') counts.degraded++;
+  });
+  const chips = $('#vmStatusChips');
+  chips.innerHTML = [['all', 'All'], ['down', 'Down'], ['degraded', 'Degraded']]
+    .map(([k, label]) => `<button type="button" class="vm-chip" data-status-filter="${k}"
+      aria-pressed="${vmStatusFilter === k}">${label} <b>${counts[k]}</b></button>`).join('');
+  chips.querySelectorAll('[data-status-filter]').forEach(btn => {
+    btn.addEventListener('click', () => { vmStatusFilter = btn.dataset.statusFilter; renderVmList(); });
+  });
+
   const el = $('#vmList');
-  if (vms.length === 0) {
-    el.innerHTML = `<div class="empty-state">No VMs registered yet.</div>`;
-    return;
-  }
-  el.innerHTML = vms.map(vm => `
-    <div class="vm-row ${vm.id === selectedVmId ? 'selected' : ''}" data-id="${vm.id}">
-      <span class="status-dot ${vm.status}"></span>
-      <span class="vm-row-icon">${ICONS.vm}</span>
-      <div class="vm-row-main">
-        <div class="vm-row-name">${vm.name}</div>
-        <div class="vm-row-meta">${vm.ip_address || vm.hostname || '—'}</div>
-      </div>
-      <span class="env-tag ${vm.environment.name}">${vm.environment.name.slice(0, 4)}</span>
-    </div>`).join('');
+  if (vms.length === 0) { el.innerHTML = '<div class="empty-state">No VMs registered yet.</div>'; return; }
+  const list = filteredVms();
+  if (list.length === 0) { el.innerHTML = '<div class="empty-state">No VMs match this filter.</div>'; return; }
+
+  el.innerHTML = list.map(vm => {
+    const h = vmHealth(vm);
+    return `
+    <button type="button" class="vm-row" data-id="${vm.id}" aria-current="${vm.id === selectedVmId}">
+      <span class="status-dot ${h}" aria-hidden="true"></span>
+      <span class="visually-hidden">${HEALTH_LABEL[h]}</span>
+      <span class="vm-row-main">
+        <span class="vm-row-name">${escapeHtml(vm.name)}</span>
+        <span class="vm-row-meta">${escapeHtml(vm.ip_address || vm.hostname || '—')} · ${escapeHtml(vm.environment.name)}</span>
+      </span>
+      <span class="vm-row-right">
+        <span class="vm-row-cpu">${vm.cpu_percent != null ? Math.round(vm.cpu_percent) + '%' : '—'}</span>
+        <span class="vm-row-seen">${shortAgo(vm.last_heartbeat)}</span>
+      </span>
+    </button>`;
+  }).join('');
   el.querySelectorAll('.vm-row').forEach(row => row.addEventListener('click', () => selectVm(row.dataset.id)));
 }
+
+$('#vmFilterInput').addEventListener('input', e => { vmFilterText = e.target.value; renderVmList(); });
+$('#viewAllVmsLink').addEventListener('click', () => showView('vms'));
 
 function selectVm(id) {
   stopLiveLogsPolling();
   selectedVmId = id;
+  // Selection is deep-linkable: reload or share the URL and the same VM opens.
+  history.replaceState(null, '', '#vm=' + encodeURIComponent(id));
   renderVmList();
   renderDetail(id);
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -785,19 +1247,21 @@ function renderDetail(id) {
   $('#detailEmpty').style.display = 'none';
   $('#detailContent').style.display = 'block';
 
+  const health = vmHealth(vm);
   $('#dtName').textContent = vm.name;
-  $('#dtStatus').textContent = vm.status;
-  $('#dtStatus').className = 'pill ' + vm.status;
+  $('#dtStatus').textContent = HEALTH_LABEL[health];
+  $('#dtStatus').className = 'pill ' + HEALTH_PILL[health];
   $('#dtEnv').textContent = vm.environment.name;
-  $('#dtEnv').className = 'env-tag ' + vm.environment.name;
+  $('#dtEnv').className = 'env-tag env-' + vm.environment.name;
   $('#dtHost').textContent = vm.hostname || '—';
   $('#dtIp').textContent = vm.ip_address || '—';
-  $('#dtHb').textContent = vm.last_heartbeat ? new Date(vm.last_heartbeat).toLocaleDateString() : '—';
+  $('#dtHb').textContent = vm.last_heartbeat ? shortAgo(vm.last_heartbeat) + ' ago' : '—';
   $('#dtCreated').textContent = new Date(vm.created_at).toLocaleDateString();
+  $('#tabAlertCount').textContent = activeAlerts(vm.id).length || '';
 
   $('#dtActions').innerHTML = me.role === 'admin'
-    ? `<button class="btn" id="vmEditBtn" style="width:auto">Edit VM</button>
-       <button class="btn danger" id="vmDeleteBtn" style="width:auto">Delete VM</button>` : '';
+    ? `<button class="btn" id="vmEditBtn">Edit VM</button>
+       <button class="btn danger" id="vmDeleteBtn">Delete VM</button>` : '';
   if (me.role === 'admin') {
     $('#vmEditBtn').addEventListener('click', () => openEditVmModal(vm));
     $('#vmDeleteBtn').addEventListener('click', async () => {
@@ -812,45 +1276,77 @@ function renderDetail(id) {
 
   const data = vmDetails[id] || { containers: [], services: [], logSources: [] };
 
+  // One list for both kinds of unit -- what an operator cares about is "what
+  // is this box running", not which subsystem happens to supervise it.
+  const units = [
+    ...data.containers.filter(c => c.monitor_enabled).map(c => ({
+      glyph: '\u25A3', kind: 'Docker container', type: 'container', name: c.name,
+      pill: /up/i.test(c.status || '') ? 'ok' : 'neutral',
+      state: /up/i.test(c.status || '') ? 'running' : (c.status || 'stopped'),
+      cpu: c.cpu_percent, last: c.last_seen, logs: c.logs_enabled,
+    })),
+    ...data.services.filter(s => s.monitor_enabled).map(s => ({
+      glyph: '\u2699', kind: 'systemd unit', type: 'service', name: s.name,
+      pill: s.status === 'active' ? 'ok' : s.status === 'failed' ? 'crit' : 'neutral',
+      state: s.status, cpu: null, last: s.last_seen, logs: s.logs_enabled,
+    })),
+  ];
+
   $('#panelOverview').innerHTML = `
-    <div class="history-head">
+    <div class="section-head">
       <h4>Resource history</h4>
-      <div class="range-pills" id="historyRangePills">
-        <button class="range-pill active" data-range="1h">1h</button>
-        <button class="range-pill" data-range="24h">24h</button>
-        <button class="range-pill" data-range="7d">7d</button>
+      <div class="seg" id="historyRangePills">
+        <button type="button" data-range="1h" aria-pressed="true">1h</button>
+        <button type="button" data-range="24h" aria-pressed="false">24h</button>
+        <button type="button" data-range="7d" aria-pressed="false">7d</button>
       </div>
     </div>
     <div class="metric-grid" id="historyMetricGrid"><div class="cell-sub">Loading…</div></div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">
-      <div><div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Containers</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px">${data.containers.length}</div></div>
-      <div><div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Services</div><div style="font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:4px">${data.services.length}</div></div>
+
+    <div class="section-head">
+      <h4>Monitored units</h4>
+      <span class="glyph-legend">\u2699 = systemd unit · \u25A3 = Docker container</span>
     </div>
-    ${data.containers.length === 0 && data.services.length === 0
-      ? '<div class="agent-note" style="margin-top:16px">No agent connected yet — run the install command on this VM (see "+ Add VM") to start seeing real Docker/systemd data here.</div>' : ''}
-    <div class="detail-section" style="padding:0;margin-top:20px">
-      <h4 style="display:flex;align-items:center;justify-content:space-between">
-        <span>Custom log paths</span>
-        ${me.role === 'admin' ? '<button class="btn small" id="addLogSourceBtn">+ Add path</button>' : ''}
-      </h4>
-      <div id="logSourceForm" style="display:none;margin-bottom:10px">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <input type="text" id="logSourceName" placeholder="Name (e.g. App Log)"
-            style="flex:1;min-width:120px;border:1px solid var(--border);background:var(--surface-alt);border-radius:6px;padding:7px 9px" />
-          <input type="text" id="logSourcePath" placeholder="/opt/app/logs/application.log"
-            style="flex:2;min-width:220px;border:1px solid var(--border);background:var(--surface-alt);border-radius:6px;padding:7px 9px;font-family:var(--font-mono)" />
-          <button class="btn primary" id="saveLogSourceBtn" style="width:auto">Save</button>
-        </div>
-        <div class="error-box" id="logSourceError"></div>
+    ${units.length === 0
+      ? `<div class="note">${(data.containers.length || data.services.length)
+          ? 'Nothing on this VM is being monitored yet — switch Monitor on for a container or unit.'
+          : 'No agent connected yet — run the install command on this VM (see “+ Add VM”) to start seeing Docker and systemd data here.'}</div>`
+      : `<div class="table-scroll"><table>
+          <thead><tr><th><span class="visually-hidden">Kind</span></th><th>Name</th><th>Status</th><th>CPU</th><th>Last seen</th><th><span class="visually-hidden">Logs</span></th></tr></thead>
+          <tbody>${units.map(u => `
+            <tr>
+              <td class="unit-glyph">${u.glyph}<span class="visually-hidden">${u.kind}</span></td>
+              <td class="cell-name">${escapeHtml(u.name)}</td>
+              <td><span class="pill ${u.pill}">${escapeHtml(u.state)}</span></td>
+              <td class="mono">${u.cpu != null ? u.cpu + '%' : '—'}</td>
+              <td class="cell-sub">${shortAgo(u.last)}</td>
+              <td><button class="link" data-unit-logs="${u.type}" data-unit-name="${escapeHtml(u.name)}" ${u.logs ? '' : 'disabled'}>Logs</button></td>
+            </tr>`).join('')}</tbody>
+        </table></div>`}
+
+    <div class="section-head" style="margin-top:22px">
+      <h4>Custom log paths</h4>
+      ${me.role === 'admin' ? '<button class="btn small" id="addLogSourceBtn">+ Add path</button>' : ''}
+    </div>
+    <div id="logSourceForm" style="display:none;margin-bottom:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="text" class="input" id="logSourceName" placeholder="Name (e.g. App Log)" style="flex:1;min-width:130px" />
+        <input type="text" class="input mono" id="logSourcePath" placeholder="/opt/app/logs/application.log" style="flex:2;min-width:210px" />
+        <button class="btn primary" id="saveLogSourceBtn">Save</button>
       </div>
-      ${data.logSources.length === 0
-        ? '<div class="cell-sub">No custom log paths registered — for apps that write to their own log file instead of stdout or the systemd journal.</div>'
-        : data.logSources.map(s => `
-            <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--border-soft)">
-              <span style="flex:1;font-size:12.5px"><strong>${s.name}</strong> <span class="cell-sub">${s.path}</span></span>
-              ${me.role === 'admin' ? `<button class="btn small" data-delete-source="${s.id}">Remove</button>` : ''}
-            </div>`).join('')}
-    </div>`;
+      <div class="error-box" id="logSourceError" role="alert" style="margin-top:10px"></div>
+    </div>
+    ${data.logSources.length === 0
+      ? '<div class="help">No custom log paths registered — for apps that write to their own log file instead of stdout or the systemd journal.</div>'
+      : data.logSources.map(s => `
+          <div class="log-path-row">
+            <span style="flex:1;min-width:0"><b>${escapeHtml(s.name)}</b> <span class="p">${escapeHtml(s.path)}</span></span>
+            ${me.role === 'admin' ? `<button class="btn small" data-delete-source="${s.id}">Remove</button>` : ''}
+          </div>`).join('')}`;
+
+  $('#panelOverview').querySelectorAll('[data-unit-logs]').forEach(btn => {
+    btn.addEventListener('click', () => jumpToLiveLogs(btn.dataset.unitLogs, btn.dataset.unitName));
+  });
 
   wireResourceHistory(id);
 
@@ -889,17 +1385,19 @@ function renderDetail(id) {
   const sortedContainers = sortList(data.containers, dockerSort, dockerAccessors);
   $('#dockerBody').innerHTML = sortedContainers.length === 0
     ? `<tr><td colspan="8" class="empty-state">No containers reported yet.</td></tr>`
-    : sortedContainers.map(c => `
+    : sortedContainers.map(c => {
+        const up = /up/i.test(c.status || '');
+        return `
         <tr class="${c.monitor_enabled ? '' : 'row-dimmed'}">
-          <td><strong>${c.name}</strong></td>
-          <td>${c.status}</td>
+          <td class="cell-name">${escapeHtml(c.name)}</td>
+          <td><span class="pill ${up ? 'ok' : 'neutral'}">${escapeHtml(up ? 'running' : (c.status || 'stopped'))}</span></td>
           <td class="mono">${c.cpu_percent != null ? c.cpu_percent + '%' : '—'}</td>
-          <td class="cell-sub">${c.mem_usage || '—'}</td>
-          <td class="cell-sub">${new Date(c.last_seen).toLocaleTimeString()}</td>
+          <td class="cell-sub">${escapeHtml(c.mem_usage || '—')}</td>
+          <td class="cell-sub">${shortAgo(c.last_seen)}</td>
           <td>${toggleHtml('container', c.name, 'monitor_enabled', c.monitor_enabled)}</td>
           <td>${toggleHtml('container', c.name, 'logs_enabled', c.logs_enabled)}</td>
-          <td><button class="btn small" data-live-container="${c.name}" ${c.logs_enabled ? '' : 'disabled'}>Logs</button></td>
-        </tr>`).join('');
+          <td><button class="link" data-live-container="${escapeHtml(c.name)}" ${c.logs_enabled ? '' : 'disabled'}>Logs</button></td>
+        </tr>`; }).join('');
   $('#dockerBody').querySelectorAll('[data-live-container]').forEach(btn => {
     btn.addEventListener('click', () => jumpToLiveLogs('container', btn.dataset.liveContainer));
   });
@@ -911,19 +1409,19 @@ function renderDetail(id) {
     : data.services.filter(s => s.is_custom === false);
   const sortedServices = sortList(groupFiltered, systemdSort, systemdAccessors);
   document.querySelectorAll('#systemdGroupFilter [data-group-filter]').forEach(btn => {
-    btn.classList.toggle('active-toggle', btn.dataset.groupFilter === systemdGroupFilter);
+    btn.setAttribute('aria-pressed', String(btn.dataset.groupFilter === systemdGroupFilter));
   });
   $('#systemdBody').innerHTML = sortedServices.length === 0
     ? `<tr><td colspan="7" class="empty-state">${data.services.length === 0 ? 'No services reported yet.' : 'No services in this group.'}</td></tr>`
     : sortedServices.map(s => `
         <tr class="${s.monitor_enabled ? '' : 'row-dimmed'}">
-          <td>${s.name}</td>
-          <td><span class="pill ${s.status === 'active' ? 'online' : s.status === 'failed' ? 'failed' : 'offline'}">${s.status}</span></td>
-          <td class="cell-sub">${s.sub_state || '—'}</td>
-          <td class="cell-sub">${new Date(s.last_seen).toLocaleTimeString()}</td>
+          <td class="cell-name">${escapeHtml(s.name)}</td>
+          <td><span class="pill ${s.status === 'active' ? 'ok' : s.status === 'failed' ? 'crit' : 'neutral'}">${escapeHtml(s.status)}</span></td>
+          <td class="cell-sub">${escapeHtml(s.sub_state || '—')}</td>
+          <td class="cell-sub">${shortAgo(s.last_seen)}</td>
           <td>${toggleHtml('service', s.name, 'monitor_enabled', s.monitor_enabled)}</td>
           <td>${toggleHtml('service', s.name, 'logs_enabled', s.logs_enabled)}</td>
-          <td><button class="btn small" data-live-service="${s.name}" ${s.logs_enabled ? '' : 'disabled'}>Logs</button></td>
+          <td><button class="link" data-live-service="${escapeHtml(s.name)}" ${s.logs_enabled ? '' : 'disabled'}>Logs</button></td>
         </tr>`).join('');
   $('#systemdBody').querySelectorAll('[data-live-service]').forEach(btn => {
     btn.addEventListener('click', () => jumpToLiveLogs('service', btn.dataset.liveService));
@@ -936,12 +1434,12 @@ function renderDetail(id) {
   $('#alertsTableWrap').style.display = alertsList.length === 0 ? 'none' : 'block';
   $('#alertsBody').innerHTML = alertsList.map(a => `
     <tr class="${isSnoozed(a) ? 'row-dimmed' : ''}">
-      <td><span class="pill ${a.severity === 'critical' ? 'failed' : 'warn'}">${a.severity}</span></td>
-      <td><strong>${a.resource_name}</strong><div class="cell-sub">${a.resource_type}</div></td>
-      <td>${a.message}</td>
-      <td class="cell-sub">${new Date(a.first_seen).toLocaleString()}</td>
-      <td class="cell-sub">${new Date(a.last_seen).toLocaleString()}</td>
-      <td><span class="pill ${a.status === 'active' ? (a.severity === 'critical' ? 'failed' : 'warn') : 'offline'}">${a.status}</span></td>
+      <td><span class="pill ${a.severity === 'critical' ? 'crit' : 'warn'}">${a.severity === 'critical' ? 'crit' : 'warn'}</span></td>
+      <td class="cell-name">${escapeHtml(a.resource_name)}<div class="cell-sub">${escapeHtml(a.resource_type)}</div></td>
+      <td>${escapeHtml(a.message)}</td>
+      <td class="cell-sub">${shortAgo(a.first_seen)} ago</td>
+      <td class="cell-sub">${shortAgo(a.last_seen)} ago</td>
+      <td><span class="pill ${a.status === 'active' ? (a.severity === 'critical' ? 'crit' : 'warn') : 'resolved'}">${a.status}</span></td>
       <td>${alertActionsHtml(a)}</td>
     </tr>`).join('');
   wireAlertActions('#alertsBody');
@@ -992,7 +1490,8 @@ function wsBase() {
 
 function lineMatchesFilters(el) {
   const search = $('#liveLogsSearch').value.toLowerCase();
-  const activeLevels = [...document.querySelectorAll('#liveLogsLevelToggle .lvl-chip.on')].map(c => c.dataset.lvl);
+  const activeLevels = [...document.querySelectorAll('#liveLogsLevelToggle .lvl-chip')]
+    .filter(c => c.getAttribute('aria-pressed') === 'true').map(c => c.dataset.lvl);
   const level = el.dataset.level;
   const text = el.textContent.toLowerCase();
   return (!level || activeLevels.includes(level)) && (!search || text.includes(search));
@@ -1011,7 +1510,13 @@ function appendLiveLogLine(raw) {
   const lineEl = wrapper.firstElementChild;
   lineEl.classList.toggle('hidden', !lineMatchesFilters(lineEl));
   container.appendChild(lineEl);
+  updateLogFootCount();
   if ($('#liveLogsAutoscroll').checked) container.scrollTop = container.scrollHeight;
+}
+
+function updateLogFootCount() {
+  const n = document.querySelectorAll('#liveLogsContent .log-line').length;
+  $('#liveLogsFootCount').textContent = n.toLocaleString() + (n === 1 ? ' line' : ' lines') + ' buffered';
 }
 
 const dockerAccessors = {
@@ -1146,15 +1651,23 @@ function connectLiveLogsStream() {
   if (liveLogsSocket) { liveLogsSocket.close(); liveLogsSocket = null; }
   liveLogsPaused = false;
   liveLogsBuffer = [];
-  $('#liveLogsPauseBtn').textContent = '⏸ Pause';
-  $('#liveLogsPauseBtn').classList.remove('active-toggle');
+  $('#liveLogsPauseBtn').textContent = '\u23F8 Pause';
+  $('#liveLogsPauseBtn').classList.remove('on');
   $('#liveLogsSearch').value = '';
-  document.querySelectorAll('#liveLogsLevelToggle .lvl-chip').forEach(c => c.classList.add('on'));
+  document.querySelectorAll('#liveLogsLevelToggle .lvl-chip').forEach(c => c.setAttribute('aria-pressed', 'true'));
 
   const [type, name] = $('#liveLogsSelect').value.split('::');
   const vmId = selectedVmId;
   $('#liveLogsContent').innerHTML = '';
+  updateLogFootCount();
   $('#liveLogsUpdated').textContent = 'Connecting…';
+
+  // The per-line source column the mockup shows would be the same value on
+  // every line -- this viewer streams one target at a time -- so the source
+  // belongs here, named once, rather than repeated down the gutter.
+  const streamVm = vms.find(v => v.id === vmId);
+  $('#liveLogsFootSource').textContent =
+    `streaming ${name} from ${streamVm ? streamVm.name : 'this VM'}`;
 
   const url = wsBase() + `/vms/${vmId}/logs/ws?token=${encodeURIComponent(token)}&type=${encodeURIComponent(type)}&name=${encodeURIComponent(name)}`;
   const socket = new WebSocket(url);
@@ -1191,18 +1704,24 @@ function exportLiveLogs() {
 $('#liveLogsSelect').addEventListener('change', connectLiveLogsStream);
 $('#liveLogsSearch').addEventListener('input', applyLiveLogFilters);
 document.querySelectorAll('#liveLogsLevelToggle .lvl-chip').forEach(chip => {
-  chip.addEventListener('click', () => { chip.classList.toggle('on'); applyLiveLogFilters(); });
+  chip.addEventListener('click', () => {
+    chip.setAttribute('aria-pressed', String(chip.getAttribute('aria-pressed') !== 'true'));
+    applyLiveLogFilters();
+  });
 });
 $('#liveLogsPauseBtn').addEventListener('click', () => {
   liveLogsPaused = !liveLogsPaused;
-  $('#liveLogsPauseBtn').textContent = liveLogsPaused ? '▶ Resume' : '⏸ Pause';
-  $('#liveLogsPauseBtn').classList.toggle('active-toggle', liveLogsPaused);
+  $('#liveLogsPauseBtn').textContent = liveLogsPaused ? '\u25B6 Resume' : '\u23F8 Pause';
+  $('#liveLogsPauseBtn').classList.toggle('on', liveLogsPaused);
   if (!liveLogsPaused) {
     liveLogsBuffer.forEach(raw => appendLiveLogLine(raw));
     liveLogsBuffer = [];
   }
 });
-$('#liveLogsClearBtn').addEventListener('click', () => { $('#liveLogsContent').innerHTML = ''; });
+$('#liveLogsClearBtn').addEventListener('click', () => {
+  $('#liveLogsContent').innerHTML = '';
+  updateLogFootCount();
+});
 $('#liveLogsExportBtn').addEventListener('click', exportLiveLogs);
 
 /* add / edit VM modal */
@@ -1242,6 +1761,19 @@ $('#vmModalClose').addEventListener('click', () => $('#addVmOverlay').style.disp
 $('#vmCancelBtn').addEventListener('click', () => $('#addVmOverlay').style.display = 'none');
 $('#vmDoneBtn').addEventListener('click', () => $('#addVmOverlay').style.display = 'none');
 
+$('#copyInstallBtn').addEventListener('click', async () => {
+  const btn = $('#copyInstallBtn');
+  try {
+    await navigator.clipboard.writeText($('#installCmd').textContent);
+    btn.textContent = 'Copied';
+  } catch (err) {
+    // Clipboard access is refused on insecure origins and in some browsers --
+    // say so rather than silently appearing to have copied.
+    btn.textContent = 'Press Ctrl+C to copy';
+  }
+  setTimeout(() => { btn.textContent = 'Copy command'; }, 2000);
+});
+
 $('#vmForm').addEventListener('submit', async e => {
   e.preventDefault();
   const errBox = $('#vmError');
@@ -1280,14 +1812,13 @@ async function loadUsers() {
 }
 function renderUsers() {
   const body = $('#userBody');
-  if (users.length === 0) { body.innerHTML = `<tr><td colspan="5" class="empty-state">No users yet.</td></tr>`; return; }
+  if (users.length === 0) { body.innerHTML = `<tr><td colspan="4" class="empty-state">No users yet.</td></tr>`; return; }
   body.innerHTML = users.map(u => `
     <tr>
-      <td>${u.name}</td>
-      <td class="mono">${u.email}</td>
-      <td><span class="pill ${u.role}">${u.role}</span></td>
+      <td><div style="font-weight:600">${escapeHtml(u.name)}</div><div class="cell-sub">${escapeHtml(u.email)}</div></td>
+      <td><span class="pill ${u.role === 'admin' ? 'admin' : 'readonly'}">${u.role === 'admin' ? 'admin' : 'read'}</span></td>
       <td class="cell-sub">${new Date(u.created_at).toLocaleDateString()}</td>
-      <td>
+      <td style="text-align:right;white-space:nowrap">
         <button class="btn small" data-edit-user="${u.id}">Edit</button>
         ${u.id === me.id ? '' : `<button class="btn small danger" data-delete-user="${u.id}">Delete</button>`}
       </td>
@@ -1324,24 +1855,35 @@ $('#navVms').addEventListener('click', () => showView('vms'));
 $('#navUsers').addEventListener('click', () => showView('users'));
 $('#navAlerts').addEventListener('click', () => showView('alerts'));
 
+let alertScope = 'active';
+document.querySelectorAll('#alertScopeFilter [data-alert-scope]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    alertScope = btn.dataset.alertScope;
+    document.querySelectorAll('#alertScopeFilter [data-alert-scope]').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.dataset.alertScope === alertScope)));
+    renderFleetAlerts();
+  });
+});
+
 function renderFleetAlerts() {
   const rows = [];
   vms.forEach(vm => {
     const d = vmDetails[vm.id];
     if (!d) return;
-    (d.alerts || []).filter(a => a.status === 'active').forEach(a => rows.push({ ...a, vmName: vm.name }));
+    (d.alerts || []).filter(a => a.status === alertScope).forEach(a => rows.push({ ...a, vmName: vm.name }));
   });
   rows.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1));
+  $('#fleetAlertsEmpty').textContent = alertScope === 'active'
+    ? 'No active alerts across your fleet.' : 'No resolved alerts yet.';
   $('#fleetAlertsEmpty').style.display = rows.length === 0 ? 'block' : 'none';
   $('#fleetAlertsWrap').style.display = rows.length === 0 ? 'none' : 'block';
   $('#fleetAlertsBody').innerHTML = rows.map(a => `
     <tr class="${isSnoozed(a) ? 'row-dimmed' : ''}">
-      <td><span class="pill ${a.severity === 'critical' ? 'failed' : 'warn'}">${a.severity}</span></td>
-      <td>${a.vmName}</td>
-      <td><strong>${a.resource_name}</strong><div class="cell-sub">${a.resource_type}</div></td>
-      <td>${a.message}</td>
-      <td class="cell-sub">${new Date(a.first_seen).toLocaleString()}</td>
-      <td class="cell-sub">${new Date(a.last_seen).toLocaleString()}</td>
+      <td><span class="pill ${a.severity === 'critical' ? 'crit' : 'warn'}">${a.severity === 'critical' ? 'crit' : 'warn'}</span></td>
+      <td class="cell-name">${escapeHtml(a.vmName)}</td>
+      <td><span class="cell-name">${escapeHtml(a.resource_name)}</span><div class="cell-sub">${escapeHtml(a.message)}</div></td>
+      <td class="cell-sub">${shortAgo(a.first_seen)} ago</td>
+      <td class="cell-sub">${shortAgo(a.last_seen)} ago</td>
       <td>${alertActionsHtml(a)}</td>
     </tr>`).join('');
   wireAlertActions('#fleetAlertsBody');
@@ -1459,7 +2001,7 @@ function historyChartBlock(values) {
   const last = pts[pts.length - 1];
   const gridY = pct => (PAD + (1 - pct / 100) * (H - PAD * 2)).toFixed(1);
   const gridLines = [0, 50, 100].map(pct =>
-    `<line x1="${PAD}" y1="${gridY(pct)}" x2="${W - PAD}" y2="${gridY(pct)}" stroke="var(--border-soft)" stroke-width="1"/>`
+    `<line x1="${PAD}" y1="${gridY(pct)}" x2="${W - PAD}" y2="${gridY(pct)}" stroke="var(--divider)" stroke-width="1"/>`
   ).join('');
   const thresholdY = gridY(RESOURCE_ALERT_THRESHOLD);
   const gid = 'hg' + Math.random().toString(36).slice(2, 8);
@@ -1494,12 +2036,12 @@ async function renderResourceHistory(vmId, range) {
     points = await api('/vms/' + vmId + '/metrics?range=' + range);
   } catch (err) {
     if (selectedVmId !== vmId) return;
-    $('#historyMetricGrid').innerHTML = '<div class="cell-sub">Could not load history: ' + err.message + '</div>';
+    $('#historyMetricGrid').innerHTML = '<div class="help">Could not load history: ' + escapeHtml(err.message) + '</div>';
     return;
   }
   if (selectedVmId !== vmId) return; // VM switched away while this was in flight -- discard
   if (points.length === 0) {
-    $('#historyMetricGrid').innerHTML = '<div class="cell-sub">Not enough history yet — check back after a few more heartbeats.</div>';
+    $('#historyMetricGrid').innerHTML = '<div class="help">Not enough history yet — check back after a few more heartbeats.</div>';
     return;
   }
   const liveVm = vms.find(v => v.id === vmId);
@@ -1507,7 +2049,7 @@ async function renderResourceHistory(vmId, range) {
   $('#historyMetricGrid').innerHTML = HISTORY_METRICS.map(m => {
     const vals = points.map(p => p[m.key]).filter(v => v !== null && v !== undefined);
     if (vals.length === 0) {
-      return `<div class="metric-card"><div class="metric-card-top"><span class="k">${m.label}</span></div><div class="cell-sub">No data for this range.</div></div>`;
+      return `<div class="metric-card"><div class="metric-card-top"><span class="k">${m.label}</span></div><div class="help">No data for this range.</div></div>`;
     }
     // The chart's rightmost point is a bucket average (smoothed); "Current"
     // is the VM's own latest heartbeat, unsmoothed -- they can differ
@@ -1518,23 +2060,28 @@ async function renderResourceHistory(vmId, range) {
     // A handful of points can't show a real trend yet -- say so plainly
     // instead of a near-blank chart that reads as broken rather than new.
     const sparse = vals.length < 3
-      ? `<div class="cell-sub" style="margin-top:6px">Still collecting — more points appear as heartbeats arrive.</div>` : '';
+      ? `<div class="help" style="margin-top:8px">Still collecting — more points appear as heartbeats arrive.</div>` : '';
+    const tone = current >= 85 ? 's-crit' : current >= 65 ? 's-warn' : 's-ok';
     return `
       <div class="metric-card">
-        <div class="metric-card-top"><span class="k">${m.label}</span><span class="v-wrap"><span class="v">${current.toFixed(1)}%</span><br><span class="v-label">Current</span></span></div>
-        <div class="meter"><div class="${fillClass(current)}" style="width:${Math.min(current, 100)}%"></div></div>
+        <div class="metric-card-top"><span class="k">${m.label}</span><span class="v ${tone}">${current.toFixed(0)}%</span></div>
         ${historyChartBlock(vals)}
-        <div class="chart-stats"><span>Min <b>${min.toFixed(0)}%</b></span><span>Avg <b>${avg.toFixed(0)}%</b></span><span>Max <b>${max.toFixed(0)}%</b></span><span>Threshold <b>${RESOURCE_ALERT_THRESHOLD}%</b></span></div>
+        <div class="mount-row">
+          <span class="k">now</span>
+          <span class="meter"><div class="${fillClass(current)}" style="width:${Math.min(current, 100)}%"></div></span>
+          <span class="n">${current.toFixed(1)}%</span>
+        </div>
+        <div class="chart-stats"><span>Min <b>${min.toFixed(0)}%</b></span><span>Avg <b>${avg.toFixed(0)}%</b></span><span>Max <b>${max.toFixed(0)}%</b></span><span>Alert at <b>${RESOURCE_ALERT_THRESHOLD}%</b></span></div>
         ${sparse}
       </div>`;
   }).join('');
 }
 
 function wireResourceHistory(vmId) {
-  document.querySelectorAll('#historyRangePills .range-pill').forEach(btn => {
+  document.querySelectorAll('#historyRangePills button').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('#historyRangePills .range-pill').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      document.querySelectorAll('#historyRangePills button').forEach(b =>
+        b.setAttribute('aria-pressed', String(b === btn)));
       renderResourceHistory(vmId, btn.dataset.range);
     });
   });
@@ -1542,52 +2089,74 @@ function wireResourceHistory(vmId) {
 }
 
 function renderOverviewExtras() {
-  // Needs attention: offline VMs + VMs currently carrying an active critical alert.
+  // Needs attention: anything not plainly healthy — down VMs first, then
+  // whatever is carrying an unsnoozed alert. Snoozed alerts are deliberately
+  // muted; excluding them here is the entire point of snoozing.
   const attention = [];
   vms.forEach(vm => {
-    if (vm.status === 'offline') {
-      attention.push({ vmName: vm.name, reason: 'Offline — no heartbeat received', time: vm.last_heartbeat, severity: 'off' });
+    const health = vmHealth(vm);
+    if (health === 'offline') {
+      attention.push({
+        vm, severity: 'crit', reason: 'No heartbeat for ' + shortAgo(vm.last_heartbeat),
+        time: vm.last_heartbeat,
+      });
+      return;
     }
-    const d = vmDetails[vm.id];
-    // Snoozed alerts are deliberately muted -- excluding them here is the whole point.
-    (d && d.alerts || []).filter(a => a.status === 'active' && !isSnoozed(a)).forEach(a => {
-      attention.push({ vmName: vm.name, reason: a.message, time: a.last_seen, severity: a.severity === 'critical' ? 'crit' : 'warn' });
+    activeAlerts(vm.id).forEach(a => {
+      attention.push({
+        vm, severity: a.severity === 'critical' ? 'crit' : 'warn',
+        reason: a.message, time: a.last_seen,
+      });
     });
   });
-  const attnRank = { off: 0, crit: 0, warn: 1 };
-  attention.sort((a, b) => (attnRank[a.severity] - attnRank[b.severity]) || (new Date(b.time || 0) - new Date(a.time || 0)));
+  const rank = { crit: 0, warn: 1 };
+  attention.sort((a, b) => (rank[a.severity] - rank[b.severity]) || (new Date(b.time || 0) - new Date(a.time || 0)));
+
   $('#needsAttentionBody').innerHTML = attention.length === 0
     ? '<div class="empty-state">Nothing needs attention right now.</div>'
     : attention.slice(0, 6).map(a => `
       <div class="attn-row">
-        <div class="attn-stripe ${a.severity}"></div>
-        <div class="attn-main"><div class="attn-name">${a.vmName}</div><div class="attn-reason">${a.reason}</div></div>
-        <div class="attn-time">${a.time ? timeAgo(a.time) : '—'}</div>
+        <span class="status-dot ${a.severity === 'crit' ? 'offline' : 'degraded'}" aria-hidden="true"></span>
+        <span class="visually-hidden">${a.severity === 'crit' ? 'Critical' : 'Warning'}</span>
+        <div class="attn-main">
+          <div class="attn-name">${escapeHtml(a.vm.name)}</div>
+          <div class="attn-reason">${escapeHtml(a.reason)}</div>
+        </div>
+        <div class="attn-figs">
+          <span>${a.vm.cpu_percent != null ? Math.round(a.vm.cpu_percent) + '%' : '—'}</span>
+          <span>${a.vm.mem_percent != null ? Math.round(a.vm.mem_percent) + '%' : '—'}</span>
+        </div>
+        <div class="attn-time">${a.time ? shortAgo(a.time) + ' ago' : '—'}</div>
       </div>`).join('');
 
-  // Recent alerts: newest active alerts across the whole fleet.
+  // Recent alerts: newest unsnoozed active alerts across the whole fleet.
   const recent = [];
-  vms.forEach(vm => {
-    const d = vmDetails[vm.id];
-    if (!d) return;
-    (d.alerts || []).filter(a => a.status === 'active' && !isSnoozed(a)).forEach(a => recent.push({ ...a, vmName: vm.name }));
-  });
+  vms.forEach(vm => activeAlerts(vm.id).forEach(a => recent.push({ ...a, vmName: vm.name })));
   recent.sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
   $('#recentAlertsBody').innerHTML = recent.length === 0
     ? '<div class="empty-state">No active alerts.</div>'
-    : recent.slice(0, 6).map(a => `
+    : recent.slice(0, 7).map(a => `
       <div class="alert-row">
-        <span class="pill ${a.severity === 'critical' ? 'failed' : 'warn'}">${a.severity}</span>
-        <div class="alert-main"><div class="alert-msg"><strong>${a.resource_name}</strong> ${a.message}</div><div class="alert-meta">${a.vmName} · ${a.resource_type} · ${timeAgo(a.last_seen)}</div></div>
+        <span class="pill ${a.severity === 'critical' ? 'crit' : 'warn'}">${a.severity === 'critical' ? 'crit' : 'warn'}</span>
+        <div class="alert-main">
+          <div class="alert-msg"><b>${escapeHtml(a.vmName)}</b> — ${escapeHtml(a.message)}</div>
+          <div class="alert-meta">${escapeHtml(a.resource_type)} · ${escapeHtml(a.resource_name)}</div>
+        </div>
+        <div class="alert-age">${shortAgo(a.last_seen)}</div>
       </div>`).join('');
 
-  // Fleet by environment.
-  const envCounts = {};
-  vms.forEach(vm => { envCounts[vm.environment.name] = (envCounts[vm.environment.name] || 0) + 1; });
-  const envNames = Object.keys(envCounts);
-  $('#envStrip').style.display = envNames.length === 0 ? 'none' : 'flex';
-  $('#envChips').innerHTML = envNames.map(name =>
-    `<span class="env-tag ${name}" style="padding:6px 12px;border-radius:99px;font-size:12.5px">${envCounts[name]} ${name}</span>`).join('');
+  // Fleet by environment, widest bar = biggest slice of the fleet.
+  const counts = {};
+  vms.forEach(vm => { counts[vm.environment.name] = (counts[vm.environment.name] || 0) + 1; });
+  const names = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  const peak = Math.max(1, ...names.map(n => counts[n]));
+  $('#envPanel').style.display = names.length === 0 ? 'none' : 'block';
+  $('#envBars').innerHTML = names.map(name => `
+    <div class="env-bar-row env-${escapeHtml(name)}">
+      <span class="k">${escapeHtml(name)}</span>
+      <span class="env-bar-track"><span class="env-bar-fill" style="width:${(counts[name] / peak * 100).toFixed(1)}%"></span></span>
+      <span class="n">${counts[name]}</span>
+    </div>`).join('');
 }
 
 let editingUserId = null;
@@ -1607,7 +2176,7 @@ function openUserModal(user) {
   $('#userEmailInput').disabled = !!user;
 
   if (user) {
-    $('#userName').value = user.name;
+    $('#userNameInput').value = user.name;
     $('#userEmailInput').value = user.email;
     $('#userRole').value = user.role;
   }
@@ -1619,10 +2188,12 @@ $('#addUserBtn').addEventListener('click', () => openUserModal(null));
 $('#userModalClose').addEventListener('click', () => $('#addUserOverlay').style.display = 'none');
 $('#userCancelBtn').addEventListener('click', () => $('#addUserOverlay').style.display = 'none');
 
+// Escapes quotes too -- these strings land in attribute values as well as
+// text nodes, and container/unit names come straight from the agent.
 function escapeHtml(s) {
-  const div = document.createElement('div');
-  div.textContent = s;
-  return div.innerHTML;
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 $('#userForm').addEventListener('submit', async e => {
@@ -1632,7 +2203,7 @@ $('#userForm').addEventListener('submit', async e => {
   try {
     const vmIds = [...document.querySelectorAll('#vmAccessList input:checked')].map(i => i.value);
     if (editingUserId) {
-      const body = { name: $('#userName').value.trim(), role: $('#userRole').value, vm_ids: vmIds };
+      const body = { name: $('#userNameInput').value.trim(), role: $('#userRole').value, vm_ids: vmIds };
       if ($('#userPassword').value) body.password = $('#userPassword').value;
       await api('/users/' + editingUserId, {
         method: 'PATCH',
@@ -1644,7 +2215,7 @@ $('#userForm').addEventListener('submit', async e => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: $('#userName').value.trim(),
+          name: $('#userNameInput').value.trim(),
           email: $('#userEmailInput').value.trim(),
           password: $('#userPassword').value,
           role: $('#userRole').value,

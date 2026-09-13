@@ -117,7 +117,8 @@
   body{
     margin:0; background:var(--page); color:var(--text);
     font-family:var(--sans); font-size:13px; line-height:1.5;
-    -webkit-font-smoothing:antialiased;
+    -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    text-rendering:optimizeLegibility;
   }
   button,input,select,textarea{ font-family:inherit; font-size:inherit; color:inherit; }
   :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--r-sm); }
@@ -201,8 +202,8 @@
     --lg-card:    oklch(0.27 0.035 258);
     --lg-border:  oklch(0.38 0.04 258);
     position:relative; overflow:hidden; isolation:isolate;
-    display:grid; grid-template-columns:minmax(300px,0.92fr) minmax(0,1.08fr);
-    align-items:center; column-gap:26px; padding:46px 0 46px 46px;
+    display:grid; grid-template-columns:minmax(300px,0.86fr) minmax(0,1.14fr);
+    align-items:center; column-gap:34px; padding:46px 0 46px 48px;
     background:
       radial-gradient(70rem 50rem at 76% 42%, oklch(0.38 0.11 258) 0%, transparent 58%),
       linear-gradient(146deg, oklch(0.20 0.045 258) 0%, oklch(0.26 0.07 260) 48%, oklch(0.19 0.05 262) 100%);
@@ -250,27 +251,35 @@
   .login-insight{ position:absolute; left:46px; bottom:34px; z-index:2; font-size:12.5px; line-height:1.45; color:var(--lg-faint); }
 
   /* Decorative topographic mesh, bottom-left. */
-  .login-topo{ position:absolute; left:0; bottom:0; width:min(760px,72%); height:auto; z-index:1; color:var(--lg-accent); opacity:.3; pointer-events:none; }
+  .login-topo{ position:absolute; left:0; bottom:0; width:min(900px,78%); height:auto; z-index:1; color:var(--lg-accent); opacity:.26; pointer-events:none; }
 
   /* ---------- floating product preview (real markup, not a screenshot) ---- */
-  .login-preview{ position:relative; z-index:2; perspective:1700px; }
+  .login-preview{ position:relative; z-index:2; display:flex; align-items:center; }
+  /* Pool of light behind the card -- reads as depth without touching the
+     card's own rasterisation. */
+  .login-preview::before{
+    content:""; position:absolute; inset:-14% -10% -14% -6%; z-index:-1; pointer-events:none;
+    background:radial-gradient(closest-side, oklch(0.52 0.16 258 / .58), transparent 76%);
+  }
   .dash{
     --d-bg:oklch(0.21 0.028 258); --d-panel:oklch(0.25 0.03 258);
     --d-line:oklch(0.33 0.032 258); --d-ink:oklch(0.95 0.006 250);
     --d-muted:oklch(0.68 0.02 250); --d-accent:oklch(0.70 0.17 258);
-    width:min(680px,100%); background:var(--d-bg);
-    border:1px solid var(--d-line); border-radius:14px; overflow:hidden;
-    transform:rotateY(-7deg) rotateX(1.5deg) translateZ(0);
-    box-shadow:-24px 34px 70px oklch(0.12 0.04 260 / .55);
-    font-size:11px; color:var(--d-ink);
+    width:min(792px,100%); background:var(--d-bg);
+    border:1px solid var(--d-line); border-radius:16px; overflow:hidden;
+    box-shadow:
+      0 0 0 1px oklch(0.62 0.12 258 / .16),
+      -10px 30px 60px oklch(0.10 0.04 260 / .62),
+      -4px 10px 22px oklch(0.10 0.04 260 / .42);
+    font-size:12px; color:var(--d-ink);
   }
   .dash-top{ display:flex; align-items:center; gap:8px; padding:13px 15px; border-bottom:1px solid var(--d-line); }
   .dash-top svg{ width:19px; height:19px; color:var(--d-accent); }
   .dash-top b{ font-size:14px; font-weight:700; letter-spacing:-.01em; }
   .dash-top b span{ color:var(--d-accent); }
-  .dash-body{ display:grid; grid-template-columns:143px minmax(0,1fr); }
+  .dash-body{ display:grid; grid-template-columns:158px minmax(0,1fr); }
   .dash-rail{ padding:12px 10px; border-right:1px solid var(--d-line); display:flex; flex-direction:column; gap:1px; }
-  .dash-rail div{ display:flex; align-items:center; gap:9px; padding:8px 9px; border-radius:7px; color:var(--d-muted); font-size:11.5px; }
+  .dash-rail div{ display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:7px; color:var(--d-muted); font-size:12px; white-space:nowrap; }
   .dash-rail div.on{ background:color-mix(in oklab, var(--d-accent) 20%, transparent); color:var(--d-ink); font-weight:600; }
   .dash-rail svg{ width:14px; height:14px; flex:none; }
   .dash-main{ padding:14px 15px 16px; min-width:0; }
@@ -279,7 +288,7 @@
   .dash-chip{ display:inline-flex; align-items:center; gap:6px; border:1px solid var(--d-line); border-radius:7px; padding:5px 9px; font-size:10.5px; color:var(--d-muted); white-space:nowrap; }
   .dash-stats{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin-bottom:12px; }
   .dash-stat{ background:var(--d-panel); border:1px solid var(--d-line); border-radius:10px; padding:10px 11px; }
-  .dash-stat b{ display:block; font-size:21px; font-weight:700; line-height:1.1; letter-spacing:-.02em; }
+  .dash-stat b{ display:block; font-size:24px; font-weight:700; line-height:1.1; letter-spacing:-.02em; }
   .dash-stat i{ display:block; font-style:normal; font-size:10px; color:var(--d-muted); margin:3px 0 7px; }
   .dash-stat u{ display:flex; align-items:center; gap:5px; text-decoration:none; font-size:9.5px; color:var(--d-muted); }
   .dash-stat u::before{ content:""; width:5px; height:5px; border-radius:50%; background:currentColor; flex:none; }
@@ -289,17 +298,17 @@
   .dash-card h5{ margin:0; font-size:12px; font-weight:600; }
   .dash-chart{ display:grid; grid-template-columns:30px minmax(0,1fr); gap:7px; margin-top:9px; }
   .dash-chart-y{ display:flex; flex-direction:column; justify-content:space-between; font-size:9px; color:var(--d-muted); text-align:right; padding:1px 0 13px; }
-  .dash-chart svg{ width:100%; height:66px; display:block; }
+  .dash-chart svg{ width:100%; height:78px; display:block; }
   .dash-chart-x{ display:flex; justify-content:space-between; font-size:9px; color:var(--d-muted); margin-top:4px; }
   .dash-lower{ display:grid; grid-template-columns:minmax(0,1.32fr) minmax(0,1fr); gap:9px; margin-top:9px; }
-  .dash-log{ display:flex; align-items:center; gap:8px; margin-top:8px; font-size:10px; white-space:nowrap; }
+  .dash-log{ display:flex; align-items:center; gap:8px; margin-top:9px; font-size:10.5px; white-space:nowrap; }
   .dash-log i{ width:5px; height:5px; border-radius:50%; flex:none; font-style:normal; }
   .dash-log time{ color:var(--d-muted); font-variant-numeric:tabular-nums; }
   .dash-log span{ color:var(--d-accent); overflow:hidden; text-overflow:ellipsis; }
   .dash-donut{ display:flex; align-items:center; gap:11px; margin-top:9px; }
-  .dash-donut svg{ width:74px; height:74px; flex:none; }
+  .dash-donut svg{ width:86px; height:86px; flex:none; }
   .dash-donut-mid{ font-size:14px; font-weight:700; fill:var(--d-ink); }
-  .dash-legend{ display:flex; flex-direction:column; gap:7px; min-width:0; font-size:10px; }
+  .dash-legend{ display:flex; flex-direction:column; gap:8px; min-width:0; font-size:10.5px; }
   .dash-legend div{ display:flex; align-items:center; gap:6px; }
   .dash-legend i{ width:6px; height:6px; border-radius:50%; flex:none; font-style:normal; }
   .dash-legend b{ margin-left:auto; font-weight:600; font-variant-numeric:tabular-nums; }
@@ -309,8 +318,6 @@
     display:flex; flex-direction:column; padding:34px 40px 30px;
     background:linear-gradient(180deg, color-mix(in oklab, var(--accent) 5%, var(--surface)), var(--surface) 62%);
   }
-  .login-tagline{ font-size:13.5px; line-height:1.5; text-align:right; color:var(--text); font-weight:500; }
-  .login-tagline::after{ content:""; display:block; width:52px; height:3px; border-radius:2px; background:var(--accent); margin:11px 0 0 auto; }
   .login-card{
     width:100%; max-width:404px; margin:auto; background:var(--surface);
     border:1px solid var(--border); border-radius:14px; padding:34px 32px;
@@ -827,15 +834,20 @@
       </div>
     </div>
 
-    <svg class="login-topo" viewBox="0 0 760 250" fill="none" aria-hidden="true" preserveAspectRatio="none">
-      <g stroke="currentColor" stroke-width="1.1">
-        <path d="M0 236 L95 206 L190 224 L285 180 L380 205 L475 166 L570 196 L665 158 L760 186"/>
-        <path d="M0 214 L95 182 L190 202 L285 154 L380 182 L475 140 L570 172 L665 130 L760 160"/>
-        <path d="M0 192 L95 158 L190 180 L285 128 L380 159 L475 114 L570 148 L665 102 L760 134"/>
-        <path d="M0 170 L95 134 L190 158 L285 102 L380 136 L475 88 L570 124 L665 74 L760 108" opacity=".75"/>
-        <path d="M0 148 L95 110 L190 136 L285 76 L380 113 L475 62 L570 100 L665 46 L760 82" opacity=".5"/>
-        <path d="M0 126 L95 86 L190 114 L285 50 L380 90 L475 36 L570 76 L665 18 L760 56" opacity=".3"/>
-        <path d="M95 86 V206M190 114 V224M285 50 V180M380 90 V205M475 36 V166M570 76 V196M665 18 V158" opacity=".28"/>
+    <svg class="login-topo" viewBox="0 0 900 260" fill="none" aria-hidden="true" preserveAspectRatio="none">
+      <g stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke">
+        <path d="M0 252 L45 236 L90 226 L135 224 L180 226 L225 229 L270 228 L315 223 L360 220 L405 222 L450 231 L495 244 L540 254 L585 256 L630 251 L675 243 L720 238 L765 238 L810 243 L855 246 L900 245" opacity="0.92"/>
+        <path d="M0 225 L45 213 L90 208 L135 210 L180 213 L225 214 L270 212 L315 208 L360 207 L405 214 L450 225 L495 236 L540 242 L585 239 L630 232 L675 225 L720 223 L765 226 L810 231 L855 232 L900 228" opacity="0.85"/>
+        <path d="M0 200 L45 193 L90 193 L135 197 L180 200 L225 199 L270 196 L315 194 L360 198 L405 207 L450 218 L495 226 L540 227 L585 221 L630 213 L675 209 L720 210 L765 215 L810 218 L855 216 L900 211" opacity="0.78"/>
+        <path d="M0 179 L45 177 L90 180 L135 185 L180 186 L225 184 L270 181 L315 183 L360 190 L405 200 L450 210 L495 213 L540 209 L585 202 L630 196 L675 195 L720 198 L765 202 L810 203 L855 200 L900 195" opacity="0.70"/>
+        <path d="M0 162 L45 164 L90 169 L135 172 L180 172 L225 169 L270 169 L315 173 L360 182 L405 192 L450 198 L495 197 L540 190 L585 184 L630 181 L675 183 L720 187 L765 189 L810 188 L855 183 L900 181" opacity="0.63"/>
+        <path d="M0 148 L45 153 L90 157 L135 159 L180 157 L225 156 L270 158 L315 165 L360 175 L405 182 L450 183 L495 179 L540 172 L585 167 L630 167 L675 171 L720 174 L765 175 L810 172 L855 168 L900 169" opacity="0.56"/>
+        <path d="M0 136 L45 141 L90 145 L135 144 L180 143 L225 143 L270 148 L315 157 L360 165 L405 169 L450 166 L495 160 L540 154 L585 152 L630 155 L675 159 L720 161 L765 159 L810 156 L855 155 L900 159" opacity="0.49"/>
+        <path d="M0 126 L45 130 L90 131 L135 130 L180 130 L225 133 L270 140 L315 148 L360 153 L405 153 L450 148 L495 142 L540 138 L585 139 L630 143 L675 146 L720 146 L765 144 L810 142 L855 143 L900 150" opacity="0.42"/>
+        <path d="M0 115 L45 118 L90 118 L135 117 L180 118 L225 123 L270 131 L315 137 L360 139 L405 136 L450 130 L495 125 L540 124 L585 127 L630 131 L675 132 L720 131 L765 129 L810 128 L855 133 L900 142" opacity="0.34"/>
+        <path d="M0 103 L45 105 L90 104 L135 104 L180 107 L225 114 L270 120 L315 124 L360 123 L405 118 L450 112 L495 110 L540 111 L585 115 L630 118 L675 118 L720 116 L765 114 L810 117 L855 124 L900 132" opacity="0.27"/>
+        <path d="M0 91 L45 91 L90 91 L135 92 L180 97 L225 103 L270 108 L315 109 L360 105 L405 100 L450 96 L495 96 L540 99 L585 102 L630 104 L675 102 L720 101 L765 101 L810 106 L855 114 L900 121" opacity="0.20"/>
+        <path d="M45 91 V236M90 91 V226M135 92 V224M180 97 V226M225 103 V229M270 108 V228M315 109 V223M360 105 V220M405 100 V222M450 96 V231M495 96 V244M540 99 V254M585 102 V256M630 104 V251M675 102 V243M720 101 V238M765 101 V238M810 106 V243M855 114 V246" opacity=".16"/>
       </g>
     </svg>
 
@@ -843,8 +855,6 @@
   </section>
 
   <section class="login-panel">
-    <div class="login-tagline">Monitor Today.<br>A More Reliable Tomorrow.</div>
-
     <div class="login-card">
       <h1>Welcome to <span>InfraWatch</span></h1>
       <p>Sign in to access your infrastructure console</p>

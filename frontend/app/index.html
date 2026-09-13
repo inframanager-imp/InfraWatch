@@ -202,8 +202,8 @@
     --lg-card:    oklch(0.27 0.035 258);
     --lg-border:  oklch(0.38 0.04 258);
     position:relative; overflow:hidden; isolation:isolate;
-    display:grid; grid-template-columns:minmax(300px,0.86fr) minmax(0,1.14fr);
-    align-items:center; column-gap:34px; padding:46px 0 46px 48px;
+    display:grid; grid-template-columns:minmax(270px,0.70fr) minmax(0,1.30fr);
+    align-items:center; column-gap:30px; padding:46px 0 46px 48px;
     background:
       radial-gradient(70rem 50rem at 76% 42%, oklch(0.38 0.11 258) 0%, transparent 58%),
       linear-gradient(146deg, oklch(0.20 0.045 258) 0%, oklch(0.26 0.07 260) 48%, oklch(0.19 0.05 262) 100%);
@@ -212,6 +212,15 @@
   @media (max-width:1150px){
     .login-pitch{ grid-template-columns:minmax(0,1fr); padding:46px; }
     .login-preview{ display:none; }
+  }
+  /* Below ~1335px the copy column hits its minimum, so the dashboard can no
+     longer fit exactly. Dissolving its right edge reads as the panel running
+     on past the fold; a hard slice through the cards reads as a bug. */
+  @media (max-width:1340px){
+    .login-preview{
+      -webkit-mask-image:linear-gradient(to right, #000 80%, transparent 99%);
+      mask-image:linear-gradient(to right, #000 80%, transparent 99%);
+    }
   }
   .login-copy{ max-width:620px; position:relative; z-index:2; }
 
@@ -253,10 +262,13 @@
   /* Decorative topographic mesh, bottom-left. */
   .login-topo{ position:absolute; left:0; bottom:0; width:min(900px,78%); height:auto; z-index:1; color:var(--lg-accent); opacity:.26; pointer-events:none; }
 
-  /* ---------- floating product preview (real markup, not a screenshot) ---- */
-  .login-preview{ position:relative; z-index:2; display:flex; align-items:center; min-width:0; }
-  /* Pool of light behind the card -- reads as depth without touching the
-     card's own rasterisation. */
+  /* ---------- floating product preview (real markup, not a screenshot) ----
+     Every dimension below is in em, so the whole dashboard scales from the
+     single font-size on .dash. A container query then sizes that to the
+     column it is sitting in, which means it always fits exactly instead of
+     being sliced by the panel edge -- and because it is type scaling rather
+     than a transform, the text stays crisp at every size. */
+  .login-preview{ position:relative; z-index:2; display:flex; align-items:center; min-width:0; container-type:inline-size; }
   .login-preview::before{
     content:""; position:absolute; inset:-14% -10% -14% -6%; z-index:-1; pointer-events:none;
     background:radial-gradient(closest-side, oklch(0.52 0.16 258 / .58), transparent 76%);
@@ -265,59 +277,65 @@
     --d-bg:oklch(0.21 0.028 258); --d-panel:oklch(0.25 0.03 258);
     --d-line:oklch(0.33 0.032 258); --d-ink:oklch(0.95 0.006 250);
     --d-muted:oklch(0.68 0.02 250); --d-accent:oklch(0.70 0.17 258);
-    width:792px; flex:none; background:var(--d-bg);
-    border:1px solid var(--d-line); border-radius:16px; overflow:hidden;
+    font-size:11px;                 /* fallback where cqi is unsupported */
+    width:66em; flex:none; background:var(--d-bg);
+    border:1px solid var(--d-line); border-radius:1.35em; overflow:hidden;
     box-shadow:
       0 0 0 1px oklch(0.62 0.12 258 / .16),
       -10px 30px 60px oklch(0.10 0.04 260 / .62),
       -4px 10px 22px oklch(0.10 0.04 260 / .42);
-    font-size:12px; color:var(--d-ink);
+    color:var(--d-ink);
   }
-  .dash-top{ display:flex; align-items:center; gap:8px; padding:13px 15px; border-bottom:1px solid var(--d-line); }
-  .dash-top svg{ width:19px; height:19px; color:var(--d-accent); }
-  .dash-top b{ font-size:14px; font-weight:700; letter-spacing:-.01em; }
+  /* 66em wide against 100cqi => 1em = 1.515cqi for an exact fit. The floor
+     keeps it legible on the narrowest panel that still shows it; the ceiling
+     stops it ballooning on very wide displays. */
+  @supports (width:1cqi){ .dash{ font-size:clamp(7.5px, 1.515cqi, 12px); } }
+
+  .dash-top{ display:flex; align-items:center; gap:.667em; padding:1.083em 1.25em; border-bottom:1px solid var(--d-line); }
+  .dash-top svg{ width:1.583em; height:1.583em; color:var(--d-accent); }
+  .dash-top b{ font-size:1.167em; font-weight:700; letter-spacing:-.01em; }
   .dash-top b span{ color:var(--d-accent); }
-  .dash-body{ display:grid; grid-template-columns:158px minmax(0,1fr); }
-  .dash-rail{ padding:12px 10px; border-right:1px solid var(--d-line); display:flex; flex-direction:column; gap:1px; }
-  .dash-rail div{ display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:7px; color:var(--d-muted); font-size:12px; white-space:nowrap; }
+  .dash-body{ display:grid; grid-template-columns:13.167em minmax(0,1fr); }
+  .dash-rail{ padding:1em .833em; border-right:1px solid var(--d-line); display:flex; flex-direction:column; gap:.083em; }
+  .dash-rail div{ display:flex; align-items:center; gap:.75em; padding:.75em .833em; border-radius:.583em; color:var(--d-muted); white-space:nowrap; }
   .dash-rail div.on{ background:color-mix(in oklab, var(--d-accent) 20%, transparent); color:var(--d-ink); font-weight:600; }
-  .dash-rail svg{ width:14px; height:14px; flex:none; }
-  .dash-main{ padding:14px 15px 16px; min-width:0; }
-  .dash-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
-  .dash-head h4{ margin:0; font-size:14.5px; font-weight:600; letter-spacing:-.01em; }
-  .dash-chip{ display:inline-flex; align-items:center; gap:6px; border:1px solid var(--d-line); border-radius:7px; padding:5px 9px; font-size:10.5px; color:var(--d-muted); white-space:nowrap; }
+  .dash-rail svg{ width:1.167em; height:1.167em; flex:none; }
+  .dash-main{ padding:1.167em 1.25em 1.333em; min-width:0; }
+  .dash-head{ display:flex; align-items:center; justify-content:space-between; gap:.833em; margin-bottom:1em; }
+  .dash-head h4{ margin:0; font-size:1.208em; font-weight:600; letter-spacing:-.01em; }
+  .dash-chip{ display:inline-flex; align-items:center; gap:.5em; border:1px solid var(--d-line); border-radius:.583em; padding:.417em .75em; font-size:.875em; color:var(--d-muted); white-space:nowrap; }
   .dash-chip.live{ color:oklch(0.82 0.16 150); border-color:color-mix(in oklab, oklch(0.72 0.16 150) 45%, transparent); }
-  .dash-chip.live i{ width:6px; height:6px; border-radius:50%; background:currentColor; font-style:normal; animation:dashPulse 1.9s ease-in-out infinite; }
+  .dash-chip.live i{ width:.5em; height:.5em; border-radius:50%; background:currentColor; font-style:normal; animation:dashPulse 1.9s ease-in-out infinite; }
   @keyframes dashPulse{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.35; transform:scale(.78); } }
   @keyframes dashLogIn{ from{ opacity:0; transform:translateY(-6px); } to{ opacity:1; transform:none; } }
   .dash-log.fresh{ animation:dashLogIn .4s ease-out; }
   .dash-stat b, .dash-legend b, .dash-donut-mid{ font-variant-numeric:tabular-nums; }
-  .dash-stats{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin-bottom:12px; }
-  .dash-stat{ background:var(--d-panel); border:1px solid var(--d-line); border-radius:10px; padding:10px 11px; }
-  .dash-stat b{ display:block; font-size:24px; font-weight:700; line-height:1.1; letter-spacing:-.02em; }
-  .dash-stat i{ display:block; font-style:normal; font-size:10px; color:var(--d-muted); margin:3px 0 7px; }
-  .dash-stat u{ display:flex; align-items:center; gap:5px; text-decoration:none; font-size:9.5px; color:var(--d-muted); }
-  .dash-stat u::before{ content:""; width:5px; height:5px; border-radius:50%; background:currentColor; flex:none; }
-  .dash-stat.s-ok u{    color:oklch(0.78 0.16 150); }
-  .dash-stat.s-crit u{  color:oklch(0.72 0.17 25); }
-  .dash-card{ background:var(--d-panel); border:1px solid var(--d-line); border-radius:10px; padding:11px 12px; }
-  .dash-card h5{ margin:0; font-size:12px; font-weight:600; }
-  .dash-chart{ display:grid; grid-template-columns:30px minmax(0,1fr); gap:7px; margin-top:9px; }
-  .dash-chart-y{ display:flex; flex-direction:column; justify-content:space-between; font-size:9px; color:var(--d-muted); text-align:right; padding:1px 0 13px; }
-  .dash-chart svg{ width:100%; height:78px; display:block; }
-  .dash-chart-x{ display:flex; justify-content:space-between; font-size:9px; color:var(--d-muted); margin-top:4px; }
-  .dash-lower{ display:grid; grid-template-columns:minmax(0,1.32fr) minmax(0,1fr); gap:9px; margin-top:9px; }
-  .dash-log{ display:flex; align-items:center; gap:8px; margin-top:9px; font-size:10.5px; white-space:nowrap; }
-  .dash-log i{ width:5px; height:5px; border-radius:50%; flex:none; font-style:normal; }
+  .dash-stats{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75em; margin-bottom:1em; }
+  .dash-stat{ background:var(--d-panel); border:1px solid var(--d-line); border-radius:.833em; padding:.833em .917em; }
+  .dash-stat b{ display:block; font-size:2em; font-weight:700; line-height:1.1; letter-spacing:-.02em; }
+  .dash-stat i{ display:block; font-style:normal; font-size:.833em; color:var(--d-muted); margin:.3em 0 .7em; }
+  .dash-stat u{ display:flex; align-items:center; gap:.417em; text-decoration:none; font-size:.792em; color:var(--d-muted); }
+  .dash-stat u::before{ content:""; width:.42em; height:.42em; border-radius:50%; background:currentColor; flex:none; }
+  .dash-stat.s-ok u{ color:oklch(0.78 0.16 150); }
+  .dash-stat.s-crit u{ color:oklch(0.72 0.17 25); }
+  .dash-card{ background:var(--d-panel); border:1px solid var(--d-line); border-radius:.833em; padding:.917em 1em; }
+  .dash-card h5{ margin:0; font-size:1em; font-weight:600; }
+  .dash-chart{ display:grid; grid-template-columns:2.5em minmax(0,1fr); gap:.583em; margin-top:.75em; }
+  .dash-chart-y{ display:flex; flex-direction:column; justify-content:space-between; font-size:.75em; color:var(--d-muted); text-align:right; padding:.1em 0 1.4em; }
+  .dash-chart svg{ width:100%; height:6.5em; display:block; }
+  .dash-chart-x{ display:flex; justify-content:space-between; font-size:.75em; color:var(--d-muted); margin-top:.35em; }
+  .dash-lower{ display:grid; grid-template-columns:minmax(0,1.32fr) minmax(0,1fr); gap:.75em; margin-top:.75em; }
+  .dash-log{ display:flex; align-items:center; gap:.667em; margin-top:.75em; font-size:.875em; white-space:nowrap; }
+  .dash-log i{ width:.48em; height:.48em; border-radius:50%; flex:none; font-style:normal; }
   .dash-log time{ color:var(--d-muted); font-variant-numeric:tabular-nums; }
   .dash-log span{ color:var(--d-accent); overflow:hidden; text-overflow:ellipsis; }
-  .dash-donut{ display:flex; align-items:center; gap:11px; margin-top:9px; }
-  .dash-donut svg{ width:86px; height:86px; flex:none; }
+  .dash-donut{ display:flex; align-items:center; gap:.917em; margin-top:.75em; }
+  .dash-donut svg{ width:7.167em; height:7.167em; flex:none; }
   .dash-donut-mid{ font-size:14px; font-weight:700; fill:var(--d-ink); }
-  .dash-legend{ display:flex; flex-direction:column; gap:8px; min-width:0; font-size:10.5px; }
-  .dash-legend div{ display:flex; align-items:center; gap:6px; }
-  .dash-legend i{ width:6px; height:6px; border-radius:50%; flex:none; font-style:normal; }
-  .dash-legend b{ margin-left:auto; font-weight:600; font-variant-numeric:tabular-nums; }
+  .dash-legend{ display:flex; flex-direction:column; gap:.667em; min-width:0; font-size:.875em; }
+  .dash-legend div{ display:flex; align-items:center; gap:.5em; }
+  .dash-legend i{ width:.5em; height:.5em; border-radius:50%; flex:none; font-style:normal; }
+  .dash-legend b{ margin-left:auto; font-weight:600; }
 
   /* ---------- sign-in panel --------------------------------------------- */
   @media (max-height:900px){

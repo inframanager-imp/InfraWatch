@@ -286,6 +286,12 @@
   .dash-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
   .dash-head h4{ margin:0; font-size:14.5px; font-weight:600; letter-spacing:-.01em; }
   .dash-chip{ display:inline-flex; align-items:center; gap:6px; border:1px solid var(--d-line); border-radius:7px; padding:5px 9px; font-size:10.5px; color:var(--d-muted); white-space:nowrap; }
+  .dash-chip.live{ color:oklch(0.82 0.16 150); border-color:color-mix(in oklab, oklch(0.72 0.16 150) 45%, transparent); }
+  .dash-chip.live i{ width:6px; height:6px; border-radius:50%; background:currentColor; font-style:normal; animation:dashPulse 1.9s ease-in-out infinite; }
+  @keyframes dashPulse{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.35; transform:scale(.78); } }
+  @keyframes dashLogIn{ from{ opacity:0; transform:translateY(-6px); } to{ opacity:1; transform:none; } }
+  .dash-log.fresh{ animation:dashLogIn .4s ease-out; }
+  .dash-stat b, .dash-legend b, .dash-donut-mid{ font-variant-numeric:tabular-nums; }
   .dash-stats{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin-bottom:12px; }
   .dash-stat{ background:var(--d-panel); border:1px solid var(--d-line); border-radius:10px; padding:10px 11px; }
   .dash-stat b{ display:block; font-size:24px; font-weight:700; line-height:1.1; letter-spacing:-.02em; }
@@ -775,7 +781,7 @@
           <div class="dash-main">
             <div class="dash-head">
               <h4>Infrastructure Overview</h4>
-              <span class="dash-chip">Last 24 hours</span>
+              <span class="dash-chip live"><i></i>Live</span>
             </div>
             <div class="dash-stats">
               <div class="dash-stat s-ok"><b>12</b><i>Virtual Machines</i><u>Running</u></div>
@@ -784,7 +790,7 @@
               <div class="dash-stat s-crit"><b>2</b><i>Alerts</i><u>Critical</u></div>
             </div>
             <div class="dash-card">
-              <div class="dash-head" style="margin:0"><h5>CPU Usage</h5><span class="dash-chip">Last 24 hours</span></div>
+              <div class="dash-head" style="margin:0"><h5>CPU Usage</h5><span class="dash-chip">Last 60 min</span></div>
               <div class="dash-chart">
                 <div class="dash-chart-y"><span>100%</span><span>50%</span><span>0%</span></div>
                 <div>
@@ -793,21 +799,18 @@
                       <stop offset="0%" stop-color="oklch(0.70 0.17 258)" stop-opacity=".55"/>
                       <stop offset="100%" stop-color="oklch(0.70 0.17 258)" stop-opacity="0"/>
                     </linearGradient></defs>
-                    <path d="M0 52 L18 47 L36 49 L54 38 L72 42 L90 26 L108 33 L126 22 L144 30 L162 19 L180 27 L198 17 L216 25 L234 21 L252 29 L270 24 L288 31 L300 27 V66 H0 Z" fill="url(#dashCpu)"/>
-                    <path d="M0 52 L18 47 L36 49 L54 38 L72 42 L90 26 L108 33 L126 22 L144 30 L162 19 L180 27 L198 17 L216 25 L234 21 L252 29 L270 24 L288 31 L300 27"
-                          fill="none" stroke="oklch(0.72 0.16 258)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+                    <path id="dashCpuArea" d="" fill="url(#dashCpu)"/>
+                    <path id="dashCpuLine" d="" fill="none" stroke="oklch(0.72 0.16 258)" stroke-width="2"
+                          stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
                   </svg>
-                  <div class="dash-chart-x"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+                  <div class="dash-chart-x"><span>-60m</span><span>-45m</span><span>-30m</span><span>-15m</span><span>now</span></div>
                 </div>
               </div>
             </div>
             <div class="dash-lower">
               <div class="dash-card">
                 <div class="dash-head" style="margin:0"><h5>Recent Logs</h5><span style="font-size:10px;color:oklch(0.70 0.17 258)">View all &rarr;</span></div>
-                <div class="dash-log"><i style="background:oklch(0.78 0.16 150)"></i><time>10:24:11</time><span>nginx started</span></div>
-                <div class="dash-log"><i style="background:oklch(0.82 0.14 70)"></i><time>10:22:05</time><span>container web-01 restarted</span></div>
-                <div class="dash-log"><i style="background:oklch(0.72 0.17 25)"></i><time>10:18:43</time><span>disk usage above 80%</span></div>
-                <div class="dash-log"><i style="background:oklch(0.82 0.14 70)"></i><time>10:17:06</time><span>user admin logged in</span></div>
+                <div id="dashLogs"></div>
               </div>
               <div class="dash-card">
                 <h5>Resource Usage</h5>
@@ -815,16 +818,16 @@
                   <svg viewBox="0 0 80 80">
                     <g transform="rotate(-90 40 40)" fill="none" stroke-width="9" stroke-linecap="butt">
                       <circle cx="40" cy="40" r="30" stroke="oklch(0.30 0.03 258)"/>
-                      <circle cx="40" cy="40" r="30" stroke="oklch(0.75 0.14 195)" stroke-dasharray="79.2 109.3"/>
-                      <circle cx="40" cy="40" r="30" stroke="oklch(0.68 0.16 258)" stroke-dasharray="62.2 126.3" stroke-dashoffset="-79.2"/>
-                      <circle cx="40" cy="40" r="30" stroke="oklch(0.72 0.16 330)" stroke-dasharray="47.1 141.4" stroke-dashoffset="-141.4"/>
+                      <circle id="dashRingCpu"  cx="40" cy="40" r="30" stroke="oklch(0.75 0.14 195)"/>
+                      <circle id="dashRingMem"  cx="40" cy="40" r="30" stroke="oklch(0.68 0.16 258)"/>
+                      <circle id="dashRingDisk" cx="40" cy="40" r="30" stroke="oklch(0.72 0.16 330)"/>
                     </g>
-                    <text class="dash-donut-mid" x="40" y="45" text-anchor="middle">72%</text>
+                    <text class="dash-donut-mid" id="dashRingMid" x="40" y="45" text-anchor="middle">72%</text>
                   </svg>
                   <div class="dash-legend">
-                    <div><i style="background:oklch(0.75 0.14 195)"></i>CPU<b>72%</b></div>
-                    <div><i style="background:oklch(0.68 0.16 258)"></i>Memory<b>56%</b></div>
-                    <div><i style="background:oklch(0.72 0.16 330)"></i>Disk<b>43%</b></div>
+                    <div><i style="background:oklch(0.75 0.14 195)"></i>CPU<b id="dashLegCpu">72%</b></div>
+                    <div><i style="background:oklch(0.68 0.16 258)"></i>Memory<b id="dashLegMem">56%</b></div>
+                    <div><i style="background:oklch(0.72 0.16 330)"></i>Disk<b id="dashLegDisk">43%</b></div>
                   </div>
                 </div>
               </div>
@@ -1271,6 +1274,108 @@ function setTheme(mode) {
   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   applyTheme(stored === 'dark' || stored === 'light' ? stored : (prefersDark ? 'dark' : 'light'));
 })();
+/* ---------- sign-in preview simulation ----------
+   The preview is decorative, but a frozen dashboard on the front door of a
+   monitoring product undersells it. This walks the CPU series, streams log
+   lines and drifts the resource gauges so the panel reads as something
+   running. It is aria-hidden, runs only while the sign-in screen is on
+   show, idles while the tab is in the background, and never starts at all
+   under prefers-reduced-motion. */
+const DASH_POINTS = 19;
+const DASH_LOGS = [
+  ['ok',   'nginx started'],
+  ['ok',   'agent heartbeat received'],
+  ['ok',   'container api-gateway healthy'],
+  ['ok',   'metrics flushed to store'],
+  ['warn', 'container web-01 restarted'],
+  ['warn', 'cpu sustained above 85%'],
+  ['warn', 'user admin logged in'],
+  ['crit', 'disk usage above 80%'],
+  ['crit', 'service redis-cache failed'],
+];
+const DASH_DOT = {
+  ok:   'oklch(0.78 0.16 150)',
+  warn: 'oklch(0.82 0.14 70)',
+  crit: 'oklch(0.72 0.17 25)',
+};
+const RING_C = 2 * Math.PI * 30;  // r=30 in the donut's 80x80 viewBox
+
+let dashTimer = null;
+let dashCpu = [];
+let dashUsage = { cpu: 72, mem: 56, disk: 43 };
+let dashBeat = 0;
+
+function dashWalk(v, swing, lo, hi) {
+  return Math.max(lo, Math.min(hi, v + (Math.random() - 0.5) * swing));
+}
+
+function dashDrawChart() {
+  const step = 300 / (DASH_POINTS - 1);
+  const y = v => (60 - (v / 100) * 48).toFixed(1);
+  const line = dashCpu.map((v, i) => `${i ? 'L' : 'M'}${(i * step).toFixed(1)} ${y(v)}`).join(' ');
+  $('#dashCpuLine').setAttribute('d', line);
+  $('#dashCpuArea').setAttribute('d', `${line} L300 66 L0 66 Z`);
+}
+
+function dashDrawUsage() {
+  const { cpu, mem, disk } = dashUsage;
+  const total = cpu + mem + disk;
+  let offset = 0;
+  [['#dashRingCpu', cpu], ['#dashRingMem', mem], ['#dashRingDisk', disk]].forEach(([sel, v]) => {
+    const len = (v / total) * RING_C;
+    $(sel).setAttribute('stroke-dasharray', `${len.toFixed(1)} ${(RING_C - len).toFixed(1)}`);
+    $(sel).setAttribute('stroke-dashoffset', (-offset).toFixed(1));
+    offset += len;
+  });
+  $('#dashRingMid').textContent = Math.round(cpu) + '%';
+  $('#dashLegCpu').textContent = Math.round(cpu) + '%';
+  $('#dashLegMem').textContent = Math.round(mem) + '%';
+  $('#dashLegDisk').textContent = Math.round(disk) + '%';
+}
+
+function dashPushLog(fresh) {
+  const [sev, text] = DASH_LOGS[Math.floor(Math.random() * DASH_LOGS.length)];
+  const row = document.createElement('div');
+  row.className = 'dash-log' + (fresh ? ' fresh' : '');
+  row.innerHTML = `<i style="background:${DASH_DOT[sev]}"></i>` +
+    `<time>${new Date().toTimeString().slice(0, 8)}</time><span>${escapeHtml(text)}</span>`;
+  const box = $('#dashLogs');
+  box.prepend(row);
+  while (box.children.length > 4) box.lastElementChild.remove();
+}
+
+function startDashSim() {
+  if (dashTimer || !$('#dashCpuLine')) return;
+  if (dashCpu.length === 0) {
+    dashCpu = [42];
+    for (let i = 1; i < DASH_POINTS; i++) dashCpu.push(dashWalk(dashCpu[i - 1], 22, 20, 78));
+    for (let i = 0; i < 4; i++) dashPushLog(false);
+    dashDrawChart();
+    dashDrawUsage();
+  }
+  // Static but populated is the correct resting state when motion is unwanted.
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  dashTimer = setInterval(() => {
+    if (document.hidden) return;   // no point animating what nobody is looking at
+    dashBeat++;
+    dashCpu.push(dashWalk(dashCpu[dashCpu.length - 1], 20, 20, 78));
+    dashCpu.shift();
+    dashDrawChart();
+    if (dashBeat % 2 === 0) {
+      dashUsage.cpu = dashWalk(dashUsage.cpu, 7, 38, 88);
+      dashUsage.mem = dashWalk(dashUsage.mem, 4, 34, 79);
+      dashUsage.disk = dashWalk(dashUsage.disk, 1.6, 38, 61);
+      dashDrawUsage();
+    }
+    if (dashBeat % 3 === 0) dashPushLog(true);
+  }, 1500);
+}
+
+function stopDashSim() {
+  if (dashTimer) { clearInterval(dashTimer); dashTimer = null; }
+}
+
 (function wirePasswordToggle() {
   const btn = $('#pwToggle'), input = $('#loginPassword'), slash = $('#pwSlash');
   if (!btn) return;
@@ -1305,6 +1410,7 @@ function logout() {
   $('#bootLoading').style.display = 'none';
   $('#appShell').style.display = 'none';
   $('#loginScreen').style.display = 'grid';
+  startDashSim();
 }
 
 $('#loginForm').addEventListener('submit', async e => {
@@ -1346,6 +1452,7 @@ async function bootApp() {
   await loadVms();
   if (me.role === 'admin') await loadUsers();
 
+  stopDashSim();
   $('#bootLoading').style.display = 'none';
   $('#loginScreen').style.display = 'none';
   $('#appShell').style.display = 'grid';

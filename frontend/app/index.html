@@ -6,7 +6,7 @@
 <title>InfraWatch</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <style>
   /* ============================================================
      DESIGN TOKENS — every colour in the UI resolves through these.
@@ -70,7 +70,6 @@
     --t-services: oklch(0.63 0.16 55);
     --t-logs:     oklch(0.60 0.17 15);
     --t-health:   oklch(0.58 0.13 180);
-    --script:     "Caveat", "Segoe Script", cursive;
 
     --mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
     --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -187,90 +186,164 @@
     border-radius:var(--r-md); padding:10px 12px;
   }
 
-  /* ============================================================ LOGIN */
-  .login-wrap{ min-height:100dvh; display:grid; grid-template-columns:minmax(0,1.9fr) minmax(0,1fr); }
-  @media (max-width:1000px){ .login-wrap{ grid-template-columns:minmax(0,1fr); } .login-pitch{ display:none; } }
+  /* ============================================================ LOGIN
+     The pitch panel is deliberately fixed-dark in both themes -- it carries a
+     dark product preview, and the category (Grafana, Datadog, Sentry) reads
+     dark. Its own token set keeps it independent of the app palette. */
+  .login-wrap{ min-height:100dvh; display:grid; grid-template-columns:minmax(0,1.75fr) minmax(0,1fr); }
+  @media (max-width:1040px){ .login-wrap{ grid-template-columns:minmax(0,1fr); } .login-pitch{ display:none; } }
+
   .login-pitch{
-    display:grid; grid-template-columns:minmax(300px,1fr) minmax(0,1.02fr);
-    align-items:center; column-gap:28px; padding:44px 40px;
-    border-right:1px solid var(--border);
+    --lg-ink:     oklch(0.98 0.005 250);
+    --lg-muted:   oklch(0.74 0.02 250);
+    --lg-faint:   oklch(0.60 0.025 250);
+    --lg-accent:  oklch(0.70 0.17 258);
+    --lg-card:    oklch(0.27 0.035 258);
+    --lg-border:  oklch(0.38 0.04 258);
+    position:relative; overflow:hidden; isolation:isolate;
+    display:grid; grid-template-columns:minmax(300px,0.92fr) minmax(0,1.08fr);
+    align-items:center; column-gap:26px; padding:46px 0 46px 46px;
     background:
-      radial-gradient(60rem 40rem at 88% 8%,  color-mix(in oklab, var(--accent) 9%, transparent), transparent 62%),
-      radial-gradient(52rem 44rem at 4% 96%,  color-mix(in oklab, var(--accent) 6%, transparent), transparent 60%),
-      linear-gradient(150deg, color-mix(in oklab, var(--accent) 4%, var(--surface)) 0%, var(--surface) 55%);
+      radial-gradient(70rem 50rem at 76% 42%, oklch(0.38 0.11 258) 0%, transparent 58%),
+      linear-gradient(146deg, oklch(0.20 0.045 258) 0%, oklch(0.26 0.07 260) 48%, oklch(0.19 0.05 262) 100%);
+    color:var(--lg-ink);
   }
-  @media (max-width:1240px){ .login-pitch{ grid-template-columns:minmax(0,1fr); } .login-art-wrap{ display:none; } }
-  .login-copy{ max-width:660px; }
+  @media (max-width:1320px){
+    .login-pitch{ grid-template-columns:minmax(0,1fr); padding:46px; }
+    .login-preview{ display:none; }
+  }
+  .login-copy{ max-width:620px; position:relative; z-index:2; }
 
-  .login-lockup{ display:flex; align-items:center; gap:15px; margin-bottom:46px; }
-  .login-mark{ width:58px; height:58px; flex:none; color:var(--accent); }
+  .login-lockup{ display:flex; align-items:center; gap:14px; margin-bottom:54px; }
+  .login-mark{ width:52px; height:52px; flex:none; color:var(--lg-accent); }
   .login-mark svg{ width:100%; height:100%; }
-  .login-wordmark{ font-size:34px; font-weight:700; letter-spacing:-.025em; line-height:1; }
-  .login-wordmark span{ color:var(--accent); }
-  .login-kicker{
-    font-size:11px; letter-spacing:.15em; text-transform:uppercase;
-    color:var(--muted); margin-top:7px; font-weight:500;
-  }
-  .login-headline{ font-size:clamp(30px,3.6vw,42px); font-weight:700; letter-spacing:-.03em; line-height:1.14; margin:0 0 18px; text-wrap:balance; }
-  .login-headline em{ font-style:normal; color:var(--accent); }
-  .login-lede{ font-size:16px; color:var(--muted); margin:0 0 42px; max-width:34ch; line-height:1.5; }
+  .login-wordmark{ font-size:31px; font-weight:700; letter-spacing:-.025em; line-height:1; color:var(--lg-ink); }
+  .login-wordmark span{ color:var(--lg-accent); }
+  .login-kicker{ font-size:10.5px; letter-spacing:.17em; text-transform:uppercase; color:var(--lg-faint); margin-top:7px; font-weight:500; }
 
-  .login-tile-row{
-    display:grid; grid-template-columns:repeat(3,minmax(0,168px));
-    gap:24px; margin-bottom:28px; justify-content:start;
-  }
-  .login-tile{ position:relative; }
-  /* The "+" marks sit in the gaps after each tile in the first row only --
-     decorative connective tissue, so they are hidden from assistive tech. */
-  .login-tile-row.plus .login-tile::after{
-    content:"+"; position:absolute; right:-17px; top:20px;
-    font-size:16px; font-weight:400; color:var(--accent); opacity:.34;
+  .login-headline{ font-size:clamp(34px,3.7vw,46px); font-weight:700; letter-spacing:-.032em; line-height:1.08; margin:0 0 20px; text-wrap:balance; }
+  .login-headline em{ font-style:normal; display:block; color:var(--lg-accent); }
+  .login-lede{ font-size:16px; color:var(--lg-muted); margin:0 0 38px; max-width:42ch; line-height:1.55; }
+
+  .login-tiles{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-bottom:44px; max-width:560px; }
+  .login-tile{
+    background:color-mix(in oklab, var(--lg-card) 62%, transparent);
+    border:1px solid color-mix(in oklab, var(--lg-border) 70%, transparent);
+    border-radius:12px; padding:16px 15px 17px;
   }
   .tile-card{
-    width:62px; height:62px; border-radius:15px; display:flex; align-items:center; justify-content:center;
-    margin-bottom:13px; background:var(--surface);
-    box-shadow:0 1px 2px color-mix(in oklab, var(--text) 8%, transparent),
-               0 6px 16px color-mix(in oklab, var(--text) 7%, transparent);
+    width:42px; height:42px; border-radius:11px; display:flex; align-items:center;
+    justify-content:center; margin-bottom:13px;
   }
-  .tile-card svg{ width:27px; height:27px; }
-  .tc-vm{       background:color-mix(in oklab, var(--t-vm) 7%, var(--surface));       color:var(--t-vm); }
-  .tc-metrics{  background:color-mix(in oklab, var(--t-metrics) 9%, var(--surface));  color:var(--t-metrics); }
-  .tc-docker{   background:color-mix(in oklab, var(--t-docker) 8%, var(--surface));   color:var(--t-docker); }
-  .tc-services{ background:color-mix(in oklab, var(--t-services) 12%, var(--surface));color:var(--t-services); }
-  .tc-logs{     background:color-mix(in oklab, var(--t-logs) 10%, var(--surface));    color:var(--t-logs); }
-  .tc-health{   background:color-mix(in oklab, var(--t-health) 10%, var(--surface));  color:var(--t-health); }
-  .login-tile b{ display:block; font-size:14px; font-weight:600; letter-spacing:-.005em; }
-  .login-tile > span:not(.tile-card){ display:block; font-size:12.5px; color:var(--muted); margin-top:3px; }
-  .login-foot{ font-size:11.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted); }
+  .tile-card svg{ width:21px; height:21px; }
+  .tc-vm{       background:color-mix(in oklab, var(--t-vm) 22%, transparent);       color:oklch(0.78 0.14 255); }
+  .tc-metrics{  background:color-mix(in oklab, var(--t-metrics) 22%, transparent);  color:oklch(0.80 0.16 150); }
+  .tc-docker{   background:color-mix(in oklab, var(--t-docker) 24%, transparent);   color:oklch(0.78 0.16 300); }
+  .tc-services{ background:color-mix(in oklab, var(--t-services) 24%, transparent); color:oklch(0.80 0.15 55); }
+  .tc-logs{     background:color-mix(in oklab, var(--t-logs) 24%, transparent);     color:oklch(0.78 0.15 15); }
+  .tc-health{   background:color-mix(in oklab, var(--t-health) 24%, transparent);   color:oklch(0.80 0.13 180); }
+  .login-tile b{ display:block; font-size:13.5px; font-weight:600; color:var(--lg-ink); }
+  .login-tile > span:not(.tile-card){ display:block; font-size:11.5px; color:var(--lg-faint); margin-top:4px; line-height:1.45; }
 
-  .login-art-wrap{ position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-  .login-art{ width:100%; max-width:620px; height:auto; display:block; }
-  .login-script{
-    font-family:var(--script); font-size:27px; line-height:1.12; color:var(--accent);
-    transform:rotate(-4deg); text-align:center; margin-top:-6px; align-self:flex-end;
+  .login-foot{ display:flex; align-items:center; gap:14px; font-size:11px; letter-spacing:.15em; text-transform:uppercase; color:var(--lg-muted); }
+  .login-foot::before{ content:""; width:34px; height:2.5px; border-radius:2px; background:var(--lg-accent); flex:none; }
+  .login-insight{ position:absolute; left:46px; bottom:34px; z-index:2; font-size:12.5px; line-height:1.45; color:var(--lg-faint); }
+
+  /* Decorative topographic mesh, bottom-left. */
+  .login-topo{ position:absolute; left:0; bottom:0; width:min(760px,72%); height:auto; z-index:1; color:var(--lg-accent); opacity:.3; pointer-events:none; }
+
+  /* ---------- floating product preview (real markup, not a screenshot) ---- */
+  .login-preview{ position:relative; z-index:2; perspective:1700px; }
+  .dash{
+    --d-bg:oklch(0.21 0.028 258); --d-panel:oklch(0.25 0.03 258);
+    --d-line:oklch(0.33 0.032 258); --d-ink:oklch(0.95 0.006 250);
+    --d-muted:oklch(0.68 0.02 250); --d-accent:oklch(0.70 0.17 258);
+    width:min(680px,100%); background:var(--d-bg);
+    border:1px solid var(--d-line); border-radius:14px; overflow:hidden;
+    transform:rotateY(-7deg) rotateX(1.5deg) translateZ(0);
+    box-shadow:-24px 34px 70px oklch(0.12 0.04 260 / .55);
+    font-size:11px; color:var(--d-ink);
   }
-  .login-script svg{ display:block; width:170px; height:11px; margin:2px 0 0 auto; color:var(--accent); }
-  /* With no artwork present the tagline alone would float in dead space, and
-     the copy column would sit in half a panel -- collapse the split instead. */
-  .login-art-wrap.no-art{ display:none; }
-  .login-pitch.art-missing{ grid-template-columns:minmax(0,1fr); }
+  .dash-top{ display:flex; align-items:center; gap:8px; padding:13px 15px; border-bottom:1px solid var(--d-line); }
+  .dash-top svg{ width:19px; height:19px; color:var(--d-accent); }
+  .dash-top b{ font-size:14px; font-weight:700; letter-spacing:-.01em; }
+  .dash-top b span{ color:var(--d-accent); }
+  .dash-body{ display:grid; grid-template-columns:143px minmax(0,1fr); }
+  .dash-rail{ padding:12px 10px; border-right:1px solid var(--d-line); display:flex; flex-direction:column; gap:1px; }
+  .dash-rail div{ display:flex; align-items:center; gap:9px; padding:8px 9px; border-radius:7px; color:var(--d-muted); font-size:11.5px; }
+  .dash-rail div.on{ background:color-mix(in oklab, var(--d-accent) 20%, transparent); color:var(--d-ink); font-weight:600; }
+  .dash-rail svg{ width:14px; height:14px; flex:none; }
+  .dash-main{ padding:14px 15px 16px; min-width:0; }
+  .dash-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+  .dash-head h4{ margin:0; font-size:14.5px; font-weight:600; letter-spacing:-.01em; }
+  .dash-chip{ display:inline-flex; align-items:center; gap:6px; border:1px solid var(--d-line); border-radius:7px; padding:5px 9px; font-size:10.5px; color:var(--d-muted); white-space:nowrap; }
+  .dash-stats{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin-bottom:12px; }
+  .dash-stat{ background:var(--d-panel); border:1px solid var(--d-line); border-radius:10px; padding:10px 11px; }
+  .dash-stat b{ display:block; font-size:21px; font-weight:700; line-height:1.1; letter-spacing:-.02em; }
+  .dash-stat i{ display:block; font-style:normal; font-size:10px; color:var(--d-muted); margin:3px 0 7px; }
+  .dash-stat u{ display:flex; align-items:center; gap:5px; text-decoration:none; font-size:9.5px; color:var(--d-muted); }
+  .dash-stat u::before{ content:""; width:5px; height:5px; border-radius:50%; background:currentColor; flex:none; }
+  .dash-stat.s-ok u{    color:oklch(0.78 0.16 150); }
+  .dash-stat.s-crit u{  color:oklch(0.72 0.17 25); }
+  .dash-card{ background:var(--d-panel); border:1px solid var(--d-line); border-radius:10px; padding:11px 12px; }
+  .dash-card h5{ margin:0; font-size:12px; font-weight:600; }
+  .dash-chart{ display:grid; grid-template-columns:30px minmax(0,1fr); gap:7px; margin-top:9px; }
+  .dash-chart-y{ display:flex; flex-direction:column; justify-content:space-between; font-size:9px; color:var(--d-muted); text-align:right; padding:1px 0 13px; }
+  .dash-chart svg{ width:100%; height:66px; display:block; }
+  .dash-chart-x{ display:flex; justify-content:space-between; font-size:9px; color:var(--d-muted); margin-top:4px; }
+  .dash-lower{ display:grid; grid-template-columns:minmax(0,1.32fr) minmax(0,1fr); gap:9px; margin-top:9px; }
+  .dash-log{ display:flex; align-items:center; gap:8px; margin-top:8px; font-size:10px; white-space:nowrap; }
+  .dash-log i{ width:5px; height:5px; border-radius:50%; flex:none; font-style:normal; }
+  .dash-log time{ color:var(--d-muted); font-variant-numeric:tabular-nums; }
+  .dash-log span{ color:var(--d-accent); overflow:hidden; text-overflow:ellipsis; }
+  .dash-donut{ display:flex; align-items:center; gap:11px; margin-top:9px; }
+  .dash-donut svg{ width:74px; height:74px; flex:none; }
+  .dash-donut-mid{ font-size:14px; font-weight:700; fill:var(--d-ink); }
+  .dash-legend{ display:flex; flex-direction:column; gap:7px; min-width:0; font-size:10px; }
+  .dash-legend div{ display:flex; align-items:center; gap:6px; }
+  .dash-legend i{ width:6px; height:6px; border-radius:50%; flex:none; font-style:normal; }
+  .dash-legend b{ margin-left:auto; font-weight:600; font-variant-numeric:tabular-nums; }
 
-  .login-panel{ display:flex; flex-direction:column; justify-content:space-between; padding:52px 46px; background:var(--surface); }
-  .login-form-wrap{ width:100%; max-width:392px; margin:auto; }
-  .login-form-wrap h1{ font-size:30px; font-weight:700; letter-spacing:-.02em; margin:0 0 7px; }
-  .login-form-wrap > p{ font-size:14px; color:var(--muted); margin:0 0 32px; }
-  .login-form-wrap > p b{ color:var(--accent); font-weight:600; }
-  .login-form-wrap .field{ margin-bottom:19px; }
-  .login-form-wrap .field > label{ font-size:13.5px; margin-bottom:2px; }
-  .login-form-wrap .field input{ border-radius:var(--r-lg); padding:13px 13px 13px 44px; font-size:14px; }
+  /* ---------- sign-in panel --------------------------------------------- */
+  .login-panel{
+    display:flex; flex-direction:column; padding:34px 40px 30px;
+    background:linear-gradient(180deg, color-mix(in oklab, var(--accent) 5%, var(--surface)), var(--surface) 62%);
+  }
+  .login-tagline{ font-size:13.5px; line-height:1.5; text-align:right; color:var(--text); font-weight:500; }
+  .login-tagline::after{ content:""; display:block; width:52px; height:3px; border-radius:2px; background:var(--accent); margin:11px 0 0 auto; }
+  .login-card{
+    width:100%; max-width:404px; margin:auto; background:var(--surface);
+    border:1px solid var(--border); border-radius:14px; padding:34px 32px;
+  }
+  .login-card h1{ font-size:31px; font-weight:700; letter-spacing:-.025em; margin:0 0 8px; line-height:1.15; }
+  .login-card h1 span{ display:block; color:var(--accent); }
+  .login-card > p{ font-size:13.5px; color:var(--muted); margin:0 0 26px; }
+  .login-card .field{ margin-bottom:17px; }
+  .login-card .field > label{ font-size:13px; font-weight:600; }
+  .login-card .field input{
+    border-radius:var(--r-lg); padding:12px 42px 12px 43px; font-size:13.5px;
+    background:color-mix(in oklab, var(--accent) 3.5%, var(--surface));
+  }
   .input-icon{ position:relative; display:block; }
-  .input-icon svg{
+  .input-icon > svg{
     position:absolute; left:14px; top:50%; transform:translateY(-50%);
     width:17px; height:17px; color:var(--accent); pointer-events:none;
   }
-  .login-submit{ padding:14px; border-radius:var(--r-lg); font-size:15px; margin-top:10px; }
-  .login-copyright{ font-size:11.5px; color:var(--muted); text-align:right; }
-  @media (max-width:1000px){ .login-copyright{ text-align:center; } }
+  .pw-toggle{
+    position:absolute; right:6px; top:50%; transform:translateY(-50%);
+    display:flex; align-items:center; justify-content:center; width:32px; height:32px;
+    border:0; background:none; color:var(--muted); cursor:pointer; border-radius:var(--r-md);
+  }
+  .pw-toggle:hover{ color:var(--text); }
+  .pw-toggle svg{ width:17px; height:17px; }
+  .remember-row{ display:flex; align-items:center; margin:4px 0 20px; }
+  .remember-row label{ display:flex; align-items:center; gap:9px; font-size:12.5px; color:var(--muted); cursor:pointer; }
+  .remember-row input{ width:15px; height:15px; accent-color:var(--accent); cursor:pointer; }
+  .login-submit{ padding:13px; border-radius:var(--r-lg); font-size:14.5px; gap:9px; }
+  .login-submit svg{ width:16px; height:16px; }
+  .login-assure{ display:flex; align-items:center; justify-content:center; gap:8px; font-size:11.5px; color:var(--muted); margin-bottom:7px; }
+  .login-assure svg{ width:14px; height:14px; color:var(--accent); }
+  .login-copyright{ font-size:11.5px; color:var(--muted); text-align:center; }
 
   /* ============================================================ SHELL */
   #appShell,#loginScreen{ display:none; }
@@ -628,15 +701,13 @@
       <div class="login-lockup">
         <span class="login-mark" aria-hidden="true">
           <svg viewBox="0 0 64 64" fill="none">
-            <path d="M27 12a13.5 13.5 0 0 1 13 9.9A9.6 9.6 0 0 1 38.6 41H24a14.5 14.5 0 0 1 3-29Z"
-                  fill="currentColor" opacity=".38"/>
-            <path d="M31.5 15.5a12 12 0 0 1 11.6 8.8 8.5 8.5 0 0 1-1.3 16.9h-13a12.85 12.85 0 0 1 2.7-25.7Z"
-                  fill="currentColor" opacity=".7"/>
+            <path d="M27 12a13.5 13.5 0 0 1 13 9.9A9.6 9.6 0 0 1 38.6 41H24a14.5 14.5 0 0 1 3-29Z" fill="currentColor" opacity=".34"/>
+            <path d="M31.5 15.5a12 12 0 0 1 11.6 8.8 8.5 8.5 0 0 1-1.3 16.9h-13a12.85 12.85 0 0 1 2.7-25.7Z" fill="currentColor" opacity=".66"/>
             <rect x="6" y="31" width="31" height="11" rx="3" fill="currentColor"/>
             <rect x="6" y="44.5" width="31" height="11" rx="3" fill="currentColor"/>
-            <circle cx="12.3" cy="36.5" r="2.1" fill="var(--surface)"/>
-            <circle cx="12.3" cy="50" r="2.1" fill="var(--surface)"/>
-            <path d="M19 36.5h12M19 50h12" stroke="var(--surface)" stroke-width="2.1" stroke-linecap="round" opacity=".8"/>
+            <circle cx="12.3" cy="36.5" r="2.1" fill="oklch(0.22 0.05 258)"/>
+            <circle cx="12.3" cy="50" r="2.1" fill="oklch(0.22 0.05 258)"/>
+            <path d="M19 36.5h12M19 50h12" stroke="oklch(0.22 0.05 258)" stroke-width="2.1" stroke-linecap="round" opacity=".85"/>
           </svg>
         </span>
         <div>
@@ -645,25 +716,22 @@
         </div>
       </div>
 
-      <h2 class="login-headline">Your infrastructure,<br>visible at a glance<em>.</em></h2>
-      <p class="login-lede">Monitor VMs, services, containers, metrics, and logs from one console.</p>
+      <h2 class="login-headline">See Everything.<em>Stay in Control.</em></h2>
+      <p class="login-lede">Monitor VMs, services, containers, metrics and logs &mdash; all from one unified console.</p>
 
-      <div class="login-tile-row plus">
+      <div class="login-tiles">
         <div class="login-tile">
-          <span class="tile-card tc-vm" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="19" height="7" rx="1.8"/><rect x="2.5" y="13.5" width="19" height="7" rx="1.8"/><path d="M6 7h.01M6 17h.01M9.5 7h6M9.5 17h6"/></svg></span>
-          <b>Virtual Machines</b>
+          <span class="tile-card tc-vm" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 21h7M12 17v4"/></svg></span>
+          <b>Virtual Machines</b><span>Monitor &amp; manage VMs</span>
         </div>
         <div class="login-tile">
           <span class="tile-card tc-metrics" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V12M12 20V5M19 20v-6"/></svg></span>
-          <b>Metrics</b><span>CPU · Memory · Disk</span>
+          <b>Metrics</b><span>CPU &middot; Memory &middot; Disk</span>
         </div>
         <div class="login-tile">
           <span class="tile-card tc-docker" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/></svg></span>
-          <b>Docker</b><span>Containers</span>
+          <b>Docker</b><span>Containers &amp; Images</span>
         </div>
-      </div>
-
-      <div class="login-tile-row">
         <div class="login-tile">
           <span class="tile-card tc-services" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.6v3M12 18.4v3M4.4 4.4l2.1 2.1M17.5 17.5l2.1 2.1M2.6 12h3M18.4 12h3M4.4 19.6l2.1-2.1M17.5 6.5l2.1-2.1"/></svg></span>
           <b>Services</b><span>systemd / Daemons</span>
@@ -678,22 +746,108 @@
         </div>
       </div>
 
-      <div class="login-foot">Reliable · Secure · Always on</div>
+      <div class="login-foot">Reliable &middot; Secure &middot; Always on</div>
     </div>
 
-    <div class="login-art-wrap" id="loginArtWrap">
-      <img class="login-art" id="loginArt" src="/login-art.png" alt="" />
-      <div class="login-script" aria-hidden="true">
-        Keep your<br>infrastructure healthy
-        <svg viewBox="0 0 170 11" fill="none"><path d="M3 7.5c34-5 92-7 164-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <div class="login-preview" aria-hidden="true">
+      <div class="dash">
+        <div class="dash-top">
+          <svg viewBox="0 0 64 64" fill="none"><path d="M31.5 15.5a12 12 0 0 1 11.6 8.8 8.5 8.5 0 0 1-1.3 16.9h-13a12.85 12.85 0 0 1 2.7-25.7Z" fill="currentColor" opacity=".6"/><rect x="6" y="31" width="31" height="11" rx="3" fill="currentColor"/><rect x="6" y="44.5" width="31" height="11" rx="3" fill="currentColor"/></svg>
+          <b>Infra<span>Watch</span></b>
+        </div>
+        <div class="dash-body">
+          <div class="dash-rail">
+            <div class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Overview</div>
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg> Virtual Machines</div>
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M7 8V5h10v3"/></svg> Containers</div>
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/></svg> Services</div>
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 20V12M12 20V5M19 20v-6"/></svg> Metrics</div>
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h8l4 4v14H6Z"/><path d="M14 3v4h4"/></svg> Logs</div>
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/></svg> Alerts</div>
+          </div>
+          <div class="dash-main">
+            <div class="dash-head">
+              <h4>Infrastructure Overview</h4>
+              <span class="dash-chip">Last 24 hours</span>
+            </div>
+            <div class="dash-stats">
+              <div class="dash-stat s-ok"><b>12</b><i>Virtual Machines</i><u>Running</u></div>
+              <div class="dash-stat s-ok"><b>8</b><i>Containers</i><u>Healthy</u></div>
+              <div class="dash-stat s-ok"><b>6</b><i>Services</i><u>Active</u></div>
+              <div class="dash-stat s-crit"><b>2</b><i>Alerts</i><u>Critical</u></div>
+            </div>
+            <div class="dash-card">
+              <div class="dash-head" style="margin:0"><h5>CPU Usage</h5><span class="dash-chip">Last 24 hours</span></div>
+              <div class="dash-chart">
+                <div class="dash-chart-y"><span>100%</span><span>50%</span><span>0%</span></div>
+                <div>
+                  <svg viewBox="0 0 300 66" preserveAspectRatio="none">
+                    <defs><linearGradient id="dashCpu" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stop-color="oklch(0.70 0.17 258)" stop-opacity=".55"/>
+                      <stop offset="100%" stop-color="oklch(0.70 0.17 258)" stop-opacity="0"/>
+                    </linearGradient></defs>
+                    <path d="M0 52 L18 47 L36 49 L54 38 L72 42 L90 26 L108 33 L126 22 L144 30 L162 19 L180 27 L198 17 L216 25 L234 21 L252 29 L270 24 L288 31 L300 27 V66 H0 Z" fill="url(#dashCpu)"/>
+                    <path d="M0 52 L18 47 L36 49 L54 38 L72 42 L90 26 L108 33 L126 22 L144 30 L162 19 L180 27 L198 17 L216 25 L234 21 L252 29 L270 24 L288 31 L300 27"
+                          fill="none" stroke="oklch(0.72 0.16 258)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+                  </svg>
+                  <div class="dash-chart-x"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="dash-lower">
+              <div class="dash-card">
+                <div class="dash-head" style="margin:0"><h5>Recent Logs</h5><span style="font-size:10px;color:oklch(0.70 0.17 258)">View all &rarr;</span></div>
+                <div class="dash-log"><i style="background:oklch(0.78 0.16 150)"></i><time>10:24:11</time><span>nginx started</span></div>
+                <div class="dash-log"><i style="background:oklch(0.82 0.14 70)"></i><time>10:22:05</time><span>container web-01 restarted</span></div>
+                <div class="dash-log"><i style="background:oklch(0.72 0.17 25)"></i><time>10:18:43</time><span>disk usage above 80%</span></div>
+                <div class="dash-log"><i style="background:oklch(0.82 0.14 70)"></i><time>10:17:06</time><span>user admin logged in</span></div>
+              </div>
+              <div class="dash-card">
+                <h5>Resource Usage</h5>
+                <div class="dash-donut">
+                  <svg viewBox="0 0 80 80">
+                    <g transform="rotate(-90 40 40)" fill="none" stroke-width="9" stroke-linecap="butt">
+                      <circle cx="40" cy="40" r="30" stroke="oklch(0.30 0.03 258)"/>
+                      <circle cx="40" cy="40" r="30" stroke="oklch(0.75 0.14 195)" stroke-dasharray="79.2 109.3"/>
+                      <circle cx="40" cy="40" r="30" stroke="oklch(0.68 0.16 258)" stroke-dasharray="62.2 126.3" stroke-dashoffset="-79.2"/>
+                      <circle cx="40" cy="40" r="30" stroke="oklch(0.72 0.16 330)" stroke-dasharray="47.1 141.4" stroke-dashoffset="-141.4"/>
+                    </g>
+                    <text class="dash-donut-mid" x="40" y="45" text-anchor="middle">72%</text>
+                  </svg>
+                  <div class="dash-legend">
+                    <div><i style="background:oklch(0.75 0.14 195)"></i>CPU<b>72%</b></div>
+                    <div><i style="background:oklch(0.68 0.16 258)"></i>Memory<b>56%</b></div>
+                    <div><i style="background:oklch(0.72 0.16 330)"></i>Disk<b>43%</b></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
+
+    <svg class="login-topo" viewBox="0 0 760 250" fill="none" aria-hidden="true" preserveAspectRatio="none">
+      <g stroke="currentColor" stroke-width="1.1">
+        <path d="M0 236 L95 206 L190 224 L285 180 L380 205 L475 166 L570 196 L665 158 L760 186"/>
+        <path d="M0 214 L95 182 L190 202 L285 154 L380 182 L475 140 L570 172 L665 130 L760 160"/>
+        <path d="M0 192 L95 158 L190 180 L285 128 L380 159 L475 114 L570 148 L665 102 L760 134"/>
+        <path d="M0 170 L95 134 L190 158 L285 102 L380 136 L475 88 L570 124 L665 74 L760 108" opacity=".75"/>
+        <path d="M0 148 L95 110 L190 136 L285 76 L380 113 L475 62 L570 100 L665 46 L760 82" opacity=".5"/>
+        <path d="M0 126 L95 86 L190 114 L285 50 L380 90 L475 36 L570 76 L665 18 L760 56" opacity=".3"/>
+        <path d="M95 86 V206M190 114 V224M285 50 V180M380 90 V205M475 36 V166M570 76 V196M665 18 V158" opacity=".28"/>
+      </g>
+    </svg>
+
+    <div class="login-insight">Infrastructure Insights<br>for a Smarter Tomorrow</div>
   </section>
 
   <section class="login-panel">
-    <div class="login-form-wrap">
-      <h1>Sign in</h1>
-      <p>Sign in to <b>InfraWatch</b></p>
+    <div class="login-tagline">Monitor Today.<br>A More Reliable Tomorrow.</div>
+
+    <div class="login-card">
+      <h1>Welcome to <span>InfraWatch</span></h1>
+      <p>Sign in to access your infrastructure console</p>
       <div class="error-box" id="loginError" role="alert"></div>
       <form id="loginForm">
         <div class="field">
@@ -708,12 +862,28 @@
           <span class="input-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="10.5" width="17" height="10.5" rx="2.2"/><path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5"/></svg>
             <input type="password" id="loginPassword" required autocomplete="current-password" />
+            <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/><path id="pwSlash" d="m4 20 16-16" style="display:none"/></svg>
+            </button>
           </span>
         </div>
-        <button type="submit" class="btn primary block login-submit">Sign in</button>
+        <div class="remember-row">
+          <label for="rememberMe"><input type="checkbox" id="rememberMe" /> Remember me</label>
+        </div>
+        <button type="submit" class="btn primary block login-submit">
+          Sign in
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        </button>
       </form>
     </div>
-    <div class="login-copyright">&copy; 2026 InfraWatch. All rights reserved.</div>
+
+    <div>
+      <div class="login-assure">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+        Your infrastructure. Our priority.
+      </div>
+      <div class="login-copyright">&copy; 2026 InfraWatch. All rights reserved.</div>
+    </div>
   </section>
 </div>
 
@@ -1007,7 +1177,26 @@
 const API_BASE = window.API_BASE;
 const $ = s => document.querySelector(s);
 
-let token = sessionStorage.getItem('iw_token') || null;
+/* "Remember me" decides which storage holds the session token: localStorage
+   survives a browser restart, sessionStorage dies with the tab. Both are
+   wrapped -- private windows and blocked-storage settings make these throw.
+   Either way the JWT's own 12h expiry still caps how long it stays valid. */
+function readStoredToken() {
+  for (const store of [localStorage, sessionStorage]) {
+    try { const v = store.getItem('iw_token'); if (v) return v; } catch (e) { /* blocked */ }
+  }
+  return null;
+}
+function storeToken(value, persist) {
+  clearStoredToken();
+  try { (persist ? localStorage : sessionStorage).setItem('iw_token', value); } catch (e) { /* blocked */ }
+}
+function clearStoredToken() {
+  try { localStorage.removeItem('iw_token'); } catch (e) { /* blocked */ }
+  try { sessionStorage.removeItem('iw_token'); } catch (e) { /* blocked */ }
+}
+
+let token = readStoredToken();
 let me = null;
 let environments = [];
 let vms = [];
@@ -1072,18 +1261,17 @@ function setTheme(mode) {
   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   applyTheme(stored === 'dark' || stored === 'light' ? stored : (prefersDark ? 'dark' : 'light'));
 })();
-// The sign-in artwork is an optional asset (frontend/app/login-art.png).
-// Until it exists, hide its column rather than showing a broken image.
-(function wireLoginArt() {
-  const img = $('#loginArt');
-  if (!img) return;
-  const hideArt = () => {
-    $('#loginArtWrap').classList.add('no-art');
-    document.querySelector('.login-pitch').classList.add('art-missing');
-  };
-  img.addEventListener('error', hideArt);
-  // complete && naturalWidth === 0 means it already loaded and failed.
-  if (img.complete && img.naturalWidth === 0) hideArt();
+(function wirePasswordToggle() {
+  const btn = $('#pwToggle'), input = $('#loginPassword'), slash = $('#pwSlash');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const reveal = input.type === 'password';
+    input.type = reveal ? 'text' : 'password';
+    btn.setAttribute('aria-pressed', String(reveal));
+    btn.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
+    slash.style.display = reveal ? '' : 'none';
+    input.focus();
+  });
 })();
 
 $('#themeLight').addEventListener('click', () => setTheme('light'));
@@ -1103,7 +1291,7 @@ async function api(path, options = {}) {
 function logout() {
   stopLiveLogsPolling();
   token = null; me = null; selectedVmId = null;
-  sessionStorage.removeItem('iw_token');
+  clearStoredToken();
   $('#bootLoading').style.display = 'none';
   $('#appShell').style.display = 'none';
   $('#loginScreen').style.display = 'grid';
@@ -1125,7 +1313,7 @@ $('#loginForm').addEventListener('submit', async e => {
     const body = await res.json();
     if (!res.ok) throw new Error(body.detail || 'Login failed');
     token = body.access_token;
-    sessionStorage.setItem('iw_token', token);
+    storeToken(token, $('#rememberMe').checked);
     await bootApp();
   } catch (err) {
     errBox.textContent = err.message;

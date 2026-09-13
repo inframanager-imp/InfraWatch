@@ -191,7 +191,7 @@
      The pitch panel is deliberately fixed-dark in both themes -- it carries a
      dark product preview, and the category (Grafana, Datadog, Sentry) reads
      dark. Its own token set keeps it independent of the app palette. */
-  .login-wrap{ min-height:100dvh; display:grid; grid-template-columns:minmax(0,1.75fr) minmax(0,1fr); }
+  .login-wrap{ min-height:100dvh; display:grid; grid-template-columns:minmax(0,1.75fr) minmax(0,1fr); overflow-x:hidden; }
   @media (max-width:1040px){ .login-wrap{ grid-template-columns:minmax(0,1fr); } .login-pitch{ display:none; } }
 
   .login-pitch{
@@ -209,7 +209,7 @@
       linear-gradient(146deg, oklch(0.20 0.045 258) 0%, oklch(0.26 0.07 260) 48%, oklch(0.19 0.05 262) 100%);
     color:var(--lg-ink);
   }
-  @media (max-width:1320px){
+  @media (max-width:1150px){
     .login-pitch{ grid-template-columns:minmax(0,1fr); padding:46px; }
     .login-preview{ display:none; }
   }
@@ -254,7 +254,7 @@
   .login-topo{ position:absolute; left:0; bottom:0; width:min(900px,78%); height:auto; z-index:1; color:var(--lg-accent); opacity:.26; pointer-events:none; }
 
   /* ---------- floating product preview (real markup, not a screenshot) ---- */
-  .login-preview{ position:relative; z-index:2; display:flex; align-items:center; }
+  .login-preview{ position:relative; z-index:2; display:flex; align-items:center; min-width:0; }
   /* Pool of light behind the card -- reads as depth without touching the
      card's own rasterisation. */
   .login-preview::before{
@@ -265,7 +265,7 @@
     --d-bg:oklch(0.21 0.028 258); --d-panel:oklch(0.25 0.03 258);
     --d-line:oklch(0.33 0.032 258); --d-ink:oklch(0.95 0.006 250);
     --d-muted:oklch(0.68 0.02 250); --d-accent:oklch(0.70 0.17 258);
-    width:min(792px,100%); background:var(--d-bg);
+    width:792px; flex:none; background:var(--d-bg);
     border:1px solid var(--d-line); border-radius:16px; overflow:hidden;
     box-shadow:
       0 0 0 1px oklch(0.62 0.12 258 / .16),
@@ -320,6 +320,39 @@
   .dash-legend b{ margin-left:auto; font-weight:600; font-variant-numeric:tabular-nums; }
 
   /* ---------- sign-in panel --------------------------------------------- */
+  @media (max-height:900px){
+    .login-pitch{ padding:34px 0 34px 40px; }
+    .login-lockup{ margin-bottom:32px; }
+    .login-mark{ width:46px; height:46px; }
+    .login-wordmark{ font-size:27px; }
+    .login-headline{ font-size:clamp(29px,3vw,38px); margin-bottom:15px; }
+    .login-lede{ font-size:14.5px; margin-bottom:26px; }
+    .login-tiles{ gap:11px; margin-bottom:28px; }
+    .login-tile{ padding:13px 13px 14px; }
+    .tile-card{ width:36px; height:36px; border-radius:10px; margin-bottom:10px; }
+    .tile-card svg{ width:18px; height:18px; }
+    .login-tile b{ font-size:12.5px; }
+    .login-tile > span:not(.tile-card){ font-size:11px; margin-top:3px; }
+    .login-insight{ display:none; }
+    .login-panel{ padding:26px 36px 22px; }
+    .login-card{ padding:28px 30px; }
+    .login-card h1{ font-size:27px; }
+    .login-card > p{ margin-bottom:22px; }
+    .login-card .field{ margin-bottom:15px; }
+  }
+  @media (max-height:740px){
+    .login-lockup{ margin-bottom:22px; }
+    .login-headline{ font-size:clamp(26px,2.6vw,32px); }
+    .login-lede{ margin-bottom:20px; }
+    .login-tiles{ margin-bottom:20px; }
+    .login-tile > span:not(.tile-card){ display:none; }
+    .login-foot{ font-size:10px; }
+    .login-card{ padding:24px 28px; }
+    .login-card h1{ font-size:24px; }
+    .login-card > p{ font-size:12.5px; margin-bottom:18px; }
+    .remember-row{ margin:2px 0 16px; }
+  }
+
   .login-panel{
     display:flex; flex-direction:column; padding:34px 40px 30px;
     background:linear-gradient(180deg, color-mix(in oklab, var(--accent) 5%, var(--surface)), var(--surface) 62%);

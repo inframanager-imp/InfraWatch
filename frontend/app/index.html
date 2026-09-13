@@ -202,7 +202,7 @@
     --lg-card:    oklch(0.27 0.035 258);
     --lg-border:  oklch(0.38 0.04 258);
     position:relative; overflow:hidden; isolation:isolate;
-    display:grid; grid-template-columns:minmax(270px,0.70fr) minmax(0,1.30fr);
+    display:grid; grid-template-columns:minmax(270px,0.78fr) minmax(0,1.22fr);
     align-items:center; column-gap:30px; padding:46px 0 46px 48px;
     background:
       radial-gradient(70rem 50rem at 76% 42%, oklch(0.38 0.11 258) 0%, transparent 58%),
@@ -212,15 +212,6 @@
   @media (max-width:1150px){
     .login-pitch{ grid-template-columns:minmax(0,1fr); padding:46px; }
     .login-preview{ display:none; }
-  }
-  /* Below ~1335px the copy column hits its minimum, so the dashboard can no
-     longer fit exactly. Dissolving its right edge reads as the panel running
-     on past the fold; a hard slice through the cards reads as a bug. */
-  @media (max-width:1340px){
-    .login-preview{
-      -webkit-mask-image:linear-gradient(to right, #000 80%, transparent 99%);
-      mask-image:linear-gradient(to right, #000 80%, transparent 99%);
-    }
   }
   .login-copy{ max-width:620px; position:relative; z-index:2; }
 
@@ -235,11 +226,11 @@
   .login-headline em{ font-style:normal; display:block; color:var(--lg-accent); }
   .login-lede{ font-size:16px; color:var(--lg-muted); margin:0 0 38px; max-width:42ch; line-height:1.55; }
 
-  .login-tiles{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-bottom:44px; max-width:560px; }
+  .login-tiles{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:44px; max-width:560px; }
   .login-tile{
     background:color-mix(in oklab, var(--lg-card) 62%, transparent);
     border:1px solid color-mix(in oklab, var(--lg-border) 70%, transparent);
-    border-radius:12px; padding:16px 15px 17px;
+    border-radius:12px; padding:14px 13px 15px;
   }
   .tile-card{
     width:42px; height:42px; border-radius:11px; display:flex; align-items:center;
@@ -252,8 +243,10 @@
   .tc-services{ background:color-mix(in oklab, var(--t-services) 24%, transparent); color:oklch(0.80 0.15 55); }
   .tc-logs{     background:color-mix(in oklab, var(--t-logs) 24%, transparent);     color:oklch(0.78 0.15 15); }
   .tc-health{   background:color-mix(in oklab, var(--t-health) 24%, transparent);   color:oklch(0.80 0.13 180); }
-  .login-tile b{ display:block; font-size:13.5px; font-weight:600; color:var(--lg-ink); }
-  .login-tile > span:not(.tile-card){ display:block; font-size:11.5px; color:var(--lg-faint); margin-top:4px; line-height:1.45; }
+  /* These labels wrap at narrow column widths; balancing keeps the break in
+     the middle instead of leaving one orphaned word on the second line. */
+  .login-tile b{ display:block; font-size:13px; font-weight:600; color:var(--lg-ink); text-wrap:balance; }
+  .login-tile > span:not(.tile-card){ display:block; font-size:11px; color:var(--lg-faint); margin-top:4px; line-height:1.4; text-wrap:balance; }
 
   .login-foot{ display:flex; align-items:center; gap:14px; font-size:11px; letter-spacing:.15em; text-transform:uppercase; color:var(--lg-muted); }
   .login-foot::before{ content:""; width:34px; height:2.5px; border-radius:2px; background:var(--lg-accent); flex:none; }
@@ -289,7 +282,15 @@
   /* 66em wide against 100cqi => 1em = 1.515cqi for an exact fit. The floor
      keeps it legible on the narrowest panel that still shows it; the ceiling
      stops it ballooning on very wide displays. */
-  @supports (width:1cqi){ .dash{ font-size:clamp(7.5px, 1.515cqi, 12px); } }
+  @supports (width:1cqi){
+    .dash{ font-size:clamp(7.5px, 1.515cqi, 12px); }
+    /* 66em * 7.5px floor = 495px: past that the full card can only be cropped. */
+    @container (max-width:494px){
+      .dash{ font-size:clamp(7.5px, 1.894cqi, 12px); }   /* 52.8em against 100cqi */
+      .dash-rail{ display:none; }
+      .dash-body{ grid-template-columns:minmax(0,1fr); }
+    }
+  }
 
   .dash-top{ display:flex; align-items:center; gap:.667em; padding:1.083em 1.25em; border-bottom:1px solid var(--d-line); }
   .dash-top svg{ width:1.583em; height:1.583em; color:var(--d-accent); }

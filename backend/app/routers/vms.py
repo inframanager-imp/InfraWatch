@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import schemas
 from ..audit import log_action
 from ..database import SessionLocal, get_db
-from ..models import Container, LogSource, ResourceSetting, Service, User, VM
+from ..models import AlertGroup, Container, LogSource, ResourceSetting, Service, User, VM, VMAlertGroup
 from ..security import get_current_user, get_user_from_token, hash_password, require_admin
 from ..streams import agent_sockets, browser_sockets
 
@@ -28,7 +28,22 @@ def _effective_status(vm: VM) -> str:
 def _serialize_vm(vm: VM) -> schemas.VMOut:
     out = schemas.VMOut.model_validate(vm)
     out.status = _effective_status(vm)
+    out.alert_group_ids = sorted(link.group_id for link in vm.alert_groups)
     return out
+
+
+def _set_alert_groups(db: Session, vm: VM, group_ids: list[str]) -> None:
+    wanted = set(group_ids)
+    if wanted:
+        found = {g.id for g in db.query(AlertGroup.id).filter(AlertGroup.id.in_(wanted)).all()}
+        missing = wanted - found
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Unknown alert group: {sorted(missing)[0]}")
+    current = {link.group_id: link for link in vm.alert_groups}
+    for group_id in wanted - set(current):
+        db.add(VMAlertGroup(vm_id=vm.id, group_id=group_id))
+    for group_id in set(current) - wanted:
+        db.delete(current[group_id])
 
 
 def _get_accessible_vm(db: Session, user: User, vm_id: str) -> VM:
@@ -97,6 +112,8 @@ def update_vm(vm_id: str, payload: schemas.VMUpdate, db: Session = Depends(get_d
         vm.ip_address = payload.ip_address
     if payload.environment_id is not None:
         vm.environment_id = payload.environment_id
+    if payload.alert_group_ids is not None:
+        _set_alert_groups(db, vm, payload.alert_group_ids)
 
     db.commit()
     db.refresh(vm)

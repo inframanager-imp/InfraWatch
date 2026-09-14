@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from .. import schemas
 from ..alerts import evaluate_heartbeat_alerts
 from ..database import SessionLocal, get_db
-from ..models import Container, MetricSample, ResourceSetting, Service, User, VM
+from ..models import Container, MetricSample, ResourceSetting, Service, VM
 from ..notifications import send_alert_notification
+from ..recipients import recipients_for_vm
 from ..security import verify_password
 from ..settings_store import smtp_config
 from ..streams import agent_sockets, browser_sockets
@@ -89,10 +90,10 @@ def heartbeat(payload: schemas.HeartbeatIn, background_tasks: BackgroundTasks, d
             {"severity": a.severity, "resource_type": a.resource_type, "resource_name": a.resource_name, "message": a.message}
             for a in newly_opened
         ]
-        admin_emails = [u.email for u in db.query(User).filter(User.role == "admin").all()]
-        # Read now, while the request's session is still open -- the
+        # Both read now, while the request's session is still open -- the
         # background task runs after it closes.
-        background_tasks.add_task(send_alert_notification, vm.name, alert_dicts, admin_emails, smtp_config(db))
+        recipients = recipients_for_vm(db, vm)
+        background_tasks.add_task(send_alert_notification, vm.name, alert_dicts, recipients, smtp_config(db))
 
     return {"status": "ok"}
 

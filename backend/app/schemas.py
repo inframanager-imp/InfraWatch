@@ -60,6 +60,7 @@ class VMUpdate(BaseModel):
     hostname: Optional[str] = None
     ip_address: Optional[str] = None
     environment_id: Optional[str] = None
+    alert_group_ids: Optional[list[str]] = None  # None leaves assignments alone
 
 
 class VMOut(BaseModel):
@@ -74,6 +75,7 @@ class VMOut(BaseModel):
     disk_percent: Optional[float]
     created_at: datetime
     environment: EnvironmentOut
+    alert_group_ids: list[str] = []  # filled in by the router, not a column
 
     class Config:
         from_attributes = True
@@ -241,3 +243,15 @@ class SmtpTestRequest(BaseModel):
 class SmtpTestResult(BaseModel):
     status: str
     recipient: str
+
+
+class AlertGroupOut(BaseModel):
+    id: str
+    name: str
+    emails: list[str]
+    vm_count: int
+
+
+class AlertGroupIn(BaseModel):
+    name: str
+    emails: list[str] = []

@@ -188,6 +188,23 @@
   .ok-box.show{ display:block; }
   .form-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:20px; }
   .settings-body{ padding:18px 18px 20px; }
+  .group-row{ display:flex; align-items:flex-start; gap:12px; padding:13px 0; border-top:1px solid var(--divider); }
+  .group-row:first-child{ border-top:0; }
+  .group-main{ flex:1; min-width:0; }
+  .group-name{ font-size:13px; font-weight:600; }
+  .group-emails{ font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:3px; overflow-wrap:anywhere; line-height:1.5; }
+  .group-vms{ font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:4px; }
+  .group-actions{ display:flex; gap:6px; flex:none; }
+  textarea.input{ min-height:84px; resize:vertical; line-height:1.5; }
+  .chip-list{ display:flex; flex-wrap:wrap; gap:7px; }
+  .chip-toggle{
+    display:inline-flex; align-items:center; gap:7px; border:1px solid var(--border);
+    background:var(--surface); border-radius:var(--r-md); padding:7px 10px;
+    font-size:12px; cursor:pointer;
+  }
+  .chip-toggle:hover{ background:var(--raised); }
+  .chip-toggle input{ accent-color:var(--accent); margin:0; }
+  .chip-toggle.on{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
   .callout{
     background:var(--warn-soft); color:var(--warn-ink); font-size:11.5px; line-height:1.55;
     border:1px solid color-mix(in oklab, var(--warn) 40%, var(--surface));
@@ -1387,6 +1404,36 @@
           </form>
         </div>
       </section>
+
+      <section class="panel" style="max-width:660px;margin-top:16px">
+        <div class="panel-head">
+          <h2>Alert groups</h2>
+          <button class="btn small" id="groupAddBtn">+ New group</button>
+        </div>
+        <div class="settings-body">
+          <p class="help" style="margin:0 0 14px">
+            Assign a group to a VM and its alerts email those addresses instead of every admin.
+            A VM with no group assigned still notifies all admins.
+          </p>
+          <div class="error-box" id="groupError" role="alert"></div>
+          <div id="groupForm" style="display:none;margin-bottom:16px">
+            <div class="field">
+              <label for="groupName">Group name</label>
+              <input id="groupName" placeholder="DevOps on-call" />
+            </div>
+            <div class="field">
+              <label for="groupEmails">Recipients</label>
+              <textarea id="groupEmails" class="input mono" placeholder="devops@example.com&#10;oncall@example.com"></textarea>
+              <div class="help">One address per line. Distribution lists work fine.</div>
+            </div>
+            <div class="form-actions" style="margin-top:0">
+              <button type="button" class="btn primary" id="groupSaveBtn">Save group</button>
+              <button type="button" class="btn" id="groupCancelBtn">Cancel</button>
+            </div>
+          </div>
+          <div id="groupList"></div>
+        </div>
+      </section>
     </div>
 
     <div class="page" id="viewAlerts" style="display:none">
@@ -1431,6 +1478,11 @@
           <div class="field"><label for="vmIp">IP address</label><input id="vmIp" class="mono" placeholder="10.20.1.30" /></div>
         </div>
         <div class="field"><label for="vmEnv">Environment</label><select id="vmEnv"></select></div>
+        <div class="field" id="vmGroupsField">
+          <label>Alert recipients</label>
+          <div class="chip-list" id="vmGroupList"></div>
+          <div class="help" id="vmGroupHelp">With none selected, alerts on this VM email every admin.</div>
+        </div>
         <div class="modal-actions">
           <button type="button" class="btn" id="vmCancelBtn">Cancel</button>
           <button type="submit" class="btn primary" id="vmSubmitBtn">Register VM</button>
@@ -1854,6 +1906,7 @@ async function bootApp() {
   if (me.role === 'admin') {
     bootStatus('Loading users\u2026');
     await loadUsers();
+    await loadAlertGroups();
   }
   bootStatus('Ready');
 
@@ -2539,6 +2592,7 @@ $('#addVmBtn').addEventListener('click', () => {
   $('#vmRenameHint').style.display = 'none';
   $('#vmFormHint').textContent = 'Register the VM here, then install the agent on it. The server never connects into the VM — the agent connects out to you.';
   $('#vmModalTitle').textContent = 'Add a VM';
+  renderVmGroupPicker([]);
   $('#vmModalForm').style.display = 'block';
   $('#vmModalInstall').style.display = 'none';
   $('#vmSubmitBtn').textContent = 'Register VM';
@@ -2558,6 +2612,7 @@ function openEditVmModal(vm) {
   $('#vmHost').value = vm.hostname || '';
   $('#vmIp').value = vm.ip_address || '';
   $('#vmEnv').value = vm.environment.id;
+  renderVmGroupPicker(vm.alert_group_ids || []);
   $('#vmRenameHint').style.display = 'block';
   $('#addVmOverlay').style.display = 'flex';
 }
@@ -2591,12 +2646,22 @@ $('#vmForm').addEventListener('submit', async e => {
       environment_id: $('#vmEnv').value,
     };
     if (editingVmId) {
+      body.alert_group_ids = selectedVmGroupIds();
       await api('/vms/' + editingVmId, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       $('#addVmOverlay').style.display = 'none';
       await loadVms();
       if (selectedVmId) renderDetail(selectedVmId);
     } else {
       const created = await api('/vms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      // Creation cannot carry assignments -- there is no VM id until it
+      // returns -- so apply them in a follow-up PATCH.
+      const groupIds = selectedVmGroupIds();
+      if (groupIds.length) {
+        await api('/vms/' + created.id, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ alert_group_ids: groupIds }),
+        }).catch(() => { /* the VM exists; assignment can be redone from Edit */ });
+      }
       const cmd = `curl -sSL ${API_BASE}/install-agent.sh | sudo bash -s -- \\\n  --server=${API_BASE} \\\n  --token=${created.agent_token} \\\n  --name=${created.name}`;
       $('#installCmd').textContent = cmd;
       $('#vmModalTitle').textContent = 'Install the agent';
@@ -2654,13 +2719,127 @@ function showView(name) {
   });
   if (name !== 'vms') stopLiveLogsPolling();
   if (name === 'alerts') renderFleetAlerts();
-  if (name === 'settings') loadSmtpSettings();
+  if (name === 'settings') { loadSmtpSettings(); loadAlertGroups(); }
 }
 $('#navOverview').addEventListener('click', () => showView('overview'));
 $('#navVms').addEventListener('click', () => showView('vms'));
 $('#navUsers').addEventListener('click', () => showView('users'));
 $('#navAlerts').addEventListener('click', () => showView('alerts'));
 $('#navSettings').addEventListener('click', () => showView('settings'));
+
+/* ---------- alert groups ----------
+   A group is a name plus a list of addresses, assigned to any number of VMs.
+   Recipients are free-form rather than InfraWatch users so a group can point
+   at a distribution list. A VM with no group falls back to notifying admins,
+   which is what every VM did before groups existed. */
+let alertGroups = [];
+let editingGroupId = null;
+
+async function loadAlertGroups() {
+  if (!me || me.role !== 'admin') return;
+  try {
+    alertGroups = await api('/alert-groups');
+    renderAlertGroups();
+  } catch (err) {
+    $('#groupError').textContent = 'Could not load alert groups: ' + err.message;
+    $('#groupError').classList.add('show');
+  }
+}
+
+function renderAlertGroups() {
+  const el = $('#groupList');
+  if (alertGroups.length === 0) {
+    el.innerHTML = '<div class="help">No groups yet — alerts email every admin.</div>';
+    return;
+  }
+  el.innerHTML = alertGroups.map(g => `
+    <div class="group-row">
+      <div class="group-main">
+        <div class="group-name">${escapeHtml(g.name)}</div>
+        <div class="group-emails">${g.emails.length ? g.emails.map(escapeHtml).join(', ') : 'No recipients yet'}</div>
+        <div class="group-vms">${g.vm_count} VM${g.vm_count === 1 ? '' : 's'} assigned</div>
+      </div>
+      <div class="group-actions">
+        <button class="btn small" data-edit-group="${g.id}">Edit</button>
+        <button class="btn small danger" data-delete-group="${g.id}">Delete</button>
+      </div>
+    </div>`).join('');
+
+  el.querySelectorAll('[data-edit-group]').forEach(btn => {
+    btn.addEventListener('click', () => openGroupForm(alertGroups.find(g => g.id === btn.dataset.editGroup)));
+  });
+  el.querySelectorAll('[data-delete-group]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const group = alertGroups.find(g => g.id === btn.dataset.deleteGroup);
+      const warning = group.vm_count
+        ? `\n\n${group.vm_count} VM${group.vm_count === 1 ? '' : 's'} use it — their alerts will go back to every admin.`
+        : '';
+      if (!confirm(`Delete the group "${group.name}"?${warning}`)) return;
+      try {
+        await api('/alert-groups/' + group.id, { method: 'DELETE' });
+        await loadAlertGroups();
+      } catch (err) {
+        alert('Could not delete group: ' + err.message);
+      }
+    });
+  });
+}
+
+function openGroupForm(group) {
+  editingGroupId = group ? group.id : null;
+  $('#groupName').value = group ? group.name : '';
+  $('#groupEmails').value = group ? group.emails.join('\n') : '';
+  $('#groupError').classList.remove('show');
+  $('#groupForm').style.display = 'block';
+  $('#groupName').focus();
+}
+
+$('#groupAddBtn').addEventListener('click', () => openGroupForm(null));
+$('#groupCancelBtn').addEventListener('click', () => { $('#groupForm').style.display = 'none'; });
+
+$('#groupSaveBtn').addEventListener('click', async () => {
+  const box = $('#groupError');
+  box.classList.remove('show');
+  const body = {
+    name: $('#groupName').value.trim(),
+    emails: $('#groupEmails').value.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean),
+  };
+  try {
+    if (!body.name) throw new Error('A group name is required.');
+    await api(editingGroupId ? '/alert-groups/' + editingGroupId : '/alert-groups', {
+      method: editingGroupId ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    $('#groupForm').style.display = 'none';
+    await loadAlertGroups();
+  } catch (err) {
+    box.textContent = err.message;
+    box.classList.add('show');
+  }
+});
+
+// Rendered into the VM modal so assignment happens where the VM is edited.
+function renderVmGroupPicker(selectedIds) {
+  const chosen = new Set(selectedIds || []);
+  const el = $('#vmGroupList');
+  if (alertGroups.length === 0) {
+    el.innerHTML = '<div class="help">No alert groups defined yet — create one under Settings.</div>';
+    return;
+  }
+  el.innerHTML = alertGroups.map(g => `
+    <label class="chip-toggle ${chosen.has(g.id) ? 'on' : ''}">
+      <input type="checkbox" value="${g.id}" ${chosen.has(g.id) ? 'checked' : ''} />
+      ${escapeHtml(g.name)}
+    </label>`).join('');
+  el.querySelectorAll('input').forEach(input => {
+    input.addEventListener('change', () => input.closest('.chip-toggle').classList.toggle('on', input.checked));
+  });
+}
+
+function selectedVmGroupIds() {
+  return [...document.querySelectorAll('#vmGroupList input:checked')].map(i => i.value);
+}
 
 /* ---------- SMTP settings ----------
    Values live in the database with the environment as fallback, so this page

@@ -58,6 +58,7 @@ class VM(Base):
     resource_settings = relationship("ResourceSetting", back_populates="vm", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="vm", cascade="all, delete-orphan")
     metric_samples = relationship("MetricSample", back_populates="vm", cascade="all, delete-orphan")
+    alert_groups = relationship("VMAlertGroup", back_populates="vm", cascade="all, delete-orphan")
 
 
 class Container(Base):
@@ -206,3 +207,40 @@ class AppSetting(Base):
     key = Column(String, primary_key=True)
     value = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AlertGroup(Base):
+    """A named set of addresses to notify. Members are free-form emails
+    rather than InfraWatch users, so a group can point at a distribution
+    list or an on-call address with no account here."""
+    __tablename__ = "alert_groups"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    name = Column(String, unique=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    members = relationship("AlertGroupMember", back_populates="group", cascade="all, delete-orphan")
+    vm_links = relationship("VMAlertGroup", back_populates="group", cascade="all, delete-orphan")
+
+
+class AlertGroupMember(Base):
+    __tablename__ = "alert_group_members"
+    __table_args__ = (UniqueConstraint("group_id", "email", name="uq_group_email"),)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    group_id = Column(UUID(as_uuid=False), ForeignKey("alert_groups.id"), nullable=False, index=True)
+    email = Column(String, nullable=False)
+
+    group = relationship("AlertGroup", back_populates="members")
+
+
+class VMAlertGroup(Base):
+    __tablename__ = "vm_alert_groups"
+    __table_args__ = (UniqueConstraint("vm_id", "group_id", name="uq_vm_alert_group"),)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False, index=True)
+    group_id = Column(UUID(as_uuid=False), ForeignKey("alert_groups.id"), nullable=False)
+
+    vm = relationship("VM", back_populates="alert_groups")
+    group = relationship("AlertGroup", back_populates="vm_links")

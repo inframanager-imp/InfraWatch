@@ -783,6 +783,9 @@
   /* ============================================================ VM DETAIL */
   .detail-head{ padding:16px; border-bottom:1px solid var(--divider); }
   .detail-head-top{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+  /* Sits with the name rather than below the tab panels -- editing a VM is
+     an action on the VM, not on whichever tab happens to be open. */
+  .detail-actions{ margin-left:auto; display:flex; gap:8px; flex:none; }
   .detail-head-top h2{ margin:0; font-family:var(--mono); font-size:18px; font-weight:600; overflow-wrap:anywhere; }
   .detail-meta{ display:flex; gap:28px; flex-wrap:wrap; margin-top:14px; }
   .detail-meta .k{ font-family:var(--mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); }
@@ -1234,6 +1237,7 @@
                 <h2 id="dtName">—</h2>
                 <span class="pill" id="dtStatus">—</span>
                 <span class="env-tag" id="dtEnv">—</span>
+                <div class="detail-actions" id="dtActions"></div>
               </div>
               <div class="detail-meta">
                 <div><div class="k">Hostname</div><div class="v" id="dtHost">—</div></div>
@@ -1330,7 +1334,6 @@
               </div>
             </div>
 
-            <div class="modal-actions" id="dtActions" style="justify-content:flex-start; padding:0 16px 16px"></div>
           </div>
         </section>
       </div>
@@ -2106,8 +2109,8 @@ function renderDetail(id) {
   $('#tabAlertCount').textContent = activeAlerts(vm.id).length || '';
 
   $('#dtActions').innerHTML = me.role === 'admin'
-    ? `<button class="btn" id="vmEditBtn">Edit VM</button>
-       <button class="btn danger" id="vmDeleteBtn">Delete VM</button>` : '';
+    ? `<button class="btn small" id="vmEditBtn">Edit VM</button>
+       <button class="btn small danger" id="vmDeleteBtn">Delete VM</button>` : '';
   if (me.role === 'admin') {
     $('#vmEditBtn').addEventListener('click', () => openEditVmModal(vm));
     $('#vmDeleteBtn').addEventListener('click', async () => {

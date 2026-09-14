@@ -2513,7 +2513,7 @@ function startLiveLogsPolling() {
     return;
   }
   $('#liveLogsEmpty').style.display = 'none';
-  $('#liveLogsBody').style.display = 'block';
+  $('#liveLogsBody').style.display = logsExpanded() ? 'flex' : 'block';
   $('#liveLogsSelect').innerHTML = targets
     .map(t => `<option value="${t.type}::${t.name}">${t.type === 'service' ? '⚙' : t.type === 'file' ? '📄' : '▣'} ${t.label || t.name}</option>`).join('');
   connectLiveLogsStream();
@@ -2600,7 +2600,13 @@ $('#liveLogsExportBtn').addEventListener('click', exportLiveLogs);
 function logsExpanded() { return $('#liveLogsBody').classList.contains('logs-expanded'); }
 
 function setLogsExpanded(on) {
-  $('#liveLogsBody').classList.toggle('logs-expanded', on);
+  const panel = $('#liveLogsBody');
+  panel.classList.toggle('logs-expanded', on);
+  // startLiveLogsPolling() sets this inline, and inline beats the class --
+  // without setting it here the overlay stays display:block, the terminal
+  // grows to the height of every line instead of scrolling, and autoscroll
+  // ends up writing scrollTop on something that is no longer the scroller.
+  panel.style.display = on ? 'flex' : 'block';
   const btn = $('#liveLogsExpandBtn');
   btn.innerHTML = on ? '✕ Exit full screen' : '❑ Full screen';
   btn.setAttribute('aria-pressed', String(on));

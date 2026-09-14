@@ -1611,7 +1611,7 @@ $('#topThemeBtn').addEventListener('click', () =>
 function activateTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
-  if (name === 'logs') startLiveLogsPolling(); else stopLiveLogsPolling();
+  onTabOpened(name);
 }
 
 function globalSearch(query) {
@@ -2128,12 +2128,24 @@ function renderDetail(id) {
   wireAlertActions('#alertsBody');
 }
 
+// Opening the Systemd tab always lands on Application, every time -- not
+// just on the first load. A VM'''s system units run to the hundreds and bury
+// the few application units worth looking at, so All/System are opt-in each
+// time the tab is opened.
+function onTabOpened(name) {
+  if (name === 'logs') startLiveLogsPolling(); else stopLiveLogsPolling();
+  if (name === 'systemd' && systemdGroupFilter !== 'app') {
+    systemdGroupFilter = 'app';
+    if (selectedVmId) renderDetail(selectedVmId);
+  }
+}
+
 document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   tab.classList.add('active');
   document.querySelector(`.tab-panel[data-panel="${tab.dataset.tab}"]`).classList.add('active');
-  if (tab.dataset.tab === 'logs') startLiveLogsPolling(); else stopLiveLogsPolling();
+  onTabOpened(tab.dataset.tab);
 }));
 
 /* live logs tab — real streaming over a WebSocket, agent -> server -> browser */

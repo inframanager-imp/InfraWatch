@@ -214,3 +214,30 @@ class HeartbeatIn(BaseModel):
     disk_percent: Optional[float] = None
     containers: list[ContainerIn] = []
     services: list[ServiceIn] = []
+
+
+class SmtpSettingsOut(BaseModel):
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_from: str
+    frontend_url: str
+    password_set: bool  # the stored password itself is never sent to a client
+
+
+class SmtpSettingsIn(BaseModel):
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: Optional[str] = None  # omitted/blank keeps the stored one
+    smtp_from: str = ""
+    frontend_url: str = ""
+
+
+class SmtpTestRequest(BaseModel):
+    recipient: Optional[str] = None  # defaults to the requesting admin
+
+
+class SmtpTestResult(BaseModel):
+    status: str
+    recipient: str

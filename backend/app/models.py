@@ -192,3 +192,17 @@ class AuditLog(Base):
     target = Column(String, nullable=True)
     detail = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AppSetting(Base):
+    """Runtime-editable configuration, one row per key.
+
+    Deliberately key/value rather than a typed single-row table: the set of
+    things worth editing from the UI will grow, and every addition here
+    would otherwise be another migration.
+    """
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

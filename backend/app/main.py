@@ -9,7 +9,11 @@ from .database import SessionLocal
 from .metrics import prune_old_metric_samples
 from .models import User
 from .notifications import send_alert_notification
-from .routers import agent, alerts as alerts_router, auth, environments, metrics as metrics_router, users, vms
+from .routers import (
+    agent, alerts as alerts_router, auth, environments, metrics as metrics_router,
+    settings as settings_router, users, vms,
+)
+from .settings_store import smtp_config
 from .seed import seed
 
 # Schema is owned by Alembic (see alembic/), applied via `alembic upgrade
@@ -34,6 +38,7 @@ app.include_router(environments.router)
 app.include_router(agent.router)
 app.include_router(alerts_router.router)
 app.include_router(metrics_router.router)
+app.include_router(settings_router.router)
 
 OFFLINE_SWEEP_INTERVAL_SECONDS = 60
 
@@ -55,8 +60,11 @@ async def _offline_sweep_loop():
                         "severity": alert.severity, "resource_type": alert.resource_type,
                         "resource_name": alert.resource_name, "message": alert.message,
                     })
+                # Resolved once per sweep, while the session is open --
+                # the sender itself runs off-thread with no DB access.
+                smtp_cfg = smtp_config(db)
                 for vm_name, alert_dicts in by_vm.items():
-                    await asyncio.to_thread(send_alert_notification, vm_name, alert_dicts, admin_emails)
+                    await asyncio.to_thread(send_alert_notification, vm_name, alert_dicts, admin_emails, smtp_cfg)
         except Exception:
             pass
         finally:

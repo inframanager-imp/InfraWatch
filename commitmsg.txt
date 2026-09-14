@@ -1,0 +1,33 @@
+Add SMTP settings to the admin panel
+
+Mail configuration lived only in .env, so changing it meant editing a file
+on the box and restarting the backend. It is now editable from the UI.
+
+Settings resolve from a new app_settings table with the environment as
+fallback, so the table starts empty and every lookup returns the same env
+value it always did -- an existing deployment behaves identically until
+someone saves. Key/value rather than a typed row, because the set of
+things worth editing from the UI will grow and each addition would
+otherwise be another migration.
+
+The password never travels back to a client. The API reports only whether
+one is stored; submitting the form with the field blank keeps it, since
+treating blank as "clear it" would wipe the credential on any unrelated
+edit.
+
+Send test email is the point of the page. Alert mail is fire-and-forget
+by design -- it swallows failures so a broken mail server cannot take
+down alert evaluation -- which makes a wrong credential look exactly like
+"nothing has alerted yet". The test endpoint lets the SMTP error escape
+and shows it verbatim, and records both outcomes in the audit log.
+
+Config is now resolved per-send while a session is open and passed into
+the sender, rather than read from settings at module scope: the heartbeat
+path hands it to a BackgroundTask that runs after the request session
+closes, and the offline sweep resolves it once per pass.
+
+Note for operators: the SMTP password now lives in the database, so it
+travels in database dumps and backups, where previously it sat only in
+.env. Env vars still work and still win when the table has no value, so
+leaving the password in .env and managing only host/port/from from the UI
+remains a valid way to run this.

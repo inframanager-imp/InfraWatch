@@ -11,6 +11,7 @@ from ..database import SessionLocal, get_db
 from ..models import Container, MetricSample, ResourceSetting, Service, User, VM
 from ..notifications import send_alert_notification
 from ..security import verify_password
+from ..settings_store import smtp_config
 from ..streams import agent_sockets, browser_sockets
 
 router = APIRouter(tags=["agent"])
@@ -89,7 +90,9 @@ def heartbeat(payload: schemas.HeartbeatIn, background_tasks: BackgroundTasks, d
             for a in newly_opened
         ]
         admin_emails = [u.email for u in db.query(User).filter(User.role == "admin").all()]
-        background_tasks.add_task(send_alert_notification, vm.name, alert_dicts, admin_emails)
+        # Read now, while the request's session is still open -- the
+        # background task runs after it closes.
+        background_tasks.add_task(send_alert_notification, vm.name, alert_dicts, admin_emails, smtp_config(db))
 
     return {"status": "ok"}
 

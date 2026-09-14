@@ -181,6 +181,13 @@
     padding:9px 11px; border-radius:var(--r-md); margin-bottom:14px; display:none;
   }
   .error-box.show{ display:block; }
+  .ok-box{
+    background:var(--ok-soft); color:var(--ok-ink); font-size:12px;
+    padding:9px 11px; border-radius:var(--r-md); margin-bottom:14px; display:none;
+  }
+  .ok-box.show{ display:block; }
+  .form-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:20px; }
+  .settings-body{ padding:18px 18px 20px; }
   .callout{
     background:var(--warn-soft); color:var(--warn-ink); font-size:11.5px; line-height:1.55;
     border:1px solid color-mix(in oklab, var(--warn) 40%, var(--surface));
@@ -1107,6 +1114,7 @@
       <button class="active" id="navOverview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Overview</button>
       <button id="navVms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg> VMs <span class="nav-count" id="navVmCount"></span></button>
       <button id="navAlerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/></svg> Alerts <span class="nav-count" id="navAlertCount"></span></button>
+      <button id="navSettings" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg> Settings</button>
       <button id="navUsers" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg> Users</button>
     </nav>
     <div class="sidebar-foot">
@@ -1322,6 +1330,61 @@
             <thead><tr><th>Name · Email</th><th>Role</th><th>Created</th><th></th></tr></thead>
             <tbody id="userBody"></tbody>
           </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="page" id="viewSettings" style="display:none">
+      <div class="page-head">
+        <div>
+          <h1>Settings</h1>
+          <div class="page-sub">Email delivery for alert notifications</div>
+        </div>
+      </div>
+      <section class="panel" style="max-width:660px">
+        <div class="panel-head"><h2>SMTP</h2><span class="count" id="smtpState">—</span></div>
+        <div class="settings-body">
+          <div class="error-box" id="smtpError" role="alert"></div>
+          <div class="ok-box" id="smtpOk" role="status"></div>
+          <form id="smtpForm">
+            <div class="field">
+              <label for="smtpHost">Server</label>
+              <input id="smtpHost" class="mono" autocomplete="off" placeholder="email-smtp.us-east-2.amazonaws.com" />
+              <div class="help">Leave blank to turn alert emails off entirely.</div>
+            </div>
+            <div class="modal-grid2">
+              <div class="field">
+                <label for="smtpPort">Port</label>
+                <input id="smtpPort" class="mono" type="number" min="1" max="65535" />
+                <div class="help">465 is implicit TLS, 587 is STARTTLS.</div>
+              </div>
+              <div class="field">
+                <label for="smtpFrom">From address</label>
+                <input id="smtpFrom" class="mono" autocomplete="off" placeholder="noreply@example.com" />
+                <div class="help">Must be an address your provider allows.</div>
+              </div>
+            </div>
+            <div class="modal-grid2">
+              <div class="field">
+                <label for="smtpUser">Username</label>
+                <input id="smtpUser" class="mono" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="smtpPassword">Password</label>
+                <input id="smtpPassword" type="password" autocomplete="new-password" />
+                <div class="help" id="smtpPwHelp">Leave blank to keep the stored password.</div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="frontendUrl">Console URL</label>
+              <input id="frontendUrl" class="mono" autocomplete="off" placeholder="https://infrawatch.example.com" />
+              <div class="help">Used for the link back into InfraWatch in alert emails.</div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn primary" id="smtpSaveBtn">Save settings</button>
+              <button type="button" class="btn" id="smtpTestBtn">Send test email</button>
+            </div>
+          </form>
         </div>
       </section>
     </div>
@@ -1781,6 +1844,7 @@ async function bootApp() {
   $('#userAvatar').textContent = (me.name || me.email || '?').trim().charAt(0).toUpperCase();
   $('#addVmBtn').style.display = me.role === 'admin' ? 'inline-flex' : 'none';
   $('#navUsers').style.display = me.role === 'admin' ? 'flex' : 'none';
+  $('#navSettings').style.display = me.role === 'admin' ? 'flex' : 'none';
 
   bootStatus('Loading environments\u2026');
   environments = await api('/environments');
@@ -2581,7 +2645,7 @@ function renderUsers() {
   });
 }
 
-const NAV_PAGES = ['overview', 'vms', 'users', 'alerts'];
+const NAV_PAGES = ['overview', 'vms', 'users', 'alerts', 'settings'];
 function showView(name) {
   NAV_PAGES.forEach(p => {
     const capitalized = p.charAt(0).toUpperCase() + p.slice(1);
@@ -2590,11 +2654,93 @@ function showView(name) {
   });
   if (name !== 'vms') stopLiveLogsPolling();
   if (name === 'alerts') renderFleetAlerts();
+  if (name === 'settings') loadSmtpSettings();
 }
 $('#navOverview').addEventListener('click', () => showView('overview'));
 $('#navVms').addEventListener('click', () => showView('vms'));
 $('#navUsers').addEventListener('click', () => showView('users'));
 $('#navAlerts').addEventListener('click', () => showView('alerts'));
+$('#navSettings').addEventListener('click', () => showView('settings'));
+
+/* ---------- SMTP settings ----------
+   Values live in the database with the environment as fallback, so this page
+   edits a running instance without a file change or a restart. The stored
+   password is never sent to the browser -- the field shows whether one
+   exists and an empty submit leaves it alone. */
+function smtpNote(kind, text) {
+  const err = $('#smtpError'), ok = $('#smtpOk');
+  err.classList.remove('show');
+  ok.classList.remove('show');
+  if (!text) return;
+  const box = kind === 'ok' ? ok : err;
+  box.textContent = text;
+  box.classList.add('show');
+}
+
+async function loadSmtpSettings() {
+  try {
+    const cfg = await api('/settings/smtp');
+    $('#smtpHost').value = cfg.smtp_host;
+    $('#smtpPort').value = cfg.smtp_port;
+    $('#smtpUser').value = cfg.smtp_user;
+    $('#smtpFrom').value = cfg.smtp_from;
+    $('#frontendUrl').value = cfg.frontend_url;
+    $('#smtpPassword').value = '';
+    $('#smtpPassword').placeholder = cfg.password_set ? '••••••••••' : '';
+    $('#smtpPwHelp').textContent = cfg.password_set
+      ? 'A password is stored. Leave blank to keep it.'
+      : 'No password stored yet.';
+    $('#smtpState').textContent = cfg.smtp_host ? 'Configured' : 'Not configured';
+    smtpNote(null, '');
+  } catch (err) {
+    smtpNote('err', 'Could not load settings: ' + err.message);
+  }
+}
+
+$('#smtpForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('#smtpSaveBtn');
+  btn.disabled = true;
+  try {
+    const body = {
+      smtp_host: $('#smtpHost').value.trim(),
+      smtp_port: Number($('#smtpPort').value) || 587,
+      smtp_user: $('#smtpUser').value.trim(),
+      smtp_from: $('#smtpFrom').value.trim(),
+      frontend_url: $('#frontendUrl').value.trim(),
+    };
+    const pw = $('#smtpPassword').value;
+    if (pw) body.smtp_password = pw;
+    await api('/settings/smtp', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    await loadSmtpSettings();
+    smtpNote('ok', 'Settings saved. Send a test email to confirm delivery works.');
+  } catch (err) {
+    smtpNote('err', err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('#smtpTestBtn').addEventListener('click', async () => {
+  const btn = $('#smtpTestBtn');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const res = await api('/settings/smtp/test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+    });
+    smtpNote('ok', `Test email sent to ${res.recipient}. If it does not arrive, check spam and your provider's sending logs.`);
+  } catch (err) {
+    // The endpoint returns the SMTP failure verbatim -- showing it is the
+    // whole point, since alert mail fails silently by design.
+    smtpNote('err', 'Delivery failed — ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send test email';
+  }
+});
 
 let alertScope = 'active';
 document.querySelectorAll('#alertScopeFilter [data-alert-scope]').forEach(btn => {

@@ -1217,8 +1217,8 @@
                 <div style="display:flex;align-items:center;gap:10px">
                   <span class="label">Show</span>
                   <div class="seg" id="systemdGroupFilter">
-                    <button data-group-filter="all" aria-pressed="true">All</button>
-                    <button data-group-filter="app" aria-pressed="false">Application</button>
+                    <button data-group-filter="all" aria-pressed="false">All</button>
+                    <button data-group-filter="app" aria-pressed="true">Application</button>
                     <button data-group-filter="sys" aria-pressed="false">System</button>
                   </div>
                 </div>
@@ -1420,7 +1420,10 @@ let vmDetails = {}; // vmId -> { containers, services }
 let selectedVmId = null;
 let dockerSort = { key: null, dir: 'asc' };
 let systemdSort = { key: null, dir: 'asc' };
-let systemdGroupFilter = 'all'; // 'all' | 'app' | 'sys'
+// Application units are what an operator is actually looking for; a VM's
+// system units run to the hundreds and are almost all uninteresting. Start
+// on 'app' -- switching to All or System still holds for the session.
+let systemdGroupFilter = 'app'; // 'all' | 'app' | 'sys'
 
 const ICONS = {
   vm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',

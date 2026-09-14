@@ -881,6 +881,15 @@
   .lvl-badge.ERROR{ background:color-mix(in oklab, var(--term-error) 22%, var(--term-bg)); color:var(--term-error); }
   .lvl-badge.DEBUG{ background:color-mix(in oklab, var(--term-debug) 18%, var(--term-bg)); color:var(--term-debug); }
   .terminal .empty-state{ color:var(--term-dim); }
+  /* Expanded is an overlay rather than the Fullscreen API: the WebSocket and
+     the buffered lines carry straight over, and it behaves the same in every
+     browser. F11 still works on top of it for true full screen. */
+  .logs-expanded{
+    position:fixed; inset:0; z-index:60; background:var(--surface);
+    padding:16px; display:flex; flex-direction:column; gap:10px;
+  }
+  .logs-expanded .log-toolbar{ margin-bottom:0; }
+  .logs-expanded .terminal{ max-height:none; flex:1; min-height:0; }
   .log-foot{ display:flex; align-items:center; gap:8px; margin-top:9px; font-family:var(--mono); font-size:10.5px; color:var(--muted); flex-wrap:wrap; }
   .log-foot .sep{ opacity:.5; }
   .log-status{ font-family:var(--mono); font-size:10.5px; color:var(--muted); white-space:nowrap; }
@@ -1314,6 +1323,7 @@
                   <label class="autoscroll-label"><input type="checkbox" id="liveLogsAutoscroll" checked /> Auto-scroll</label>
                   <button class="btn small" id="liveLogsClearBtn">Clear</button>
                   <button class="btn small" id="liveLogsExportBtn">Export logs</button>
+                  <button class="btn small" id="liveLogsExpandBtn" aria-pressed="false">&#9713; Full screen</button>
                   <span class="log-status" id="liveLogsUpdated"></span>
                 </div>
                 <div class="terminal" id="liveLogsContent"></div>
@@ -1829,6 +1839,7 @@ document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   closeSearch();
   closeUserMenu();
+  collapseLogsOnLeave();
 });
 
 async function api(path, options = {}) {
@@ -2545,6 +2556,7 @@ function connectLiveLogsStream() {
 
 function stopLiveLogsPolling() {
   if (liveLogsSocket) { liveLogsSocket.close(); liveLogsSocket = null; }
+  collapseLogsOnLeave();
 }
 
 function exportLiveLogs() {
@@ -2584,6 +2596,26 @@ $('#liveLogsClearBtn').addEventListener('click', () => {
   updateLogFootCount();
 });
 $('#liveLogsExportBtn').addEventListener('click', exportLiveLogs);
+
+function logsExpanded() { return $('#liveLogsBody').classList.contains('logs-expanded'); }
+
+function setLogsExpanded(on) {
+  $('#liveLogsBody').classList.toggle('logs-expanded', on);
+  const btn = $('#liveLogsExpandBtn');
+  btn.innerHTML = on ? '✕ Exit full screen' : '❑ Full screen';
+  btn.setAttribute('aria-pressed', String(on));
+  // The visible height just changed under the stream -- keep the tail in view.
+  if ($('#liveLogsAutoscroll').checked) {
+    const box = $('#liveLogsContent');
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
+$('#liveLogsExpandBtn').addEventListener('click', () => setLogsExpanded(!logsExpanded()));
+
+// Leaving the tab behind while it still covers the screen would strand the
+// overlay over whatever loads next.
+function collapseLogsOnLeave() { if (logsExpanded()) setLogsExpanded(false); }
 
 /* add / edit VM modal */
 let editingVmId = null;

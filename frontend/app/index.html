@@ -209,6 +209,16 @@
       linear-gradient(146deg, oklch(0.20 0.045 258) 0%, oklch(0.26 0.07 260) 48%, oklch(0.19 0.05 262) 100%);
     color:var(--lg-ink);
   }
+  /* The lighter diagonal band the reference runs through the upper right.
+     Sits above the panel background and below every piece of content. */
+  .login-pitch::after{
+    content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+    background:linear-gradient(104deg,
+      transparent 46%,
+      oklch(0.40 0.12 258 / .38) 46.4%,
+      oklch(0.30 0.085 260 / .16) 78%,
+      transparent 100%);
+  }
   @media (max-width:1150px){
     .login-pitch{ grid-template-columns:minmax(0,1fr); padding:46px; }
     .login-preview{ display:none; }
@@ -261,7 +271,7 @@
      column it is sitting in, which means it always fits exactly instead of
      being sliced by the panel edge -- and because it is type scaling rather
      than a transform, the text stays crisp at every size. */
-  .login-preview{ position:relative; z-index:2; display:flex; align-items:center; min-width:0; container-type:inline-size; }
+  .login-preview{ position:relative; z-index:2; display:flex; align-items:center; min-width:0; container-type:inline-size; perspective:2100px; }
   .login-preview::before{
     content:""; position:absolute; inset:-14% -10% -14% -6%; z-index:-1; pointer-events:none;
     background:radial-gradient(closest-side, oklch(0.52 0.16 258 / .58), transparent 76%);
@@ -275,10 +285,13 @@
     border:1px solid var(--d-line); border-radius:1.35em; overflow:hidden;
     box-shadow:
       0 0 0 1px oklch(0.62 0.12 258 / .16),
-      -10px 30px 60px oklch(0.10 0.04 260 / .62),
-      -4px 10px 22px oklch(0.10 0.04 260 / .42);
+      -18px 34px 72px oklch(0.09 0.04 260 / .66),
+      -6px 12px 26px oklch(0.09 0.04 260 / .44);
     color:var(--d-ink);
+    transform:perspective(2100px) rotateY(-6deg) rotateX(1deg);
+    backface-visibility:hidden;
   }
+  @media (prefers-reduced-motion:reduce){ .dash{ transform:none; } }
   /* 66em wide against 100cqi => 1em = 1.515cqi for an exact fit. The floor
      keeps it legible on the narrowest panel that still shows it; the ceiling
      stops it ballooning on very wide displays. */
@@ -339,6 +352,13 @@
   .dash-legend b{ margin-left:auto; font-weight:600; }
 
   /* ---------- sign-in panel --------------------------------------------- */
+  @media (min-width:1400px){
+    .login-pitch{ overflow:visible; z-index:2; }
+    .login-panel{ position:relative; z-index:1; }
+    .login-preview{ margin-right:-78px; }
+    /* the glow would otherwise spill across the seam onto the white panel */
+    .login-preview::before{ right:0; }
+  }
   @media (max-height:900px){
     .login-pitch{ padding:34px 0 34px 40px; }
     .login-lockup{ margin-bottom:32px; }

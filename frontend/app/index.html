@@ -1357,7 +1357,7 @@
       <section class="panel">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Name · Email</th><th>Role</th><th>Created</th><th></th></tr></thead>
+            <thead><tr><th>Name · Email</th><th>Role</th><th>Last login</th><th>Created</th><th></th></tr></thead>
             <tbody id="userBody"></tbody>
           </table>
         </div>
@@ -2723,11 +2723,14 @@ async function loadUsers() {
 }
 function renderUsers() {
   const body = $('#userBody');
-  if (users.length === 0) { body.innerHTML = `<tr><td colspan="4" class="empty-state">No users yet.</td></tr>`; return; }
+  if (users.length === 0) { body.innerHTML = `<tr><td colspan="5" class="empty-state">No users yet.</td></tr>`; return; }
   body.innerHTML = users.map(u => `
     <tr>
       <td><div style="font-weight:600">${escapeHtml(u.name)}</div><div class="cell-sub">${escapeHtml(u.email)}</div></td>
       <td><span class="pill ${u.role === 'admin' ? 'admin' : 'readonly'}">${u.role === 'admin' ? 'admin' : 'read'}</span></td>
+      <td class="cell-sub">${u.last_login_at
+        ? shortAgo(u.last_login_at) + ' ago'
+        : '<span style="opacity:.6">Never</span>'}</td>
       <td class="cell-sub">${new Date(u.created_at).toLocaleDateString()}</td>
       <td style="text-align:right;white-space:nowrap">
         <button class="btn small" data-edit-user="${u.id}">Edit</button>

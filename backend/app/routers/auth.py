@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -15,6 +17,11 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
     user = db.query(User).filter(User.email == form.username).first()
     if not user or not verify_password(form.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    # Recorded on the credential check, not on every authenticated request --
+    # this is "last signed in", not "last seen".
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+
     token = create_access_token(subject=user.email)
     return schemas.Token(access_token=token)
 

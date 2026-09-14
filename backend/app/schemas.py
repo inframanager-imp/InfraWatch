@@ -15,6 +15,7 @@ class UserOut(BaseModel):
     name: str
     role: str
     created_at: datetime
+    last_login_at: Optional[datetime] = None
     vm_ids: list[str] = []
 
     class Config:

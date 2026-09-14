@@ -21,6 +21,9 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     role = Column(String, nullable=False, default="readonly")  # "admin" | "readonly"
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Null until the account signs in for the first time -- distinct from
+    # "logged in long ago", which a created_at default would have hidden.
+    last_login_at = Column(DateTime, nullable=True)
 
     vm_access = relationship("UserVMAccess", back_populates="user", cascade="all, delete-orphan")
 

@@ -343,8 +343,8 @@
   .dash-head h4{ margin:0; font-size:1.208em; font-weight:600; letter-spacing:-.01em; }
   .dash-chip{ display:inline-flex; align-items:center; gap:.5em; border:1px solid var(--d-line); border-radius:.583em; padding:.417em .75em; font-size:.875em; color:var(--d-muted); white-space:nowrap; }
   .dash-chip.live{ color:oklch(0.82 0.16 150); border-color:color-mix(in oklab, oklch(0.72 0.16 150) 45%, transparent); }
-  .dash-chip.live i{ width:.5em; height:.5em; border-radius:50%; background:currentColor; font-style:normal; animation:dashPulse 1.9s ease-in-out infinite; }
-  @keyframes dashPulse{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.35; transform:scale(.78); } }
+  .dash-chip.live i{ width:.5em; height:.5em; border-radius:50%; background:currentColor; font-style:normal; animation:pulseDot 1.9s ease-in-out infinite; }
+  @keyframes pulseDot{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.35; transform:scale(.78); } }
   @keyframes dashLogIn{ from{ opacity:0; transform:translateY(-6px); } to{ opacity:1; transform:none; } }
   .dash-log.fresh{ animation:dashLogIn .4s ease-out; }
   .dash-stat b, .dash-legend b, .dash-donut-mid{ font-variant-numeric:tabular-nums; }
@@ -892,7 +892,15 @@
   .logs-expanded .terminal{ max-height:none; flex:1; min-height:0; }
   .log-foot{ display:flex; align-items:center; gap:8px; margin-top:9px; font-family:var(--mono); font-size:10.5px; color:var(--muted); flex-wrap:wrap; }
   .log-foot .sep{ opacity:.5; }
-  .log-status{ font-family:var(--mono); font-size:10.5px; color:var(--muted); white-space:nowrap; }
+  .log-status{
+    display:inline-flex; align-items:center; gap:6px;
+    font-family:var(--mono); font-size:10.5px; color:var(--muted); white-space:nowrap;
+  }
+  .log-status i{ width:7px; height:7px; border-radius:50%; background:var(--muted); flex:none; }
+  .log-status.live{ color:var(--ok-ink); }
+  .log-status.live i{ background:var(--ok); animation:pulseDot 1.4s ease-in-out infinite; }
+  .log-status.err{ color:var(--crit-ink); }
+  .log-status.err i{ background:var(--crit); }
 
   /* ============================================================ MODALS */
   .modal-overlay{
@@ -2519,6 +2527,14 @@ function startLiveLogsPolling() {
   connectLiveLogsStream();
 }
 
+// The dot only pulses while the socket is actually open, so it reports the
+// connection rather than just decorating the label.
+function setLogStatus(state, label) {
+  const el = $('#liveLogsUpdated');
+  el.className = 'log-status ' + state;
+  el.innerHTML = '<i></i>' + escapeHtml(label);
+}
+
 function connectLiveLogsStream() {
   if (liveLogsSocket) { liveLogsSocket.close(); liveLogsSocket = null; }
   liveLogsPaused = false;
@@ -2532,7 +2548,7 @@ function connectLiveLogsStream() {
   const vmId = selectedVmId;
   $('#liveLogsContent').innerHTML = '';
   updateLogFootCount();
-  $('#liveLogsUpdated').textContent = 'Connecting…';
+  setLogStatus('', 'Connecting…');
 
   // The per-line source column the mockup shows would be the same value on
   // every line -- this viewer streams one target at a time -- so the source
@@ -2545,13 +2561,13 @@ function connectLiveLogsStream() {
   const socket = new WebSocket(url);
   liveLogsSocket = socket;
 
-  socket.onopen = () => { $('#liveLogsUpdated').textContent = '● Live'; };
+  socket.onopen = () => setLogStatus('live', 'Live');
   socket.onmessage = ev => {
     if (liveLogsPaused) { liveLogsBuffer.push(ev.data); return; }
     appendLiveLogLine(ev.data);
   };
-  socket.onclose = () => { if (liveLogsSocket === socket) $('#liveLogsUpdated').textContent = '○ Disconnected'; };
-  socket.onerror = () => { $('#liveLogsUpdated').textContent = '⚠ Connection error'; };
+  socket.onclose = () => { if (liveLogsSocket === socket) setLogStatus('', 'Disconnected'); };
+  socket.onerror = () => setLogStatus('err', 'Connection error');
 }
 
 function stopLiveLogsPolling() {

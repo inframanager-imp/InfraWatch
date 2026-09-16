@@ -1277,6 +1277,7 @@
             <div class="tabs" role="tablist">
               <button class="tab active" data-tab="overview">Overview</button>
               <button class="tab" data-tab="docker"><span class="tab-glyph" aria-hidden="true">&#9635;</span> Docker</button>
+              <button class="tab" data-tab="logpaths"><span class="tab-glyph" aria-hidden="true">&#128196;</span> Custom logs</button>
               <button class="tab" data-tab="systemd"><span class="tab-glyph" aria-hidden="true">&#9881;</span> Systemd</button>
               <button class="tab" data-tab="logs">Live logs</button>
               <button class="tab" data-tab="alerts">Alerts <span class="tab-count" id="tabAlertCount"></span></button>
@@ -1297,6 +1298,8 @@
                 <tbody id="dockerBody"></tbody></table>
               </div>
             </div>
+
+            <div class="tab-panel" data-panel="logpaths" id="panelLogPaths"></div>
 
             <div class="tab-panel" data-panel="systemd">
               <div class="section-head">
@@ -2207,9 +2210,12 @@ function renderDetail(id) {
               <td class="cell-sub">${shortAgo(u.last)}</td>
               <td><button class="link" data-unit-logs="${u.type}" data-unit-name="${escapeHtml(u.name)}" ${u.logs ? '' : 'disabled'}>Logs</button></td>
             </tr>`).join('')}</tbody>
-        </table></div>`}
+        </table></div>`}`;
 
-    <div class="section-head" style="margin-top:22px">
+  // Custom log paths get their own tab: they are a log source like a container
+  // or a unit, not part of the VM's resource summary.
+  $('#panelLogPaths').innerHTML = `
+    <div class="section-head">
       <h4>Custom log paths</h4>
       ${me.role === 'admin' ? '<button class="btn small" id="addLogSourceBtn">+ Add path</button>' : ''}
     </div>
@@ -2226,8 +2232,13 @@ function renderDetail(id) {
       : data.logSources.map(s => `
           <div class="log-path-row">
             <span style="flex:1;min-width:0"><b>${escapeHtml(s.name)}</b> <span class="p">${escapeHtml(s.path)}</span></span>
+            <button class="link" data-path-logs="${escapeHtml(s.path)}">Logs</button>
             ${me.role === 'admin' ? `<button class="btn small" data-delete-source="${s.id}">Remove</button>` : ''}
           </div>`).join('')}`;
+
+  $('#panelLogPaths').querySelectorAll('[data-path-logs]').forEach(btn => {
+    btn.addEventListener('click', () => jumpToLiveLogs('file', btn.dataset.pathLogs));
+  });
 
   $('#panelOverview').querySelectorAll('[data-unit-logs]').forEach(btn => {
     btn.addEventListener('click', () => jumpToLiveLogs(btn.dataset.unitLogs, btn.dataset.unitName));

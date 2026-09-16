@@ -168,12 +168,17 @@
   /* ============================================================ FIELDS */
   .field{ display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
   .field > label{ font-size:12px; font-weight:600; color:var(--text); }
-  .field input,.field select,.input{
+  /* Text-like controls only. A bare ".field input" also caught checkboxes --
+     width:100% and field padding stretched each box across the row and
+     crushed its label to nothing (the VM access list, the alert-group picker).
+     :where() keeps the specificity of the original selector, so rules like
+     ".login-card .field input" still override it. */
+  .field input:where(:not([type="checkbox"],[type="radio"])),.field select,.input{
     border:1px solid var(--border); background:var(--surface); color:var(--text);
     border-radius:var(--r-md); padding:9px 11px; outline:0; width:100%;
   }
-  .field input::placeholder,.input::placeholder{ color:var(--muted); }
-  .field input:focus,.field select:focus,.input:focus{ border-color:var(--accent); }
+  .field input:where(:not([type="checkbox"],[type="radio"]))::placeholder,.input::placeholder{ color:var(--muted); }
+  .field input:where(:not([type="checkbox"],[type="radio"])):focus,.field select:focus,.input:focus{ border-color:var(--accent); }
   .help{ font-size:11px; color:var(--muted); line-height:1.5; }
   .help.warn{ color:var(--warn-ink); }
   .error-box{

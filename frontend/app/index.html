@@ -192,6 +192,11 @@
   }
   .ok-box.show{ display:block; }
   .form-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:20px; }
+  .test-send{
+    display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap;
+    margin-top:20px; padding-top:18px; border-top:1px solid var(--divider);
+  }
+  .test-send .btn{ margin-top:24px; }
   .settings-body{ padding:18px 18px 20px; }
   .group-row{ display:flex; align-items:flex-start; gap:12px; padding:13px 0; border-top:1px solid var(--divider); }
   .group-row:first-child{ border-top:0; }
@@ -1425,6 +1430,13 @@
             </div>
             <div class="form-actions">
               <button type="submit" class="btn primary" id="smtpSaveBtn">Save settings</button>
+            </div>
+            <div class="test-send">
+              <div class="field" style="margin:0;flex:1;min-width:220px">
+                <label for="smtpTestTo">Send a test email to</label>
+                <input id="smtpTestTo" class="mono" type="text" inputmode="email" autocomplete="email" placeholder="you@example.com" />
+                <div class="help">Uses the saved settings. Leave blank to send it to your own address.</div>
+              </div>
               <button type="button" class="btn" id="smtpTestBtn">Send test email</button>
             </div>
           </form>
@@ -2973,7 +2985,8 @@ $('#smtpTestBtn').addEventListener('click', async () => {
   btn.textContent = 'Sending…';
   try {
     const res = await api('/settings/smtp/test', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient: $('#smtpTestTo').value.trim() || null }),
     });
     smtpNote('ok', `Test email sent to ${res.recipient}. If it does not arrive, check spam and your provider's sending logs.`);
   } catch (err) {

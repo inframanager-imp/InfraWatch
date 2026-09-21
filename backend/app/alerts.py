@@ -20,13 +20,24 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from .models import Alert, ResourceSetting, VM
+from .models import Alert, MetricSample, ResourceSetting, VM
 
 OFFLINE_AFTER_SECONDS = 90  # matches the online/offline threshold in routers/vms.py
 CPU_HIGH_THRESHOLD = 90
 MEM_HIGH_THRESHOLD = 90
 DISK_HIGH_THRESHOLD = 90
 RESTART_LOOP_THRESHOLD = 3
+
+# CPU and memory spike and settle on their own -- a build, a GC pause, a cron
+# job -- so one reading over the line is not an incident. They alert only once
+# every reading across this window has been over the threshold. Disk is left
+# immediate: it rarely falls back by itself, and at 90% it is usually still
+# climbing.
+SUSTAINED_WINDOW = timedelta(minutes=10)
+# The window has to actually be covered by readings before it can count as
+# sustained, or a VM two minutes into a busy start would alert. This much slack
+# at the old end absorbs a missed heartbeat or two (they arrive every 30s).
+SUSTAINED_COVERAGE_SLACK = timedelta(seconds=90)
 
 
 def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: str, rule: str,
@@ -87,6 +98,45 @@ def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: st
         return None
 
 
+def _is_active(db: Session, vm_id: str, rule: str) -> bool:
+    return db.query(Alert.id).filter(
+        Alert.vm_id == vm_id, Alert.rule == rule, Alert.status == "active",
+    ).first() is not None
+
+
+def _sustained_high(db: Session, vm: VM, field: str, threshold: float, rule: str) -> bool:
+    """Condition for a CPU/memory alert.
+
+    Opening needs every sample in the last SUSTAINED_WINDOW to be at or over
+    the threshold, with the window genuinely covered. Once open, it stays
+    open for as long as the current reading is still over, and resolves on
+    the first reading under -- recovery is immediate, only the onset waits.
+    Reopening needs the full window again, which is what stops a reading
+    hovering around the line from mailing on every crossing.
+    """
+    current = getattr(vm, field)
+    if current is None or current < threshold:
+        return False
+    if _is_active(db, vm.id, rule):
+        return True
+
+    now = datetime.utcnow()
+    since = now - SUSTAINED_WINDOW
+    values = [
+        (row.recorded_at, getattr(row, field))
+        for row in db.query(MetricSample)
+        .filter(MetricSample.vm_id == vm.id, MetricSample.recorded_at >= since)
+        .order_by(MetricSample.recorded_at)
+        .all()
+    ]
+    if not values:
+        return False
+    oldest = values[0][0]
+    if oldest > since + SUSTAINED_COVERAGE_SLACK:
+        return False  # not enough history yet to call it sustained
+    return all(v is not None and v >= threshold for _, v in values)
+
+
 def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: list) -> tuple[list[Alert], list[Alert]]:
     """Returns (opened, resolved) -- the alerts that changed state on this
     heartbeat, in each direction."""
@@ -102,15 +152,18 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
         event, alert = result
         (opened if event == "opened" else resolved).append(alert)
 
+    minutes = int(SUSTAINED_WINDOW.total_seconds() // 60)
     upsert(
         vm.id, "vm", vm.name, "vm_cpu_high",
-        condition=vm.cpu_percent is not None and vm.cpu_percent >= CPU_HIGH_THRESHOLD,
-        severity="warning", message=f"High CPU usage ({vm.cpu_percent}%)",
+        condition=_sustained_high(db, vm, "cpu_percent", CPU_HIGH_THRESHOLD, "vm_cpu_high"),
+        severity="warning",
+        message=f"CPU at or above {CPU_HIGH_THRESHOLD}% for {minutes}+ minutes (now {vm.cpu_percent}%)",
     )
     upsert(
         vm.id, "vm", vm.name, "vm_mem_high",
-        condition=vm.mem_percent is not None and vm.mem_percent >= MEM_HIGH_THRESHOLD,
-        severity="warning", message=f"High memory usage ({vm.mem_percent}%)",
+        condition=_sustained_high(db, vm, "mem_percent", MEM_HIGH_THRESHOLD, "vm_mem_high"),
+        severity="warning",
+        message=f"Memory at or above {MEM_HIGH_THRESHOLD}% for {minutes}+ minutes (now {vm.mem_percent}%)",
     )
     upsert(
         vm.id, "vm", vm.name, "vm_disk_high",

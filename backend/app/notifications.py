@@ -60,19 +60,73 @@ def _deliver(cfg: dict, subject: str, body: str, recipients: list[str]) -> None:
             server.sendmail(sender, recipients, msg.as_string())
 
 
-def send_alert_notification(vm_name: str, alerts: list[dict], recipients: list[str], cfg: dict | None = None):
+def alert_summary(alert) -> dict:
+    """Plain values for one Alert row. Taken while the caller's DB session is
+    still open -- the send runs in a background task after it closes, when
+    the ORM object would be detached."""
+    return {
+        "severity": alert.severity,
+        "resource_type": alert.resource_type,
+        "resource_name": alert.resource_name,
+        "message": alert.message,
+        "first_seen": alert.first_seen,
+        "resolved_at": alert.resolved_at,
+    }
+
+
+def _duration(start, end) -> str:
+    if not start or not end:
+        return ""
+    minutes = max(0, int((end - start).total_seconds() // 60))
+    if minutes < 1:
+        return "under a minute"
+    if minutes < 60:
+        return f"{minutes}m"
+    hours, mins = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h {mins}m" if mins else f"{hours}h"
+    days, hours = divmod(hours, 24)
+    return f"{days}d {hours}h" if hours else f"{days}d"
+
+
+def send_alert_notification(vm_name: str, alerts: list[dict], recipients: list[str],
+                            cfg: dict | None = None, resolved: list[dict] | None = None):
+    """One email per VM per evaluation pass, covering whatever opened and
+    whatever cleared in it. `alerts` is the opened list (kept as the first
+    positional argument so existing callers stay valid)."""
     cfg = cfg or env_smtp_config()
-    if not (cfg.get("smtp_host") or "").strip() or not recipients or not alerts:
+    opened = alerts or []
+    resolved = resolved or []
+    if not (cfg.get("smtp_host") or "").strip() or not recipients or not (opened or resolved):
         return
     try:
-        count = len(alerts)
-        subject = f"[InfraWatch] {count} new alert{'s' if count != 1 else ''} on {vm_name}"
+        parts = []
+        if opened:
+            parts.append(f"{len(opened)} new alert{'s' if len(opened) != 1 else ''}")
+        if resolved:
+            parts.append(f"{len(resolved)} resolved")
+        # A pure recovery mail says so in the subject, so it can be told apart
+        # from a new problem without opening it.
+        tag = "RESOLVED" if resolved and not opened else "ALERT"
+        subject = f"[InfraWatch] {tag}: {' and '.join(parts)} on {vm_name}"
 
-        lines = [
-            f"{a['severity'].upper()} — {a['resource_type']}: {a['resource_name']}\n  {a['message']}"
-            for a in alerts
-        ]
-        body = "\n\n".join(lines)
+        sections = []
+        if opened:
+            sections.append("NEW ALERTS\n\n" + "\n\n".join(
+                f"{a['severity'].upper()} — {a['resource_type']}: {a['resource_name']}\n  {a['message']}"
+                for a in opened
+            ))
+        if resolved:
+            lines = []
+            for a in resolved:
+                took = _duration(a.get("first_seen"), a.get("resolved_at"))
+                lines.append(
+                    f"RESOLVED — {a['resource_type']}: {a['resource_name']}"
+                    + (f" (was down {took})" if took else "")
+                    + f"\n  Previously: {a['message']}"
+                )
+            sections.append("BACK TO NORMAL\n\n" + "\n\n".join(lines))
+        body = "\n\n\n".join(sections)
         frontend_url = (cfg.get("frontend_url") or "").strip()
         if frontend_url:
             body += f"\n\nView in InfraWatch: {frontend_url.rstrip('/')}/"

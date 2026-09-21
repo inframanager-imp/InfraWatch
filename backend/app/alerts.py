@@ -31,11 +31,15 @@ RESTART_LOOP_THRESHOLD = 3
 
 def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: str, rule: str,
                    condition: bool, severity: str = "warning", message: str = ""):
-    """Returns the Alert if this call just made it newly active (a brand
-    new incident, or a resolved one recurring) -- the signal notifications
-    use to know when to actually send an email, as opposed to every
-    heartbeat an already-active incident continues to extend. Returns None
-    for every other outcome (still active, resolved, no-op)."""
+    """Returns ("opened", alert) when this call made the alert newly active
+    (a brand new incident, or a resolved one recurring), ("resolved", alert)
+    when it just cleared, and None for everything else -- an incident that
+    is simply still going, or nothing to do. Those two transitions are the
+    only moments worth an email; every heartbeat in between just extends
+    what is already known.
+
+    A snoozed alert reports neither: a snooze mutes the incident, and that
+    covers it clearing as well as it recurring."""
     existing = db.query(Alert).filter(
         Alert.vm_id == vm_id, Alert.resource_type == resource_type,
         Alert.resource_name == resource_name, Alert.rule == rule,
@@ -65,28 +69,38 @@ def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: st
                 # point of snoozing. Snooze itself is left in place.
                 return None
             existing.snoozed_until = None
-            return existing
+            return ("opened", existing)
         else:
             alert = Alert(
                 vm_id=vm_id, resource_type=resource_type, resource_name=resource_name, rule=rule,
                 severity=severity, message=message, status="active", first_seen=now, last_seen=now,
             )
             db.add(alert)
-            return alert
+            return ("opened", alert)
     else:
         if existing and existing.status == "active":
             existing.status = "resolved"
             existing.resolved_at = now
+            if existing.snoozed_until is not None and existing.snoozed_until > now:
+                return None
+            return ("resolved", existing)
         return None
 
 
-def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: list) -> list[Alert]:
-    newly_opened = []
+def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: list) -> tuple[list[Alert], list[Alert]]:
+    """Returns (opened, resolved) -- the alerts that changed state on this
+    heartbeat, in each direction."""
+    opened, resolved = [], []
 
-    def upsert(*args, **kwargs):
-        alert = _upsert_alert(db, *args, **kwargs)
-        if alert:
-            newly_opened.append(alert)
+    def upsert(*args, quiet=False, **kwargs):
+        result = _upsert_alert(db, *args, **kwargs)
+        # quiet: the alert is being cleared because someone switched Monitor
+        # off, not because the thing recovered -- an "all clear" email for
+        # that would claim a recovery that never happened.
+        if not result or quiet:
+            return
+        event, alert = result
+        (opened if event == "opened" else resolved).append(alert)
 
     upsert(
         vm.id, "vm", vm.name, "vm_cpu_high",
@@ -112,8 +126,8 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
     }
     for c in containers:
         if c.name in unmonitored_containers:
-            upsert(vm.id, "container", c.name, "container_stopped", condition=False)
-            upsert(vm.id, "container", c.name, "container_restart_loop", condition=False)
+            upsert(vm.id, "container", c.name, "container_stopped", condition=False, quiet=True)
+            upsert(vm.id, "container", c.name, "container_restart_loop", condition=False, quiet=True)
             continue
         stopped = not re.match(r"up", c.status or "", re.I)
         upsert(
@@ -134,8 +148,8 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
     }
     for s in services:
         if s.name in unmonitored_services:
-            upsert(vm.id, "service", s.name, "service_failed", condition=False)
-            upsert(vm.id, "service", s.name, "service_inactive", condition=False)
+            upsert(vm.id, "service", s.name, "service_failed", condition=False, quiet=True)
+            upsert(vm.id, "service", s.name, "service_inactive", condition=False, quiet=True)
             continue
         failed = s.status == "failed"
         upsert(
@@ -154,21 +168,25 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
             severity="warning", message="Application service is inactive (expected to be running)",
         )
 
-    return newly_opened
+    return opened, resolved
 
 
-def sweep_vm_offline_alerts(db: Session) -> list[tuple[VM, Alert]]:
+def sweep_vm_offline_alerts(db: Session) -> list[tuple[VM, str, Alert]]:
+    """Returns (vm, event, alert) for every VM whose offline alert changed
+    state this pass -- "opened" when it went quiet, "resolved" when its
+    heartbeat came back."""
     now = datetime.utcnow()
-    newly_opened = []
+    changes = []
     for vm in db.query(VM).all():
         # A VM that has never sent a heartbeat is "pending", not offline --
         # it just hasn't been installed on yet, which isn't alert-worthy.
         offline = vm.last_heartbeat is not None and (now - vm.last_heartbeat) > timedelta(seconds=OFFLINE_AFTER_SECONDS)
-        alert = _upsert_alert(
+        result = _upsert_alert(
             db, vm.id, "vm", vm.name, "vm_offline", condition=offline,
             severity="critical", message="No heartbeat received",
         )
-        if alert:
-            newly_opened.append((vm, alert))
+        if result:
+            event, alert = result
+            changes.append((vm, event, alert))
     db.commit()
-    return newly_opened
+    return changes

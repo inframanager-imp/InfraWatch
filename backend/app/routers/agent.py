@@ -9,7 +9,7 @@ from .. import schemas
 from ..alerts import evaluate_heartbeat_alerts
 from ..database import SessionLocal, get_db
 from ..models import Container, MetricSample, ResourceSetting, Service, VM
-from ..notifications import send_alert_notification
+from ..notifications import alert_summary, send_alert_notification
 from ..recipients import recipients_for_vm
 from ..security import verify_password
 from ..settings_store import smtp_config
@@ -79,21 +79,19 @@ def heartbeat(payload: schemas.HeartbeatIn, background_tasks: BackgroundTasks, d
             known_names.add(s.name)
 
     db.flush()  # so alert evaluation's own queries see the ResourceSetting rows just added above
-    newly_opened = evaluate_heartbeat_alerts(db, vm, payload.containers, payload.services)
+    opened, resolved = evaluate_heartbeat_alerts(db, vm, payload.containers, payload.services)
 
     db.commit()
 
-    if newly_opened:
-        # Extract plain values now, while the session is still open — the
-        # ORM objects would be detached by the time a background task runs.
-        alert_dicts = [
-            {"severity": a.severity, "resource_type": a.resource_type, "resource_name": a.resource_name, "message": a.message}
-            for a in newly_opened
-        ]
-        # Both read now, while the request's session is still open -- the
-        # background task runs after it closes.
-        recipients = recipients_for_vm(db, vm)
-        background_tasks.add_task(send_alert_notification, vm.name, alert_dicts, recipients, smtp_config(db))
+    if opened or resolved:
+        # Everything the background task needs is read now, while the
+        # request's session is still open -- it runs after that closes.
+        background_tasks.add_task(
+            send_alert_notification, vm.name,
+            [alert_summary(a) for a in opened],
+            recipients_for_vm(db, vm), smtp_config(db),
+            [alert_summary(a) for a in resolved],
+        )
 
     return {"status": "ok"}
 

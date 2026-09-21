@@ -7,7 +7,7 @@ from .alerts import sweep_vm_offline_alerts
 from .config import settings
 from .database import SessionLocal
 from .metrics import prune_old_metric_samples
-from .notifications import send_alert_notification
+from .notifications import alert_summary, send_alert_notification
 from .recipients import recipients_for_vm
 from .routers import (
     agent, alerts as alerts_router, auth, environments, metrics as metrics_router,
@@ -51,25 +51,23 @@ async def _offline_sweep_loop():
         try:
             # Both do blocking DB I/O -- run them off the event loop thread
             # so a slow query never stalls request handling.
-            newly_opened = await asyncio.to_thread(sweep_vm_offline_alerts, db)
+            changes = await asyncio.to_thread(sweep_vm_offline_alerts, db)
             await asyncio.to_thread(prune_old_metric_samples, db)
-            if newly_opened:
-                # Keyed by VM rather than by name: recipients are per-VM now,
-                # so the VM itself has to survive the grouping.
+            if changes:
+                # Keyed by VM rather than by name: recipients are per-VM, so
+                # the VM itself has to survive the grouping.
                 by_vm = {}
-                for vm, alert in newly_opened:
-                    entry = by_vm.setdefault(vm.id, {"vm": vm, "alerts": []})
-                    entry["alerts"].append({
-                        "severity": alert.severity, "resource_type": alert.resource_type,
-                        "resource_name": alert.resource_name, "message": alert.message,
-                    })
+                for vm, event, alert in changes:
+                    entry = by_vm.setdefault(vm.id, {"vm": vm, "opened": [], "resolved": []})
+                    entry[event].append(alert_summary(alert))
                 # Resolved here, while the session is open -- the sender runs
                 # off-thread with no DB access of its own.
                 smtp_cfg = smtp_config(db)
                 for entry in by_vm.values():
                     recipients = recipients_for_vm(db, entry["vm"])
                     await asyncio.to_thread(
-                        send_alert_notification, entry["vm"].name, entry["alerts"], recipients, smtp_cfg,
+                        send_alert_notification, entry["vm"].name, entry["opened"],
+                        recipients, smtp_cfg, entry["resolved"],
                     )
         except Exception:
             pass

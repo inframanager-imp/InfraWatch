@@ -312,7 +312,20 @@ def run_ws_agent(server, token, name):
             ws = ws_client.create_connection(ws_url, timeout=30)
             print("live-log channel connected")
             while True:
-                msg = ws.recv()
+                try:
+                    msg = ws.recv()
+                except Exception as e:
+                    # The socket timeout applies to recv() as well as the
+                    # handshake, and the server only ever speaks to start or
+                    # stop a stream -- so an idle channel hit this every 30s
+                    # and tore down a perfectly healthy connection, taking
+                    # every running stream with it. A read timeout is normal:
+                    # ping to prove the link is alive and keep waiting.
+                    if isinstance(e, ws_client.WebSocketTimeoutException):
+                        with _ws_send_lock:
+                            ws.ping()
+                        continue
+                    raise
                 if not msg:
                     break
                 handle_ws_message(ws, msg)

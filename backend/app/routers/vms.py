@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 import uuid
 from datetime import datetime, timedelta
@@ -10,7 +11,7 @@ from ..audit import log_action
 from ..database import SessionLocal, get_db
 from ..models import AlertGroup, Container, LogSource, ResourceSetting, Service, User, VM, VMAlertGroup
 from ..security import get_current_user, get_user_from_token, hash_password, require_admin
-from ..streams import agent_sockets, browser_sockets
+from ..streams import KEEPALIVE_SECONDS, STREAM_PING, agent_sockets, browser_sockets, stream_vms
 
 router = APIRouter(prefix="/vms", tags=["vms"])
 
@@ -279,20 +280,40 @@ async def logs_ws(websocket: WebSocket, vm_id: str, token: str, type: str, name:
 
     stream_id = str(uuid.uuid4())
     browser_sockets[stream_id] = websocket
+    stream_vms[stream_id] = vm_name
     try:
         await agent_ws.send_json({"action": "start_stream", "stream_id": stream_id, "type": type, "name": name})
     except Exception:
         browser_sockets.pop(stream_id, None)
+        stream_vms.pop(stream_id, None)
         await websocket.close()
         return
 
+    # A quiet log would otherwise let a proxy time the socket out mid-stream.
+    stop = asyncio.Event()
+
+    async def keepalive():
+        while True:
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=KEEPALIVE_SECONDS)
+                return  # asked to stop
+            except asyncio.TimeoutError:
+                try:
+                    await websocket.send_text(STREAM_PING)
+                except Exception:
+                    return
+
+    pinger = asyncio.create_task(keepalive())
     try:
         while True:
             await websocket.receive_text()  # browser sends nothing meaningful; just blocks until disconnect
     except WebSocketDisconnect:
         pass
     finally:
+        stop.set()
+        pinger.cancel()
         browser_sockets.pop(stream_id, None)
+        stream_vms.pop(stream_id, None)
         try:
             await agent_ws.send_json({"action": "stop_stream", "stream_id": stream_id})
         except Exception:

@@ -13,7 +13,7 @@ from ..notifications import alert_summary, send_alert_notification
 from ..recipients import recipients_for_vm
 from ..security import verify_password
 from ..settings_store import smtp_config
-from ..streams import agent_sockets, browser_sockets
+from ..streams import agent_sockets, browser_sockets, stream_vms
 
 router = APIRouter(tags=["agent"])
 
@@ -132,3 +132,16 @@ async def agent_ws(websocket: WebSocket, name: str, token: str):
     finally:
         if agent_sockets.get(name) is websocket:
             del agent_sockets[name]
+            # Streams this agent was serving can never produce another line:
+            # its worker threads hold the socket that just died. Close the
+            # browser side too, so the viewer reports the break and
+            # reconnects, instead of sitting on a live-looking socket that
+            # will never receive anything again.
+            for sid in [s for s, owner in stream_vms.items() if owner == name]:
+                stream_vms.pop(sid, None)
+                browser = browser_sockets.pop(sid, None)
+                if browser is not None:
+                    try:
+                        await browser.close(code=4410)
+                    except Exception:
+                        pass

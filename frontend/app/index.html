@@ -2563,20 +2563,34 @@ function setLogStatus(state, label) {
   el.innerHTML = '<i></i>' + escapeHtml(label);
 }
 
-function connectLiveLogsStream() {
+// Server-sent keepalive on an idle stream; never a log line.
+const STREAM_PING = '\u0000infrawatch-ping';
+let liveLogsRetry = 0;
+let liveLogsRetryTimer = null;
+
+// `resume` reconnects a stream that dropped on its own: the filters and the
+// lines already on screen are kept, because the operator did not ask for a
+// new stream -- the old one died under them.
+function connectLiveLogsStream(resume = false) {
+  if (liveLogsRetryTimer) { clearTimeout(liveLogsRetryTimer); liveLogsRetryTimer = null; }
   if (liveLogsSocket) { liveLogsSocket.close(); liveLogsSocket = null; }
-  liveLogsPaused = false;
-  liveLogsBuffer = [];
-  $('#liveLogsPauseBtn').textContent = '\u23F8 Pause';
-  $('#liveLogsPauseBtn').classList.remove('on');
-  $('#liveLogsSearch').value = '';
-  document.querySelectorAll('#liveLogsLevelToggle .lvl-chip').forEach(c => c.setAttribute('aria-pressed', 'true'));
+  if (!resume) {
+    liveLogsRetry = 0;
+    liveLogsPaused = false;
+    liveLogsBuffer = [];
+    $('#liveLogsPauseBtn').textContent = '\u23F8 Pause';
+    $('#liveLogsPauseBtn').classList.remove('on');
+    $('#liveLogsSearch').value = '';
+    document.querySelectorAll('#liveLogsLevelToggle .lvl-chip').forEach(c => c.setAttribute('aria-pressed', 'true'));
+  }
 
   const [type, name] = $('#liveLogsSelect').value.split('::');
   const vmId = selectedVmId;
-  $('#liveLogsContent').innerHTML = '';
-  updateLogFootCount();
-  setLogStatus('', 'Connecting…');
+  if (!resume) {
+    $('#liveLogsContent').innerHTML = '';
+    updateLogFootCount();
+  }
+  setLogStatus('', resume ? 'Reconnecting…' : 'Connecting…');
 
   // The per-line source column the mockup shows would be the same value on
   // every line -- this viewer streams one target at a time -- so the source
@@ -2589,22 +2603,42 @@ function connectLiveLogsStream() {
   const socket = new WebSocket(url);
   liveLogsSocket = socket;
 
-  socket.onopen = () => setLogStatus('live', 'Live');
+  socket.onopen = () => { liveLogsRetry = 0; setLogStatus('live', 'Live'); };
   socket.onmessage = ev => {
+    if (ev.data === STREAM_PING) return;   // keepalive, not output
     if (liveLogsPaused) { liveLogsBuffer.push(ev.data); return; }
     appendLiveLogLine(ev.data);
   };
-  socket.onclose = () => { if (liveLogsSocket === socket) setLogStatus('', 'Disconnected'); };
+  socket.onclose = () => {
+    if (liveLogsSocket !== socket) return;  // superseded by a newer stream
+    liveLogsSocket = null;
+    // A stream can end for reasons the operator had no part in -- the agent's
+    // channel dropped, a proxy timed the socket out. Sitting on "Disconnected"
+    // until someone reloads the page is the behaviour this replaces.
+    if (!logsTabOpen()) { setLogStatus('', 'Disconnected'); return; }
+    const wait = Math.min(30000, 2000 * Math.pow(2, liveLogsRetry));
+    liveLogsRetry += 1;
+    setLogStatus('', `Reconnecting in ${Math.round(wait / 1000)}s…`);
+    liveLogsRetryTimer = setTimeout(() => connectLiveLogsStream(true), wait);
+  };
   socket.onerror = () => setLogStatus('err', 'Connection error');
 }
 
+function logsTabOpen() {
+  const tab = document.querySelector('.tab[data-tab="logs"]');
+  return !!tab && tab.classList.contains('active');
+}
+
 function stopLiveLogsPolling() {
+  if (liveLogsRetryTimer) { clearTimeout(liveLogsRetryTimer); liveLogsRetryTimer = null; }
   if (liveLogsSocket) { liveLogsSocket.close(); liveLogsSocket = null; }
   collapseLogsOnLeave();
 }
 
 function exportLiveLogs() {
-  const lines = [...document.querySelectorAll('#liveLogsContent .log-line')].map(el => el.textContent.trim());
+  const lines = [...document.querySelectorAll('#liveLogsContent .log-line')]
+    .map(el => el.textContent.trim())
+    .filter(line => line && !line.includes(STREAM_PING));
   if (lines.length === 0) return;
   const target = ($('#liveLogsSelect').value.split('::')[1] || 'logs').replace(/[^a-z0-9_.-]/gi, '_');
   const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
@@ -2618,7 +2652,10 @@ function exportLiveLogs() {
   URL.revokeObjectURL(url);
 }
 
-$('#liveLogsSelect').addEventListener('change', connectLiveLogsStream);
+// Wrapped, not passed directly: the handler's Event would land in the
+// resume argument and make a deliberate source switch behave like a
+// dropped-stream recovery, keeping the previous target's lines on screen.
+$('#liveLogsSelect').addEventListener('change', () => connectLiveLogsStream());
 $('#liveLogsSearch').addEventListener('input', applyLiveLogFilters);
 document.querySelectorAll('#liveLogsLevelToggle .lvl-chip').forEach(chip => {
   chip.addEventListener('click', () => {

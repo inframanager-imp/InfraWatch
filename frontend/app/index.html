@@ -1342,6 +1342,7 @@
                   </div>
                   <button class="btn small" id="liveLogsPauseBtn">&#10073;&#10073; Pause</button>
                   <label class="autoscroll-label"><input type="checkbox" id="liveLogsAutoscroll" checked /> Auto-scroll</label>
+                  <button class="btn small" id="liveLogsReloadBtn" title="Reconnect and re-fetch the last 500 lines">&#8635; Reload</button>
                   <button class="btn small" id="liveLogsClearBtn">Clear</button>
                   <button class="btn small" id="liveLogsExportBtn">Export logs</button>
                   <button class="btn small" id="liveLogsExpandBtn" aria-pressed="false">&#9713; Full screen</button>
@@ -2672,6 +2673,11 @@ $('#liveLogsPauseBtn').addEventListener('click', () => {
     liveLogsBuffer = [];
   }
 });
+// Auto-reconnect covers a stream that drops on its own; this is the manual
+// escape hatch, and it re-tails the last 500 lines, so it also brings the
+// backlog back after a Clear.
+$('#liveLogsReloadBtn').addEventListener('click', () => connectLiveLogsStream());
+
 $('#liveLogsClearBtn').addEventListener('click', () => {
   $('#liveLogsContent').innerHTML = '';
   updateLogFootCount();

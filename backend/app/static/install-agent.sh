@@ -278,15 +278,18 @@ def handle_ws_message(ws, msg):
     action = data.get("action")
     stream_id = data.get("stream_id")
     if action == "start_stream":
+        # Lines of history replayed when a viewer attaches. Every one becomes a
+        # DOM node in the browser, so this trades first-load cost for context.
+        backlog = "3000"
         target_type, target_name = data.get("type"), data.get("name")
         if target_type == "container":
-            cmd = ["docker", "logs", "-f", "--tail", "500", target_name]
+            cmd = ["docker", "logs", "-f", "--tail", backlog, target_name]
         elif target_type == "service":
-            cmd = ["journalctl", "-u", target_name, "-f", "-n", "500", "--no-pager"]
+            cmd = ["journalctl", "-u", target_name, "-f", "-n", backlog, "--no-pager"]
         elif target_type == "file":
             # -F (not -f): re-opens the file if it's rotated/recreated,
             # which plain -f would silently stop following after.
-            cmd = ["tail", "-F", "-n", "500", target_name]
+            cmd = ["tail", "-F", "-n", backlog, target_name]
         else:
             return
         threading.Thread(target=stream_worker, args=(ws, stream_id, cmd), daemon=True).start()

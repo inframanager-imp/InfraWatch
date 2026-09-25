@@ -4,7 +4,9 @@ from .config import settings
 from .models import Environment, User
 from .security import hash_password
 
-DEFAULT_ENVIRONMENTS = ["production", "staging", "development", "qa", "demo", "das", "sandbox"]
+# Seeded on every startup, additively -- a name added here appears after the
+# next restart, and existing rows are left alone.
+DEFAULT_ENVIRONMENTS = ["production", "staging", "uat", "qa", "development", "das", "demo", "sandbox"]
 
 
 def seed(db: Session):

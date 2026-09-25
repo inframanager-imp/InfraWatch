@@ -45,7 +45,14 @@ def list_vm_alerts(vm_id: str, db: Session = Depends(get_db), user: User = Depen
         allowed_ids = {a.vm_id for a in user.vm_access}
         if vm.id not in allowed_ids:
             raise HTTPException(status_code=403, detail="Not authorized for this VM")
-    return db.query(Alert).filter(Alert.vm_id == vm.id).order_by(Alert.status, Alert.last_seen.desc()).all()
+    # "pending" is an outage still inside its grace period -- real enough to
+    # track, not yet an incident anyone should see.
+    return (
+        db.query(Alert)
+        .filter(Alert.vm_id == vm.id, Alert.status != "pending")
+        .order_by(Alert.status, Alert.last_seen.desc())
+        .all()
+    )
 
 
 @router.post("/alerts/{alert_id}/acknowledge", response_model=schemas.AlertOut)

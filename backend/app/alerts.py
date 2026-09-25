@@ -34,6 +34,13 @@ RESTART_LOOP_THRESHOLD = 3
 # immediate: it rarely falls back by itself, and at 90% it is usually still
 # climbing.
 SUSTAINED_WINDOW = timedelta(minutes=10)
+
+# A deploy restarts containers and units; the next heartbeat sees them down
+# and, without this, mails about something that was done on purpose. A rule
+# with a grace period records the outage immediately but holds the alert
+# "pending" until it has lasted this long, so an ordinary restart never
+# surfaces and a real outage still does, a couple of minutes later.
+RESTART_GRACE = timedelta(minutes=2)
 # The window has to actually be covered by readings before it can count as
 # sustained, or a VM two minutes into a busy start would alert. This much slack
 # at the old end absorbs a missed heartbeat or two (they arrive every 30s).
@@ -41,7 +48,8 @@ SUSTAINED_COVERAGE_SLACK = timedelta(seconds=90)
 
 
 def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: str, rule: str,
-                   condition: bool, severity: str = "warning", message: str = ""):
+                   condition: bool, severity: str = "warning", message: str = "",
+                   grace: timedelta | None = None):
     """Returns ("opened", alert) when this call made the alert newly active
     (a brand new incident, or a resolved one recurring), ("resolved", alert)
     when it just cleared, and None for everything else -- an incident that
@@ -57,11 +65,28 @@ def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: st
     ).first()
     now = datetime.utcnow()
 
+    def promote(alert):
+        """A pending incident has now outlasted its grace period."""
+        alert.status = "active"
+        if alert.snoozed_until is not None and alert.snoozed_until > now:
+            return None  # muted: it is on the record, it just does not mail
+        alert.snoozed_until = None
+        return ("opened", alert)
+
     if condition:
         if existing and existing.status == "active":
             existing.last_seen = now
             if message:
                 existing.message = message
+            return None
+        elif existing and existing.status == "pending":
+            # first_seen is when it actually went down, so the grace period is
+            # measured from there and the alert reports the true start.
+            existing.last_seen = now
+            if message:
+                existing.message = message
+            if now - existing.first_seen >= (grace or timedelta(0)):
+                return promote(existing)
             return None
         elif existing:  # previously resolved, condition is true again -- reopen as a fresh incident
             still_snoozed = existing.snoozed_until is not None and existing.snoozed_until > now
@@ -74,6 +99,9 @@ def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: st
             # acknowledgment shouldn't silently apply to this one.
             existing.acknowledged_at = None
             existing.acknowledged_by = None
+            if grace:
+                existing.status = "pending"
+                return None
             if still_snoozed:
                 # Honor an in-progress mute across a resolve/reactivate flap
                 # instead of re-notifying on every flap -- that's the whole
@@ -84,11 +112,18 @@ def _upsert_alert(db: Session, vm_id: str, resource_type: str, resource_name: st
         else:
             alert = Alert(
                 vm_id=vm_id, resource_type=resource_type, resource_name=resource_name, rule=rule,
-                severity=severity, message=message, status="active", first_seen=now, last_seen=now,
+                severity=severity, message=message,
+                status="pending" if grace else "active", first_seen=now, last_seen=now,
             )
             db.add(alert)
-            return ("opened", alert)
+            return None if grace else ("opened", alert)
     else:
+        if existing and existing.status == "pending":
+            # Came back inside its grace period -- a restart, not an outage.
+            # Dropped rather than resolved: it was never an incident, and a
+            # resolved row would put a 40-second blip in the alert history.
+            db.delete(existing)
+            return None
         if existing and existing.status == "active":
             existing.status = "resolved"
             existing.resolved_at = now
@@ -102,6 +137,12 @@ def _is_active(db: Session, vm_id: str, rule: str) -> bool:
     return db.query(Alert.id).filter(
         Alert.vm_id == vm_id, Alert.rule == rule, Alert.status == "active",
     ).first() is not None
+
+
+# Rules whose resource is routinely restarted on purpose. CPU and memory have
+# their own sustained window; disk and vm_offline are deliberately immediate
+# (vm_offline already waits 90s for a heartbeat before it counts as down).
+GRACE_RULES = ("container_stopped", "service_failed", "service_inactive")
 
 
 def _sustained_high(db: Session, vm: VM, field: str, threshold: float, rule: str) -> bool:
@@ -186,6 +227,7 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
         upsert(
             vm.id, "container", c.name, "container_stopped", condition=stopped,
             severity="warning", message=f"Container is not running (status: {c.status})",
+            grace=RESTART_GRACE,
         )
         restart_looping = (c.restart_count or 0) >= RESTART_LOOP_THRESHOLD
         upsert(
@@ -208,6 +250,7 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
         upsert(
             vm.id, "service", s.name, "service_failed", condition=failed,
             severity="critical", message=f"Service failed (sub-state: {s.sub_state})",
+            grace=RESTART_GRACE,
         )
 
         # A service that's gone inactive/dead is presumed to have stopped
@@ -219,6 +262,7 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
         upsert(
             vm.id, "service", s.name, "service_inactive", condition=unexpectedly_stopped,
             severity="warning", message="Application service is inactive (expected to be running)",
+            grace=RESTART_GRACE,
         )
 
     return opened, resolved

@@ -50,6 +50,10 @@ def apply_result(db: Session, monitor: UrlMonitor, result: dict) -> None:
         monitor.cert_expires_at = result.get("cert_expires_at")
         monitor.cert_issuer = result.get("cert_issuer")
         monitor.cert_error = result.get("cert_error")
+    elif result.get("cert_unreachable"):
+        # Host was not reachable: clear any stale certificate verdict rather
+        # than leaving yesterday's reading to look like today's.
+        monitor.cert_error = None
 
     db.add(UrlCheckSample(
         monitor_id=monitor.id,

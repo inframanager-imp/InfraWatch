@@ -96,6 +96,12 @@ def inspect_certificate(url: str, timeout: int = DEFAULT_TIMEOUT) -> dict:
         # over and other clients do not.
         return {"cert_checked": True, "cert_valid": False, "cert_expires_at": None,
                 "cert_issuer": None, "cert_error": e.verify_message or str(e)}
+    except (socket.timeout, TimeoutError, socket.gaierror, ConnectionError, OSError) as e:
+        # Never reached the host, so nothing was learned about its certificate.
+        # Reporting "invalid" here would blame the certificate for a firewall,
+        # a DNS answer we cannot route to, or a host that is simply down -- and
+        # would raise a certificate alert for a network fault.
+        return {"cert_checked": False, "cert_unreachable": f"{type(e).__name__}: {e}"}
     except Exception as e:
         return {"cert_checked": True, "cert_valid": False, "cert_expires_at": None,
                 "cert_issuer": None, "cert_error": f"{type(e).__name__}: {e}"}

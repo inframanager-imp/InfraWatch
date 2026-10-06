@@ -76,6 +76,23 @@ def _apply(monitor: UrlMonitor, payload: schemas.UrlMonitorIn) -> None:
     monitor.enabled = payload.enabled
 
 
+@router.get("/url-monitors", response_model=list[schemas.UrlMonitorOut])
+def list_all_monitors(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Every monitor the caller may see, across the fleet."""
+    query = db.query(UrlMonitor).join(VM, UrlMonitor.vm_id == VM.id)
+    if user.role != "admin":
+        allowed = {a.vm_id for a in user.vm_access}
+        if not allowed:
+            return []
+        query = query.filter(UrlMonitor.vm_id.in_(allowed))
+    out = []
+    for monitor in query.order_by(VM.name, UrlMonitor.name).all():
+        item = _serialize(db, monitor)
+        item.vm_name = monitor.vm.name
+        out.append(item)
+    return out
+
+
 @router.get("/vms/{vm_id}/url-monitors", response_model=list[schemas.UrlMonitorOut])
 def list_monitors(vm_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     vm = _accessible_vm(db, user, vm_id)

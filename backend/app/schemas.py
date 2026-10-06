@@ -301,6 +301,7 @@ class UrlMonitorOut(BaseModel):
     cert_expires_at: Optional[datetime]
     cert_issuer: Optional[str]
     cert_error: Optional[str]
+    vm_name: Optional[str] = None           # filled in for fleet-wide listings
     uptime_7d: Optional[float] = None       # percent, null until there are samples
     daily: list[Optional[float]] = []       # 7 entries, oldest first; null = no data
 

@@ -1181,6 +1181,7 @@
     <nav class="sidebar-nav" aria-label="Sections">
       <button class="active" id="navOverview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Overview</button>
       <button id="navVms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg> VMs <span class="nav-count" id="navVmCount"></span></button>
+      <button id="navUrls"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg> URLs <span class="nav-count" id="navUrlCount"></span></button>
       <button id="navAlerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/></svg> Alerts <span class="nav-count" id="navAlertCount"></span></button>
       <button id="navSettings" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg> Settings</button>
       <button id="navUsers" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg> Users</button>
@@ -1407,6 +1408,24 @@
             <tbody id="userBody"></tbody>
           </table>
         </div>
+      </section>
+    </div>
+
+    <div class="page" id="viewUrls" style="display:none">
+      <div class="page-head">
+        <div>
+          <h1>URL monitors</h1>
+          <div class="page-sub" id="urlsSub">—</div>
+        </div>
+        <div class="page-head-actions">
+          <div class="seg" id="urlScopeFilter">
+            <button data-url-scope="all" aria-pressed="true">All</button>
+            <button data-url-scope="problem" aria-pressed="false">Needs attention</button>
+          </div>
+        </div>
+      </div>
+      <section class="panel">
+        <div id="allUrlsBody"></div>
       </section>
     </div>
 
@@ -1975,6 +1994,9 @@ async function bootApp() {
     await loadUsers();
     await loadAlertGroups();
   }
+  // Fills the rail count at sign-in, so a down endpoint shows without
+  // opening the page.
+  await loadAllUrlMonitors();
   bootStatus('Ready');
 
   stopDashSim();
@@ -2261,7 +2283,7 @@ function monitorFormHtml() {
         </div>
         <div class="field">
           <label for="monName">Name</label>
-          <input id="monName" class="input" value="${escapeHtml(val('name'))}" placeholder="atr-uat-api" />
+          <input id="monName" class="input" value="${escapeHtml(val('name'))}" placeholder="Health check" />
         </div>
         <div class="field">
           <label>Checked from</label>
@@ -3134,7 +3156,7 @@ function renderUsers() {
   });
 }
 
-const NAV_PAGES = ['overview', 'vms', 'users', 'alerts', 'settings'];
+const NAV_PAGES = ['overview', 'vms', 'urls', 'users', 'alerts', 'settings'];
 function showView(name) {
   NAV_PAGES.forEach(p => {
     const capitalized = p.charAt(0).toUpperCase() + p.slice(1);
@@ -3144,11 +3166,97 @@ function showView(name) {
   if (name !== 'vms') stopLiveLogsPolling();
   if (name === 'alerts') renderFleetAlerts();
   if (name === 'settings') { loadSmtpSettings(); loadAlertGroups(); }
+  if (name === 'urls') loadAllUrlMonitors();
 }
 $('#navOverview').addEventListener('click', () => showView('overview'));
 $('#navVms').addEventListener('click', () => showView('vms'));
 $('#navUsers').addEventListener('click', () => showView('users'));
+$('#navUrls').addEventListener('click', () => showView('urls'));
 $('#navAlerts').addEventListener('click', () => showView('alerts'));
+
+/* ---------- fleet-wide URL monitors ----------
+   The same rows as the per-VM tab, with the VM named, for when the question is
+   "is anything down" rather than "how is this machine". */
+let allMonitors = [];
+let urlScope = 'all';
+
+document.querySelectorAll('#urlScopeFilter [data-url-scope]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    urlScope = btn.dataset.urlScope;
+    document.querySelectorAll('#urlScopeFilter [data-url-scope]').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.dataset.urlScope === urlScope)));
+    renderAllUrlMonitors();
+  });
+});
+
+function monitorNeedsAttention(mon) {
+  if (!mon.enabled) return false;
+  if (mon.last_status === 'down' || mon.last_status === 'slow') return true;
+  if (mon.cert_error) return true;
+  if (!mon.cert_expires_at) return false;
+  return Math.floor((parseServerDate(mon.cert_expires_at) - Date.now()) / 86400000) <= 30;
+}
+
+async function loadAllUrlMonitors() {
+  try {
+    allMonitors = await api('/url-monitors');
+  } catch (err) {
+    allMonitors = [];
+  }
+  renderAllUrlMonitors();
+}
+
+function renderAllUrlMonitors() {
+  const down = allMonitors.filter(m => m.enabled && m.last_status === 'down').length;
+  const attention = allMonitors.filter(monitorNeedsAttention).length;
+  $('#navUrlCount').textContent = down || '';
+  $('#navUrlCount').classList.toggle('crit', down > 0);
+  $('#urlsSub').textContent = allMonitors.length
+    ? `${allMonitors.length} monitor${allMonitors.length === 1 ? '' : 's'} · ${down} down · ${attention} needing attention`
+    : 'No monitors configured yet';
+
+  const list = urlScope === 'problem' ? allMonitors.filter(monitorNeedsAttention) : allMonitors;
+  if (list.length === 0) {
+    $('#allUrlsBody').innerHTML = `<div class="empty-state">${allMonitors.length === 0
+      ? 'No URL monitors yet — add one from a VM\'s URLs tab.'
+      : 'Nothing needs attention.'}</div>`;
+    return;
+  }
+
+  $('#allUrlsBody').innerHTML = `
+    <div class="table-scroll"><table>
+      <thead><tr>
+        <th>Name · URL</th><th>VM</th><th>From</th><th>Status</th><th>Code</th>
+        <th>Response</th><th>Certificate</th><th>7-day uptime</th><th>Last check</th>
+      </tr></thead>
+      <tbody>${list.map(mon => `
+        <tr class="${mon.enabled ? '' : 'row-dimmed'}">
+          <td>
+            <div class="cell-name">${escapeHtml(mon.name)}</div>
+            <div class="mon-url">${escapeHtml(mon.url)}</div>
+          </td>
+          <td><button class="link" data-open-vm="${mon.vm_id}">${escapeHtml(mon.vm_name || '—')}</button></td>
+          <td><span class="pill ${mon.check_from === 'agent' ? 'pending' : 'neutral'}">${mon.check_from}</span></td>
+          <td>${mon.enabled
+            ? `<span class="pill ${MON_STATUS[mon.last_status] || 'neutral'}">${mon.last_status || 'pending'}</span>`
+            : '<span class="pill neutral">paused</span>'}
+            ${mon.last_error ? `<div class="mon-sub">${escapeHtml(mon.last_error)}</div>` : ''}</td>
+          <td class="mono">${mon.last_code != null ? mon.last_code : '—'}</td>
+          <td class="mono">${mon.last_response_ms != null ? mon.last_response_ms + ' ms' : '—'}</td>
+          <td>${certCell(mon)}</td>
+          <td>${sparkCell(mon.daily)}<div class="mon-sub">${mon.uptime_7d != null ? mon.uptime_7d + '%' : 'no data'}</div></td>
+          <td class="cell-sub">${mon.last_checked_at ? shortAgo(mon.last_checked_at) + ' ago' : 'never'}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>`;
+
+  $('#allUrlsBody').querySelectorAll('[data-open-vm]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      showView('vms');
+      selectVm(btn.dataset.openVm);
+      activateTab('urls');
+    });
+  });
+}
 $('#navSettings').addEventListener('click', () => showView('settings'));
 
 /* ---------- alert groups ----------

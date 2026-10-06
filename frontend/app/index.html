@@ -845,6 +845,24 @@
   .mount-row .k{ font-family:var(--mono); font-size:11px; color:var(--muted); }
   .mount-row .n{ font-family:var(--mono); font-size:11.5px; font-variant-numeric:tabular-nums; }
 
+  .mon-url{ font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-top:2px; overflow-wrap:anywhere; }
+  .mon-sub{ font-size:10.5px; color:var(--muted); margin-top:2px; }
+  /* One bar per day, oldest left. A day with no checks is drawn as an empty
+     track rather than a full-height red bar -- not watching is not an outage. */
+  .spark{ display:flex; gap:2px; align-items:flex-end; height:18px; }
+  .spark i{ width:5px; min-height:2px; border-radius:1px; background:var(--ok); display:block; }
+  .spark i.warn{ background:var(--warn); }
+  .spark i.crit{ background:var(--crit); }
+  .spark i.none{ background:var(--divider); height:3px; }
+  .cert-ok{ color:var(--ok-ink); } .cert-warn{ color:var(--warn-ink); } .cert-bad{ color:var(--crit-ink); }
+  .mon-form{ border:1px solid var(--border); border-radius:var(--r-lg); padding:16px; margin-bottom:16px; }
+  .mon-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px 14px; }
+  @media (max-width:900px){ .mon-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:560px){ .mon-grid{ grid-template-columns:minmax(0,1fr); } }
+  .mon-grid .field{ margin-bottom:0; }
+  .mon-grid .span2{ grid-column:span 2; }
+  @media (max-width:560px){ .mon-grid .span2{ grid-column:span 1; } }
+
   .unit-glyph{ font-family:var(--mono); font-size:12px; color:var(--muted); }
   .log-path-row{ display:flex; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--divider); }
   .log-path-row:first-of-type{ border-top:0; }
@@ -1282,6 +1300,7 @@
               <button class="tab" data-tab="docker"><span class="tab-glyph" aria-hidden="true">&#9635;</span> Docker</button>
               <button class="tab" data-tab="logpaths"><span class="tab-glyph" aria-hidden="true">&#128196;</span> Custom logs</button>
               <button class="tab" data-tab="systemd"><span class="tab-glyph" aria-hidden="true">&#9881;</span> Systemd</button>
+              <button class="tab" data-tab="urls">URLs <span class="tab-count" id="tabUrlCount"></span></button>
               <button class="tab" data-tab="logs">Live logs</button>
               <button class="tab" data-tab="alerts">Alerts <span class="tab-count" id="tabAlertCount"></span></button>
             </div>
@@ -1326,6 +1345,8 @@
                 <tbody id="systemdBody"></tbody></table>
               </div>
             </div>
+
+            <div class="tab-panel" data-panel="urls" id="panelUrls"></div>
 
             <div class="tab-panel" data-panel="logs">
               <div id="liveLogsEmpty" class="note" style="display:none">No log sources enabled yet — turn on Logs for a container or unit, or add a custom log path.</div>
@@ -2133,6 +2154,267 @@ function selectVm(id) {
   document.querySelector('.tab-panel[data-panel="overview"]').classList.add('active');
 }
 
+/* ---------- URL monitors ----------
+   Checks run on the server (or on the agent, for addresses only reachable from
+   the VM itself); this screen configures them and shows the last result. */
+let urlMonitors = [];
+let editingMonitorId = null;
+let monitorFormOpen = false;
+
+const MON_STATUS = { up: 'ok', slow: 'warn', down: 'crit' };
+
+function certCell(mon) {
+  if (mon.cert_error) {
+    return `<span class="mono cert-bad">Invalid</span><div class="mon-sub">${escapeHtml(mon.cert_error)}</div>`;
+  }
+  if (!mon.cert_expires_at) {
+    return `<span class="mono" style="color:var(--muted)">—</span>`;
+  }
+  const days = Math.floor((parseServerDate(mon.cert_expires_at) - Date.now()) / 86400000);
+  const tone = days <= 7 ? 'cert-bad' : days <= 30 ? 'cert-warn' : 'cert-ok';
+  const label = days < 0 ? `Expired ${Math.abs(days)}d ago` : `${days}d left`;
+  return `<span class="mono ${tone}">${label}</span>` +
+    (mon.cert_issuer ? `<div class="mon-sub">${escapeHtml(mon.cert_issuer)}</div>` : '');
+}
+
+function sparkCell(daily) {
+  if (!daily || daily.length === 0) return '<span class="cell-sub">—</span>';
+  return '<div class="spark">' + daily.map(pct => {
+    if (pct === null || pct === undefined) return '<i class="none" title="no checks"></i>';
+    const cls = pct >= 99 ? '' : pct >= 90 ? 'warn' : 'crit';
+    const h = Math.max(3, Math.round(pct / 100 * 18));
+    return `<i class="${cls}" style="height:${h}px" title="${pct}%"></i>`;
+  }).join('') + '</div>';
+}
+
+async function loadUrlMonitors(vmId) {
+  try {
+    urlMonitors = await api('/vms/' + vmId + '/url-monitors');
+  } catch (err) {
+    urlMonitors = [];
+  }
+  renderUrlMonitors(vmId);
+}
+
+function renderUrlMonitors(vmId) {
+  const down = urlMonitors.filter(m => m.enabled && m.last_status === 'down').length;
+  $('#tabUrlCount').textContent = down || '';
+
+  const rows = urlMonitors.map(mon => {
+    const status = mon.enabled ? (mon.last_status || 'unknown') : 'paused';
+    const pill = mon.enabled
+      ? `<span class="pill ${MON_STATUS[mon.last_status] || 'neutral'}">${mon.last_status || 'pending'}</span>`
+      : '<span class="pill neutral">paused</span>';
+    return `
+      <tr class="${mon.enabled ? '' : 'row-dimmed'}">
+        <td>
+          <div class="cell-name">${escapeHtml(mon.name)}</div>
+          <div class="mon-url">${escapeHtml(mon.url)}</div>
+        </td>
+        <td><span class="pill ${mon.check_from === 'agent' ? 'pending' : 'neutral'}">${mon.check_from}</span></td>
+        <td>${pill}${mon.last_error ? `<div class="mon-sub">${escapeHtml(mon.last_error)}</div>` : ''}</td>
+        <td class="mono">${mon.last_code != null ? mon.last_code : '—'}</td>
+        <td class="mono">${mon.last_response_ms != null ? mon.last_response_ms + ' ms' : '—'}</td>
+        <td>${certCell(mon)}</td>
+        <td>${sparkCell(mon.daily)}<div class="mon-sub">${mon.uptime_7d != null ? mon.uptime_7d + '%' : 'no data'}</div></td>
+        <td class="cell-sub">${mon.last_checked_at ? shortAgo(mon.last_checked_at) + ' ago' : 'never'}</td>
+        <td style="text-align:right;white-space:nowrap">
+          ${me.role === 'admin' ? `
+            <button class="link" data-check-monitor="${mon.id}">Check now</button>
+            <button class="link" data-edit-monitor="${mon.id}" style="margin-left:10px">Edit</button>
+            <button class="link" data-delete-monitor="${mon.id}" style="margin-left:10px;color:var(--crit-ink)">Delete</button>` : ''}
+        </td>
+      </tr>`;
+  }).join('');
+
+  $('#panelUrls').innerHTML = `
+    <div class="section-head">
+      <h4>URL monitors</h4>
+      ${me.role === 'admin' ? '<button class="btn small" id="monAddBtn">+ Add monitor</button>' : ''}
+    </div>
+    <div class="error-box" id="monError" role="alert"></div>
+    ${monitorFormOpen ? monitorFormHtml() : ''}
+    ${urlMonitors.length === 0
+      ? '<div class="help">No URL monitors yet — add one to watch an endpoint this VM serves, including addresses only reachable from the VM itself.</div>'
+      : `<div class="table-scroll"><table>
+          <thead><tr>
+            <th>Name · URL</th><th>From</th><th>Status</th><th>Code</th><th>Response</th>
+            <th>Certificate</th><th>7-day uptime</th><th>Last check</th><th></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>`}`;
+
+  wireUrlMonitorActions(vmId);
+}
+
+function monitorFormHtml() {
+  const m = urlMonitors.find(x => x.id === editingMonitorId) || {};
+  const val = (k, d = '') => (m[k] !== undefined && m[k] !== null ? String(m[k]) : d);
+  const seg = (field, value, options) => `<div class="seg" data-mon-seg="${field}">` + options.map(([v, label]) =>
+    `<button type="button" data-val="${v}" aria-pressed="${val(field, options[0][0]) === v}">${label}</button>`).join('') + '</div>';
+  return `
+    <div class="mon-form">
+      <div class="mon-grid">
+        <div class="field span2">
+          <label for="monUrl">URL</label>
+          <input id="monUrl" class="input mono" value="${escapeHtml(val('url'))}" placeholder="https://service.example.com/health" />
+        </div>
+        <div class="field">
+          <label for="monName">Name</label>
+          <input id="monName" class="input" value="${escapeHtml(val('name'))}" placeholder="atr-uat-api" />
+        </div>
+        <div class="field">
+          <label>Checked from</label>
+          ${seg('check_from', val('check_from', 'server'), [['server', 'Server'], ['agent', 'Agent']])}
+          <div class="help">Agent reaches localhost and private IPs on this VM.</div>
+        </div>
+        <div class="field">
+          <label>Method</label>
+          ${seg('method', val('method', 'GET'), [['GET', 'GET'], ['HEAD', 'HEAD'], ['POST', 'POST']])}
+        </div>
+        <div class="field">
+          <label for="monExpect">Expected status</label>
+          <input id="monExpect" class="input mono" value="${escapeHtml(val('expected_status', '200-399'))}" placeholder="200-399" />
+        </div>
+        <div class="field">
+          <label for="monInterval">Check every (seconds)</label>
+          <input id="monInterval" class="input mono" type="number" min="15" value="${escapeHtml(val('interval_seconds', '60'))}" />
+        </div>
+        <div class="field">
+          <label for="monTimeout">Timeout (seconds)</label>
+          <input id="monTimeout" class="input mono" type="number" min="1" value="${escapeHtml(val('timeout_seconds', '10'))}" />
+        </div>
+        <div class="field">
+          <label for="monFailures">Alert after (failures)</label>
+          <input id="monFailures" class="input mono" type="number" min="1" value="${escapeHtml(val('failure_threshold', '2'))}" />
+        </div>
+        <div class="field">
+          <label for="monBody">Body must contain</label>
+          <input id="monBody" class="input mono" value="${escapeHtml(val('body_contains'))}" placeholder="optional, e.g. UP" />
+          <div class="help">Catches a 200 that renders an error page.</div>
+        </div>
+        <div class="field">
+          <label for="monSlow">Slow alert over (ms)</label>
+          <input id="monSlow" class="input mono" type="number" min="1" value="${escapeHtml(val('slow_ms'))}" placeholder="blank = off" />
+        </div>
+        <div class="field">
+          <label for="monCertDays">Certificate warning (days)</label>
+          <input id="monCertDays" class="input mono" value="${escapeHtml(val('cert_warn_days', '30,14,7,1'))}" />
+          <div class="help">Critical at 7 days or fewer.</div>
+        </div>
+        <div class="field span2">
+          <label for="monHeaders">Request headers</label>
+          <input id="monHeaders" class="input mono" value="${escapeHtml(val('headers'))}" placeholder="optional — Authorization: Bearer …" />
+        </div>
+        <div class="field">
+          <label>TLS</label>
+          ${seg('verify_tls', String(m.verify_tls === false ? 'false' : 'true'), [['true', 'Verify'], ['false', 'Skip']])}
+          <div class="help">Skip only for self-signed internal hosts.</div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn primary" id="monSaveBtn">${editingMonitorId ? 'Save monitor' : 'Add monitor'}</button>
+        <button type="button" class="btn" id="monCancelBtn">Cancel</button>
+      </div>
+    </div>`;
+}
+
+function monSegValue(field, fallback) {
+  const pressed = document.querySelector(`[data-mon-seg="${field}"] [aria-pressed="true"]`);
+  return pressed ? pressed.dataset.val : fallback;
+}
+
+function wireUrlMonitorActions(vmId) {
+  const panel = $('#panelUrls');
+
+  if ($('#monAddBtn')) {
+    $('#monAddBtn').addEventListener('click', () => {
+      editingMonitorId = null; monitorFormOpen = true; renderUrlMonitors(vmId);
+    });
+  }
+  if ($('#monCancelBtn')) {
+    $('#monCancelBtn').addEventListener('click', () => {
+      monitorFormOpen = false; editingMonitorId = null; renderUrlMonitors(vmId);
+    });
+  }
+
+  panel.querySelectorAll('[data-mon-seg] button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      btn.parentElement.querySelectorAll('button').forEach(b =>
+        b.setAttribute('aria-pressed', String(b === btn)));
+    });
+  });
+
+  panel.querySelectorAll('[data-edit-monitor]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      editingMonitorId = btn.dataset.editMonitor; monitorFormOpen = true; renderUrlMonitors(vmId);
+    });
+  });
+
+  panel.querySelectorAll('[data-delete-monitor]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const mon = urlMonitors.find(x => x.id === btn.dataset.deleteMonitor);
+      if (!confirm(`Delete the monitor "${mon.name}"?`)) return;
+      try {
+        await api('/url-monitors/' + mon.id, { method: 'DELETE' });
+        await loadUrlMonitors(vmId);
+      } catch (err) { monError(err.message); }
+    });
+  });
+
+  panel.querySelectorAll('[data-check-monitor]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = 'Checking…';
+      try {
+        await api('/url-monitors/' + btn.dataset.checkMonitor + '/check', { method: 'POST' });
+        await loadUrlMonitors(vmId);
+      } catch (err) { monError(err.message); btn.disabled = false; btn.textContent = 'Check now'; }
+    });
+  });
+
+  if ($('#monSaveBtn')) {
+    $('#monSaveBtn').addEventListener('click', async () => {
+      const num = (sel, fallback) => {
+        const raw = $(sel).value.trim();
+        return raw === '' ? fallback : Number(raw);
+      };
+      const body = {
+        name: $('#monName').value.trim(),
+        url: $('#monUrl').value.trim(),
+        check_from: monSegValue('check_from', 'server'),
+        method: monSegValue('method', 'GET'),
+        expected_status: $('#monExpect').value.trim() || '200-399',
+        body_contains: $('#monBody').value.trim() || null,
+        headers: $('#monHeaders').value.trim() || null,
+        interval_seconds: num('#monInterval', 60),
+        timeout_seconds: num('#monTimeout', 10),
+        failure_threshold: num('#monFailures', 2),
+        slow_ms: num('#monSlow', null),
+        verify_tls: monSegValue('verify_tls', 'true') === 'true',
+        cert_warn_days: $('#monCertDays').value.trim() || null,
+        enabled: true,
+      };
+      try {
+        if (!body.name || !body.url) throw new Error('A name and URL are both required.');
+        await api(editingMonitorId ? '/url-monitors/' + editingMonitorId : '/vms/' + vmId + '/url-monitors', {
+          method: editingMonitorId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        monitorFormOpen = false; editingMonitorId = null;
+        await loadUrlMonitors(vmId);
+      } catch (err) { monError(err.message); }
+    });
+  }
+}
+
+function monError(message) {
+  const box = $('#monError');
+  if (!box) return;
+  box.textContent = message;
+  box.classList.add('show');
+}
+
 function renderDetail(id) {
   const vm = vms.find(v => v.id === id);
   if (!vm) return;
@@ -2249,6 +2531,14 @@ function renderDetail(id) {
   });
 
   wireResourceHistory(id);
+
+  // Reset the form between VMs so an edit left open on one does not reappear
+  // over another VM's monitors.
+  monitorFormOpen = false;
+  editingMonitorId = null;
+  urlMonitors = [];
+  $('#panelUrls').innerHTML = '<div class="help">Loading monitors…</div>';
+  loadUrlMonitors(id);
 
   if (me.role === 'admin') {
     $('#addLogSourceBtn').addEventListener('click', () => {

@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .alerts import sweep_vm_offline_alerts
+from .checker import prune_url_samples, run_due_checks
 from .config import settings
 from .database import SessionLocal
 from .metrics import prune_old_metric_samples
@@ -11,7 +12,8 @@ from .notifications import alert_summary, send_alert_notification
 from .recipients import recipients_for_vm
 from .routers import (
     agent, alerts as alerts_router, auth, environments, metrics as metrics_router,
-    alert_groups as alert_groups_router, settings as settings_router, users, vms,
+    alert_groups as alert_groups_router, settings as settings_router,
+    url_monitors as url_monitors_router, users, vms,
 )
 from .settings_store import smtp_config
 from .seed import seed
@@ -40,8 +42,12 @@ app.include_router(alerts_router.router)
 app.include_router(metrics_router.router)
 app.include_router(settings_router.router)
 app.include_router(alert_groups_router.router)
+app.include_router(url_monitors_router.router)
 
 OFFLINE_SWEEP_INTERVAL_SECONDS = 60
+# Monitors carry their own interval; this is just how often the loop looks for
+# ones that are due, so the shortest interval it can honour is this long.
+URL_CHECK_TICK_SECONDS = 15
 
 
 async def _offline_sweep_loop():
@@ -53,6 +59,7 @@ async def _offline_sweep_loop():
             # so a slow query never stalls request handling.
             changes = await asyncio.to_thread(sweep_vm_offline_alerts, db)
             await asyncio.to_thread(prune_old_metric_samples, db)
+            await asyncio.to_thread(prune_url_samples, db)
             if changes:
                 # Keyed by VM rather than by name: recipients are per-VM, so
                 # the VM itself has to survive the grouping.
@@ -75,6 +82,30 @@ async def _offline_sweep_loop():
             db.close()
 
 
+async def _url_check_loop():
+    while True:
+        await asyncio.sleep(URL_CHECK_TICK_SECONDS)
+        db = SessionLocal()
+        try:
+            # Blocking HTTP and DB work, kept off the event loop thread so a
+            # slow endpoint cannot stall request handling.
+            changes = await asyncio.to_thread(run_due_checks, db)
+            if changes:
+                smtp_cfg = smtp_config(db)
+                for vm, opened, resolved in changes:
+                    recipients = recipients_for_vm(db, vm)
+                    await asyncio.to_thread(
+                        send_alert_notification, vm.name,
+                        [alert_summary(a) for a in opened],
+                        recipients, smtp_cfg,
+                        [alert_summary(a) for a in resolved],
+                    )
+        except Exception:
+            pass
+        finally:
+            db.close()
+
+
 @app.on_event("startup")
 async def on_startup():
     db = SessionLocal()
@@ -83,6 +114,7 @@ async def on_startup():
     finally:
         db.close()
     asyncio.create_task(_offline_sweep_loop())
+    asyncio.create_task(_url_check_loop())
 
 
 @app.get("/health")

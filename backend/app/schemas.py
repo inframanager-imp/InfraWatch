@@ -256,3 +256,53 @@ class AlertGroupOut(BaseModel):
 class AlertGroupIn(BaseModel):
     name: str
     emails: list[str] = []
+
+
+class UrlMonitorIn(BaseModel):
+    name: str
+    url: str
+    check_from: str = "server"
+    method: str = "GET"
+    expected_status: Optional[str] = "200-399"
+    body_contains: Optional[str] = None
+    headers: Optional[str] = None
+    interval_seconds: int = 60
+    timeout_seconds: int = 10
+    failure_threshold: int = 2
+    slow_ms: Optional[int] = None
+    verify_tls: bool = True
+    cert_warn_days: Optional[str] = "30,14,7,1"
+    enabled: bool = True
+
+
+class UrlMonitorOut(BaseModel):
+    id: str
+    vm_id: str
+    name: str
+    url: str
+    check_from: str
+    method: str
+    expected_status: Optional[str]
+    body_contains: Optional[str]
+    headers: Optional[str]
+    interval_seconds: int
+    timeout_seconds: int
+    failure_threshold: int
+    slow_ms: Optional[int]
+    verify_tls: bool
+    cert_warn_days: Optional[str]
+    enabled: bool
+    last_checked_at: Optional[datetime]
+    last_status: Optional[str]
+    last_code: Optional[int]
+    last_response_ms: Optional[int]
+    last_error: Optional[str]
+    consecutive_failures: int
+    cert_expires_at: Optional[datetime]
+    cert_issuer: Optional[str]
+    cert_error: Optional[str]
+    uptime_7d: Optional[float] = None       # percent, null until there are samples
+    daily: list[Optional[float]] = []       # 7 entries, oldest first; null = no data
+
+    class Config:
+        from_attributes = True

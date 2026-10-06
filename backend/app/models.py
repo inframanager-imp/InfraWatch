@@ -62,6 +62,7 @@ class VM(Base):
     alerts = relationship("Alert", back_populates="vm", cascade="all, delete-orphan")
     metric_samples = relationship("MetricSample", back_populates="vm", cascade="all, delete-orphan")
     alert_groups = relationship("VMAlertGroup", back_populates="vm", cascade="all, delete-orphan")
+    url_monitors = relationship("UrlMonitor", back_populates="vm", cascade="all, delete-orphan")
 
 
 class Container(Base):
@@ -247,3 +248,58 @@ class VMAlertGroup(Base):
 
     vm = relationship("VM", back_populates="alert_groups")
     group = relationship("AlertGroup", back_populates="vm_links")
+
+
+class UrlMonitor(Base):
+    """An HTTP(S) endpoint watched on behalf of one VM.
+
+    The last result lives on the row rather than being derived from the sample
+    table: every read of this list wants the current state, and samples exist
+    only to draw recent history.
+    """
+    __tablename__ = "url_monitors"
+    __table_args__ = (UniqueConstraint("vm_id", "name", name="uq_vm_monitor_name"),)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    check_from = Column(String, nullable=False, default="server")  # "server" | "agent"
+    method = Column(String, nullable=False, default="GET")
+    expected_status = Column(String, nullable=True)   # "200-399, 401"
+    body_contains = Column(String, nullable=True)
+    headers = Column(Text, nullable=True)
+    interval_seconds = Column(Integer, nullable=False, default=60)
+    timeout_seconds = Column(Integer, nullable=False, default=10)
+    failure_threshold = Column(Integer, nullable=False, default=2)
+    slow_ms = Column(Integer, nullable=True)          # null disables the slow alert
+    verify_tls = Column(Boolean, nullable=False, default=True)
+    cert_warn_days = Column(String, nullable=True, default="30,14,7,1")
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    last_checked_at = Column(DateTime, nullable=True)
+    last_status = Column(String, nullable=True)       # "up" | "slow" | "down"
+    last_code = Column(Integer, nullable=True)
+    last_response_ms = Column(Integer, nullable=True)
+    last_error = Column(String, nullable=True)
+    consecutive_failures = Column(Integer, nullable=False, default=0)
+    cert_expires_at = Column(DateTime, nullable=True)
+    cert_issuer = Column(String, nullable=True)
+    cert_error = Column(String, nullable=True)
+
+    vm = relationship("VM", back_populates="url_monitors")
+    samples = relationship("UrlCheckSample", back_populates="monitor", cascade="all, delete-orphan")
+
+
+class UrlCheckSample(Base):
+    __tablename__ = "url_check_samples"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    monitor_id = Column(UUID(as_uuid=False), ForeignKey("url_monitors.id"), nullable=False, index=True)
+    checked_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ok = Column(Boolean, nullable=False)
+    response_ms = Column(Integer, nullable=True)
+    status_code = Column(Integer, nullable=True)
+
+    monitor = relationship("UrlMonitor", back_populates="samples")

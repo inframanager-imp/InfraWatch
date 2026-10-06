@@ -268,6 +268,67 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
     return opened, resolved
 
 
+def evaluate_url_alerts(db: Session, monitor) -> tuple[list[Alert], list[Alert]]:
+    """Alert rules for one URL monitor, run straight after its check.
+
+    Failures are counted rather than timed: an endpoint checked every 60s and
+    a failure_threshold of 2 is already two minutes of being down, so these
+    rules need no separate grace period.
+    """
+    opened, resolved = [], []
+
+    def upsert(rule, condition, severity, message):
+        result = _upsert_alert(
+            db, monitor.vm_id, "url", monitor.name, rule,
+            condition=condition, severity=severity, message=message,
+        )
+        if not result:
+            return
+        event, alert = result
+        (opened if event == "opened" else resolved).append(alert)
+
+    down = monitor.consecutive_failures >= max(1, monitor.failure_threshold)
+    upsert(
+        "url_down", down, "critical",
+        f"{monitor.url} is not responding ({monitor.last_error or 'no response'})",
+    )
+
+    # Slow only counts while the endpoint is actually answering -- otherwise a
+    # dead URL would report as both down and slow.
+    slow = (
+        not down and monitor.slow_ms is not None
+        and monitor.last_response_ms is not None
+        and monitor.last_response_ms >= monitor.slow_ms
+    )
+    upsert(
+        "url_slow", slow, "warning",
+        f"{monitor.url} responded in {monitor.last_response_ms} ms (over {monitor.slow_ms} ms)",
+    )
+
+    upsert(
+        "url_cert_invalid", bool(monitor.cert_error), "critical",
+        f"TLS certificate problem for {monitor.url}: {monitor.cert_error}",
+    )
+
+    days_left = None
+    if monitor.cert_expires_at:
+        days_left = (monitor.cert_expires_at - datetime.utcnow()).days
+    thresholds = sorted(
+        (int(d) for d in (monitor.cert_warn_days or "").split(",") if d.strip().isdigit()),
+        reverse=True,
+    ) or [30, 14, 7, 1]
+    expiring = days_left is not None and days_left <= thresholds[0]
+    upsert(
+        "url_cert_expiring", expiring,
+        # Escalates on its own as the date approaches: a warning a month out
+        # gets acknowledged and forgotten, which is how certificates expire.
+        "critical" if (days_left is not None and days_left <= 7) else "warning",
+        f"TLS certificate for {monitor.url} expires in {days_left} day(s)" if days_left is not None else "",
+    )
+
+    return opened, resolved
+
+
 def sweep_vm_offline_alerts(db: Session) -> list[tuple[VM, str, Alert]]:
     """Returns (vm, event, alert) for every VM whose offline alert changed
     state this pass -- "opened" when it went quiet, "resolved" when its

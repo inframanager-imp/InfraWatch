@@ -1587,7 +1587,18 @@
           <div class="field"><label for="vmHost">Hostname</label><input id="vmHost" class="mono" placeholder="optional" /></div>
           <div class="field"><label for="vmIp">IP address</label><input id="vmIp" class="mono" placeholder="10.20.1.30" /></div>
         </div>
-        <div class="field"><label for="vmEnv">Environment</label><select id="vmEnv"></select></div>
+        <div class="field">
+          <label for="vmEnv">Environment</label>
+          <select id="vmEnv"></select>
+          <div id="vmEnvNew" style="display:none;margin-top:8px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input type="text" class="input mono" id="vmEnvNewName" placeholder="uat" style="flex:1;min-width:120px" />
+              <button type="button" class="btn primary" id="vmEnvNewSave">Create</button>
+              <button type="button" class="btn" id="vmEnvNewCancel">Cancel</button>
+            </div>
+            <div class="help">Lowercase, one word. It is created straight away and selected here.</div>
+          </div>
+        </div>
         <div class="field" id="vmGroupsField">
           <label>Alert recipients</label>
           <div class="chip-list" id="vmGroupList"></div>
@@ -2011,7 +2022,7 @@ async function bootApp() {
 
   bootStatus('Loading environments\u2026');
   environments = await api('/environments');
-  $('#vmEnv').innerHTML = environments.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+  renderEnvOptions();
 
   await loadVms();
   if (me.role === 'admin') {
@@ -3060,6 +3071,7 @@ $('#addVmBtn').addEventListener('click', () => {
   $('#vmRenameHint').style.display = 'none';
   $('#vmFormHint').textContent = 'Register the VM here, then install the agent on it. The server never connects into the VM — the agent connects out to you.';
   $('#vmModalTitle').textContent = 'Add a VM';
+  closeVmEnvNew();
   renderVmGroupPicker([]);
   $('#vmModalForm').style.display = 'block';
   $('#vmModalInstall').style.display = 'none';
@@ -3079,7 +3091,9 @@ function openEditVmModal(vm) {
   $('#vmName').value = vm.name;
   $('#vmHost').value = vm.hostname || '';
   $('#vmIp').value = vm.ip_address || '';
+  renderEnvOptions(vm.environment.id);
   $('#vmEnv').value = vm.environment.id;
+  closeVmEnvNew(vm.environment.id);
   renderVmGroupPicker(vm.alert_group_ids || []);
   $('#vmRenameHint').style.display = 'block';
   $('#addVmOverlay').style.display = 'flex';
@@ -3112,7 +3126,10 @@ $('#vmForm').addEventListener('submit', async e => {
       hostname: $('#vmHost').value.trim() || null,
       ip_address: $('#vmIp').value.trim() || null,
       environment_id: $('#vmEnv').value,
+      _envPending: $('#vmEnv').value === NEW_ENV_OPTION,
     };
+    if (body._envPending) throw new Error('Create the new environment first, or pick an existing one.');
+    delete body._envPending;
     if (editingVmId) {
       body.alert_group_ids = selectedVmGroupIds();
       await api('/vms/' + editingVmId, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -3398,6 +3415,60 @@ function selectedVmGroupIds() {
   return [...document.querySelectorAll('#vmGroupList input:checked')].map(i => i.value);
 }
 
+// The select doubles as the way in to making one: a sentinel option rather
+// than a separate button, because the moment you notice the environment is
+// missing is the moment you are looking at this list.
+const NEW_ENV_OPTION = '__new__';
+
+function renderEnvOptions(selectedId) {
+  const select = $('#vmEnv');
+  const keep = selectedId || select.value;
+  select.innerHTML = environments.map(e =>
+    `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('')
+    + `<option value="${NEW_ENV_OPTION}">+ New environment…</option>`;
+  if (keep && keep !== NEW_ENV_OPTION && environments.some(e => e.id === keep)) {
+    select.value = keep;
+  }
+}
+
+function closeVmEnvNew(restoreId) {
+  $('#vmEnvNew').style.display = 'none';
+  $('#vmEnvNewName').value = '';
+  const select = $('#vmEnv');
+  if (select.value === NEW_ENV_OPTION) {
+    select.value = restoreId || (environments[0] && environments[0].id) || '';
+  }
+}
+
+$('#vmEnv').addEventListener('change', () => {
+  const show = $('#vmEnv').value === NEW_ENV_OPTION;
+  $('#vmEnvNew').style.display = show ? 'block' : 'none';
+  if (show) $('#vmEnvNewName').focus();
+});
+
+$('#vmEnvNewCancel').addEventListener('click', () => closeVmEnvNew());
+
+$('#vmEnvNewSave').addEventListener('click', async () => {
+  const name = $('#vmEnvNewName').value.trim().toLowerCase();
+  const errBox = $('#vmError');
+  errBox.classList.remove('show');
+  try {
+    if (!name) throw new Error('An environment name is required.');
+    const created = await api('/environments', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    environments = await api('/environments');
+    renderEnvOptions(created.id);
+    closeVmEnvNew(created.id);
+    $('#vmEnv').value = created.id;
+    if ($('#envList')) renderEnvironments();
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.add('show');
+  }
+});
+
 /* ---------- environments ----------
    Adding one used to mean editing the seed list and redeploying. */
 let editingEnvId = null;
@@ -3452,7 +3523,7 @@ async function reloadEnvironments() {
   environments = await api('/environments');
   // The VM modal's dropdown is built once at sign-in, so it has to be rebuilt
   // or a newly added environment will not be selectable until a reload.
-  $('#vmEnv').innerHTML = environments.map(e => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
+  renderEnvOptions();
   renderEnvironments();
 }
 

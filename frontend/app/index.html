@@ -1519,6 +1519,31 @@
           <div id="groupList"></div>
         </div>
       </section>
+
+      <section class="panel" style="max-width:660px;margin-top:16px">
+        <div class="panel-head">
+          <h2>Environments</h2>
+          <button class="btn small" id="envAddBtn">+ New environment</button>
+        </div>
+        <div class="settings-body">
+          <p class="help" style="margin:0 0 14px">
+            Used to group and colour VMs. An environment still in use cannot be deleted.
+          </p>
+          <div class="error-box" id="envError" role="alert"></div>
+          <div id="envForm" style="display:none;margin-bottom:16px">
+            <div class="field" style="margin-bottom:10px">
+              <label for="envName">Name</label>
+              <input id="envName" class="mono" placeholder="uat" />
+              <div class="help">Lowercase, one word, e.g. production, uat, sandbox.</div>
+            </div>
+            <div class="form-actions" style="margin-top:0">
+              <button type="button" class="btn primary" id="envSaveBtn">Save</button>
+              <button type="button" class="btn" id="envCancelBtn">Cancel</button>
+            </div>
+          </div>
+          <div id="envList"></div>
+        </div>
+      </section>
     </div>
 
     <div class="page" id="viewAlerts" style="display:none">
@@ -3165,7 +3190,7 @@ function showView(name) {
   });
   if (name !== 'vms') stopLiveLogsPolling();
   if (name === 'alerts') renderFleetAlerts();
-  if (name === 'settings') { loadSmtpSettings(); loadAlertGroups(); }
+  if (name === 'settings') { loadSmtpSettings(); loadAlertGroups(); renderEnvironments(); }
   if (name === 'urls') loadAllUrlMonitors();
 }
 $('#navOverview').addEventListener('click', () => showView('overview'));
@@ -3372,6 +3397,89 @@ function renderVmGroupPicker(selectedIds) {
 function selectedVmGroupIds() {
   return [...document.querySelectorAll('#vmGroupList input:checked')].map(i => i.value);
 }
+
+/* ---------- environments ----------
+   Adding one used to mean editing the seed list and redeploying. */
+let editingEnvId = null;
+
+function envError(message) {
+  const box = $('#envError');
+  box.textContent = message || '';
+  box.classList.toggle('show', !!message);
+}
+
+function renderEnvironments() {
+  const el = $('#envList');
+  if (environments.length === 0) {
+    el.innerHTML = '<div class="help">No environments yet.</div>';
+    return;
+  }
+  el.innerHTML = environments.map(env => `
+    <div class="group-row">
+      <div class="group-main">
+        <div class="group-name"><span class="env-tag env-${escapeHtml(env.name)}">${escapeHtml(env.name)}</span></div>
+        <div class="group-vms">${env.vm_count || 0} VM${env.vm_count === 1 ? '' : 's'}</div>
+      </div>
+      <div class="group-actions">
+        <button class="btn small" data-rename-env="${env.id}">Rename</button>
+        <button class="btn small danger" data-delete-env="${env.id}" ${env.vm_count ? 'disabled title="In use"' : ''}>Delete</button>
+      </div>
+    </div>`).join('');
+
+  el.querySelectorAll('[data-rename-env]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const env = environments.find(e => e.id === btn.dataset.renameEnv);
+      editingEnvId = env.id;
+      $('#envName').value = env.name;
+      $('#envForm').style.display = 'block';
+      envError('');
+      $('#envName').focus();
+    });
+  });
+  el.querySelectorAll('[data-delete-env]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const env = environments.find(e => e.id === btn.dataset.deleteEnv);
+      if (!confirm(`Delete the environment "${env.name}"?`)) return;
+      try {
+        await api('/environments/' + env.id, { method: 'DELETE' });
+        await reloadEnvironments();
+      } catch (err) { envError(err.message); }
+    });
+  });
+}
+
+async function reloadEnvironments() {
+  environments = await api('/environments');
+  // The VM modal's dropdown is built once at sign-in, so it has to be rebuilt
+  // or a newly added environment will not be selectable until a reload.
+  $('#vmEnv').innerHTML = environments.map(e => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
+  renderEnvironments();
+}
+
+$('#envAddBtn').addEventListener('click', () => {
+  editingEnvId = null;
+  $('#envName').value = '';
+  $('#envForm').style.display = 'block';
+  envError('');
+  $('#envName').focus();
+});
+$('#envCancelBtn').addEventListener('click', () => { $('#envForm').style.display = 'none'; });
+
+$('#envSaveBtn').addEventListener('click', async () => {
+  const name = $('#envName').value.trim().toLowerCase();
+  try {
+    if (!name) throw new Error('A name is required.');
+    await api(editingEnvId ? '/environments/' + editingEnvId : '/environments', {
+      method: editingEnvId ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    $('#envForm').style.display = 'none';
+    await reloadEnvironments();
+    // A renamed environment changes how every VM row is labelled.
+    await loadVms();
+  } catch (err) { envError(err.message); }
+});
 
 /* ---------- SMTP settings ----------
    Values live in the database with the environment as fallback, so this page

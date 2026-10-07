@@ -40,6 +40,7 @@ class UserUpdate(BaseModel):
 class EnvironmentOut(BaseModel):
     id: str
     name: str
+    vm_count: int = 0  # so the UI can warn before a delete that cannot happen
 
     class Config:
         from_attributes = True

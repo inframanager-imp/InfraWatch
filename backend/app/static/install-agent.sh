@@ -220,12 +220,23 @@ def collect_containers():
     return containers
 
 
+# Units written into /etc/systemd/system by a package manager rather than by
+# a person. snapd generates one per snap (snap.lxd.daemon.service and friends)
+# and they are no more hand-written than anything under /lib -- several are
+# oneshots or socket-activated, so "inactive (dead)" is their normal resting
+# state and treating them as application units reports healthy machines as
+# broken.
+GENERATED_UNIT_PREFIXES = ("snap.",)
+
+
 def is_custom_unit(name):
     # A hand-written unit lives directly at /etc/systemd/system/<name> — this
     # is how every OS package instead ships its units under /lib or
     # /usr/lib/systemd/system, and it's also exactly how this agent's own
     # service and every custom app service we've seen gets installed. Pure
     # filesystem check, no subprocess spawned per service.
+    if name.startswith(GENERATED_UNIT_PREFIXES):
+        return False
     try:
         return os.path.isfile("/etc/systemd/system/" + name)
     except Exception:

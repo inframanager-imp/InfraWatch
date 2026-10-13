@@ -1475,6 +1475,7 @@
           <button type="button" class="btn primary" id="awsSaveBtn">Save account</button>
           <button type="button" class="btn" id="awsCancelBtn">Cancel</button>
         </div>
+        <div class="help" id="awsFormHint" style="margin-top:10px"></div>
       </div>
 
       <div class="aws-layout">
@@ -3390,16 +3391,49 @@ function renderAwsAccounts() {
     return;
   }
   el.innerHTML = awsAccounts.map(acct => `
-    <button type="button" class="acct-row" data-acct="${acct.id}" aria-current="${awsSelectedAccount === acct.id}">
+    <div class="acct-row" data-acct="${acct.id}" aria-current="${awsSelectedAccount === acct.id}">
       <span class="status-dot ${acct.last_check_ok === false ? 'offline' : acct.last_check_ok ? 'online' : 'pending'}" aria-hidden="true"></span>
       <span class="acct-main">
         <span class="acct-name">${escapeHtml(acct.name)}</span>
         <span class="acct-meta">${escapeHtml(acct.region)} · ${escapeHtml(acct.role_arn.split(':')[4] || '')}</span>
       </span>
-    </button>`).join('');
+      ${me.role === 'admin' ? `
+        <button class="link lg-rename" data-edit-acct="${acct.id}">Edit</button>
+        <button class="link lg-rename" data-del-acct="${acct.id}" style="margin-left:8px;color:var(--crit-ink)">Delete</button>` : ''}
+    </div>`).join('');
 
-  el.querySelectorAll('[data-acct]').forEach(btn => {
-    btn.addEventListener('click', () => selectAwsAccount(btn.dataset.acct));
+  el.querySelectorAll('[data-acct]').forEach(row => {
+    row.addEventListener('click', e => {
+      // the row selects; its own buttons do not
+      if (e.target.closest('[data-edit-acct], [data-del-acct]')) return;
+      selectAwsAccount(row.dataset.acct);
+    });
+  });
+
+  el.querySelectorAll('[data-edit-acct]').forEach(btn => {
+    btn.addEventListener('click', () => openAwsForm(awsAccounts.find(a => a.id === btn.dataset.editAcct)));
+  });
+
+  el.querySelectorAll('[data-del-acct]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const acct = awsAccounts.find(a => a.id === btn.dataset.delAcct);
+      if (!confirm(`Remove the AWS account "${acct.name}"?
+
+Its log groups stop being reachable from InfraWatch. Nothing in AWS is changed.`)) return;
+      try {
+        await api('/aws-log-accounts/' + acct.id, { method: 'DELETE' });
+        if (awsSelectedAccount === acct.id) {
+          awsSelectedAccount = null;
+          awsSelectedGroup = null;
+          stopAwsStream();
+          $('#awsGroupsPanel').style.display = 'none';
+          $('#awsViewerBody').style.display = 'none';
+          $('#awsViewerEmpty').style.display = 'block';
+          $('#awsViewerTitle').textContent = 'Select a log group';
+        }
+        await loadAwsAccounts();
+      } catch (err) { awsNote('err', err.message); }
+    });
   });
 }
 
@@ -3624,6 +3658,10 @@ function openAwsForm(account) {
   $('#awsRoleArn').value = account ? account.role_arn : '';
   $('#awsExternalId').value = account && account.external_id ? account.external_id : '';
   $('#awsRegion').value = account ? account.region : 'us-east-2';
+  $('#awsSaveBtn').textContent = account ? 'Save changes' : 'Add account';
+  $('#awsFormHint').textContent = account
+    ? 'Saving re-checks the connection, and drops any cached credentials for it.'
+    : 'The role must already trust the instance role on this server.';
   $('#awsAccountForm').style.display = 'block';
   awsNote(null, '');
   $('#awsName').focus();

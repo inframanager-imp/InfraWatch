@@ -2150,6 +2150,7 @@ async function bootApp() {
   // Fills the rail count at sign-in, so a down endpoint shows without
   // opening the page.
   await loadAllUrlMonitors();
+  await fetchAwsAccounts();
   bootStatus('Ready');
 
   stopDashSim();
@@ -3355,14 +3356,21 @@ function awsNote(kind, text) {
   box.classList.add('show');
 }
 
-async function loadAwsAccounts() {
-  $('#awsAddBtn').style.display = me.role === 'admin' ? 'inline-flex' : 'none';
+// Fetch is separate from render because the user form needs the list too,
+// and it was previously only loaded when the AWS logs page was opened --
+// so opening Users first showed "no accounts configured".
+async function fetchAwsAccounts() {
   try {
     awsAccounts = await api('/aws-log-accounts');
   } catch (err) {
     awsAccounts = [];
-    awsNote('err', err.message);
   }
+  return awsAccounts;
+}
+
+async function loadAwsAccounts() {
+  $('#awsAddBtn').style.display = me.role === 'admin' ? 'inline-flex' : 'none';
+  await fetchAwsAccounts();
   renderAwsAccounts();
 }
 

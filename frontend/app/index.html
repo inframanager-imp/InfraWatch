@@ -1756,6 +1756,11 @@
           <label>VM access (read-only users only)</label>
           <div class="vm-access-list" id="vmAccessList"></div>
         </div>
+        <div class="field" id="awsAccessField">
+          <label>AWS log access (read-only users only)</label>
+          <div class="vm-access-list" id="awsAccessList"></div>
+          <div class="help">With none ticked, this user cannot read any CloudWatch logs.</div>
+        </div>
         <div class="modal-actions">
           <button type="button" class="btn" id="userCancelBtn">Cancel</button>
           <button type="submit" class="btn primary" id="userSubmitBtn">Create user</button>
@@ -4305,6 +4310,10 @@ function openUserModal(user) {
     <label class="checkbox-row"><input type="checkbox" value="${v.id}" ${user && user.vm_ids.includes(v.id) ? 'checked' : ''} /><span>${v.name} <span class="cell-sub">(${v.environment.name})</span></span></label>
   `).join('') || '<div class="cell-sub">No VMs registered yet.</div>';
 
+  $('#awsAccessList').innerHTML = awsAccounts.map(a => `
+    <label class="checkbox-row"><input type="checkbox" value="${a.id}" ${user && (user.aws_account_ids || []).includes(a.id) ? 'checked' : ''} /><span>${escapeHtml(a.name)} <span class="cell-sub">(${escapeHtml(a.region)})</span></span></label>
+  `).join('') || '<div class="cell-sub">No AWS accounts configured yet.</div>';
+
   $('#userModalTitle').textContent = user ? 'Edit user' : 'Add a user';
   $('#userSubmitBtn').textContent = user ? 'Save changes' : 'Create user';
   $('#userPassword').required = !user;
@@ -4338,8 +4347,12 @@ $('#userForm').addEventListener('submit', async e => {
   errBox.classList.remove('show');
   try {
     const vmIds = [...document.querySelectorAll('#vmAccessList input:checked')].map(i => i.value);
+    const awsIds = [...document.querySelectorAll('#awsAccessList input:checked')].map(i => i.value);
     if (editingUserId) {
-      const body = { name: $('#userNameInput').value.trim(), role: $('#userRole').value, vm_ids: vmIds };
+      const body = {
+        name: $('#userNameInput').value.trim(), role: $('#userRole').value,
+        vm_ids: vmIds, aws_account_ids: awsIds,
+      };
       if ($('#userPassword').value) body.password = $('#userPassword').value;
       await api('/users/' + editingUserId, {
         method: 'PATCH',
@@ -4356,6 +4369,7 @@ $('#userForm').addEventListener('submit', async e => {
           password: $('#userPassword').value,
           role: $('#userRole').value,
           vm_ids: vmIds,
+          aws_account_ids: awsIds,
         }),
       });
     }

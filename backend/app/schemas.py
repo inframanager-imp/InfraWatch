@@ -17,6 +17,7 @@ class UserOut(BaseModel):
     created_at: datetime
     last_login_at: Optional[datetime] = None
     vm_ids: list[str] = []
+    aws_account_ids: list[str] = []
 
     class Config:
         from_attributes = True
@@ -28,6 +29,7 @@ class UserCreate(BaseModel):
     password: str
     role: str = "readonly"
     vm_ids: list[str] = []
+    aws_account_ids: list[str] = []
 
 
 class UserUpdate(BaseModel):
@@ -35,6 +37,7 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     password: Optional[str] = None
     vm_ids: Optional[list[str]] = None  # omitted/None leaves access untouched; [] clears it
+    aws_account_ids: Optional[list[str]] = None
 
 
 class EnvironmentOut(BaseModel):

@@ -26,6 +26,7 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
 
     vm_access = relationship("UserVMAccess", back_populates="user", cascade="all, delete-orphan")
+    aws_log_access = relationship("UserAwsLogAccess", back_populates="user", cascade="all, delete-orphan")
 
 
 class Environment(Base):
@@ -326,3 +327,19 @@ class AwsLogAccount(Base):
     last_checked_at = Column(DateTime, nullable=True)
     last_check_ok = Column(Boolean, nullable=True)
     last_check_detail = Column(String, nullable=True)
+
+
+class UserAwsLogAccess(Base):
+    """Which AWS accounts a read-only user may read logs from.
+
+    Mirrors UserVMAccess so there is one permission model rather than two.
+    Admins are not listed here; they see everything.
+    """
+    __tablename__ = "user_aws_log_access"
+    __table_args__ = (UniqueConstraint("user_id", "account_id", name="uq_user_aws_account"),)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False, index=True)
+    account_id = Column(UUID(as_uuid=False), ForeignKey("aws_log_accounts.id"), nullable=False)
+
+    user = relationship("User", back_populates="aws_log_access")

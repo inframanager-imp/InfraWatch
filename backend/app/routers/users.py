@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from .. import schemas
 from ..audit import log_action
 from ..database import get_db
-from ..models import User, UserVMAccess, VM
+from ..models import AwsLogAccount, User, UserAwsLogAccess, UserVMAccess, VM
 from ..security import hash_password, require_admin
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -17,6 +17,7 @@ def list_users(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     for u in users:
         item = schemas.UserOut.model_validate(u)
         item.vm_ids = [a.vm_id for a in u.vm_access]
+        item.aws_account_ids = [a.account_id for a in u.aws_log_access]
         out.append(item)
     return out
 
@@ -37,6 +38,9 @@ def create_user(payload: schemas.UserCreate, db: Session = Depends(get_db), admi
     db.add(user)
     db.flush()
 
+    for account_id in payload.aws_account_ids:
+        if db.query(AwsLogAccount).filter(AwsLogAccount.id == account_id).first():
+            db.add(UserAwsLogAccess(user_id=user.id, account_id=account_id))
     for vm_id in payload.vm_ids:
         vm = db.query(VM).filter(VM.id == vm_id).first()
         if vm:
@@ -47,6 +51,7 @@ def create_user(payload: schemas.UserCreate, db: Session = Depends(get_db), admi
     log_action(db, admin.email, "user.create", target=user.email)
     out = schemas.UserOut.model_validate(user)
     out.vm_ids = [a.vm_id for a in user.vm_access]
+    out.aws_account_ids = [a.account_id for a in user.aws_log_access]
     return out
 
 
@@ -69,6 +74,11 @@ def update_user(user_id: str, payload: schemas.UserUpdate, db: Session = Depends
         user.role = payload.role
     if payload.password:
         user.password_hash = hash_password(payload.password)
+    if payload.aws_account_ids is not None:
+        db.query(UserAwsLogAccess).filter(UserAwsLogAccess.user_id == user.id).delete()
+        for account_id in payload.aws_account_ids:
+            if db.query(AwsLogAccount).filter(AwsLogAccount.id == account_id).first():
+                db.add(UserAwsLogAccess(user_id=user.id, account_id=account_id))
     if payload.vm_ids is not None:
         db.query(UserVMAccess).filter(UserVMAccess.user_id == user.id).delete()
         for vm_id in payload.vm_ids:
@@ -81,6 +91,7 @@ def update_user(user_id: str, payload: schemas.UserUpdate, db: Session = Depends
     log_action(db, admin.email, "user.update", target=user.email)
     out = schemas.UserOut.model_validate(user)
     out.vm_ids = [a.vm_id for a in user.vm_access]
+    out.aws_account_ids = [a.account_id for a in user.aws_log_access]
     return out
 
 

@@ -39,9 +39,31 @@ def _apply(account: AwsLogAccount, payload: schemas.AwsLogAccountIn) -> None:
     account.enabled = payload.enabled
 
 
+def _readable_accounts(db: Session, user: User):
+    """Admins see every account; everyone else sees only what they were given.
+
+    Default-deny: a read-only user with no grants sees nothing. Logs routinely
+    carry more than metrics do, so the quiet default has to be nothing.
+    """
+    query = db.query(AwsLogAccount)
+    if user.role != "admin":
+        allowed = {a.account_id for a in user.aws_log_access}
+        if not allowed:
+            return []
+        query = query.filter(AwsLogAccount.id.in_(allowed))
+    return query.order_by(AwsLogAccount.name).all()
+
+
+def _readable_account_or_403(db: Session, user: User, account_id: str) -> AwsLogAccount:
+    account = _get_account(db, account_id)
+    if user.role != "admin" and account.id not in {a.account_id for a in user.aws_log_access}:
+        raise HTTPException(status_code=403, detail="Not authorized for this AWS account")
+    return account
+
+
 @router.get("/aws-log-accounts", response_model=list[schemas.AwsLogAccountOut])
 def list_accounts(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return db.query(AwsLogAccount).order_by(AwsLogAccount.name).all()
+    return _readable_accounts(db, user)
 
 
 @router.post("/aws-log-accounts", response_model=schemas.AwsLogAccountOut)
@@ -107,7 +129,7 @@ async def check_account(account_id: str, db: Session = Depends(get_db), admin: U
 @router.get("/aws-log-accounts/{account_id}/log-groups", response_model=list[schemas.LogGroupOut])
 async def account_log_groups(account_id: str, prefix: str | None = Query(None),
                              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    account = _get_account(db, account_id)
+    account = _readable_account_or_403(db, user, account_id)
     try:
         return await asyncio.to_thread(list_log_groups, account, prefix)
     except CloudWatchError as e:
@@ -129,6 +151,9 @@ async def aws_logs_ws(websocket: WebSocket, account_id: str, token: str, log_gro
         account = db.query(AwsLogAccount).filter(AwsLogAccount.id == account_id).first()
         if not account:
             await websocket.close(code=4404)
+            return
+        if user.role != "admin" and account.id not in {a.account_id for a in user.aws_log_access}:
+            await websocket.close(code=4403)
             return
         # Detached copy: the polling thread outlives this session.
         connection = schemas.AwsLogAccountOut.model_validate(account)

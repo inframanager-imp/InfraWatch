@@ -861,7 +861,11 @@
   .lg-row:first-child{ border-top:0; }
   .lg-row:hover{ background:var(--raised); }
   .lg-row[aria-current="true"]{ background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent); }
-  .lg-name{ flex:1; min-width:0; font-family:var(--mono); font-size:12px; overflow-wrap:anywhere; }
+  .lg-main{ flex:1; min-width:0; }
+  .lg-name{ font-size:12.5px; font-weight:600; overflow-wrap:anywhere; }
+  .lg-group{ font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-top:2px; overflow-wrap:anywhere; }
+  .lg-cluster{ font-family:var(--mono); font-size:9.5px; color:var(--muted); }
+  .lg-rename{ flex:none; font-size:11px; }
   .lg-size{ font-family:var(--mono); font-size:10.5px; color:var(--muted); flex:none; }
 
   .mon-url{ font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-top:2px; overflow-wrap:anywhere; }
@@ -3412,19 +3416,64 @@ async function selectAwsAccount(id) {
   }
 }
 
+function displayName(g) {
+  if (g.label) return g.label;                       // a name someone chose
+  if (g.services && g.services.length) return g.services.join(', ');  // from ECS
+  return g.name;                                     // the raw log group
+}
+
 function renderAwsGroups() {
   const q = $('#awsGroupFilter').value.trim().toLowerCase();
-  const list = q ? awsGroups.filter(g => g.name.toLowerCase().includes(q)) : awsGroups;
+  // Filter across every name a group answers to, so searching the service
+  // name finds it even when the group is called something else.
+  const list = q
+    ? awsGroups.filter(g => [g.name, g.label, ...(g.services || [])]
+        .some(v => v && v.toLowerCase().includes(q)))
+    : awsGroups;
   $('#awsGroupCount').textContent = awsGroups.length || '';
   $('#awsGroupList').innerHTML = list.length === 0
     ? '<div class="help" style="padding:12px 14px">No log groups match.</div>'
-    : list.map(g => `
-      <button type="button" class="lg-row" data-group="${escapeHtml(g.name)}" aria-current="${awsSelectedGroup === g.name}">
-        <span class="lg-name">${escapeHtml(g.name)}</span>
+    : list.map(g => {
+      // A log group is named after a task definition; people look for the
+      // service. Show whichever name they would recognise, and always keep
+      // the real group underneath so it can be matched against AWS.
+      const display = displayName(g);
+      const sameAsGroup = display === g.name;
+      return `
+      <div class="lg-row" data-group="${escapeHtml(g.name)}" aria-current="${awsSelectedGroup === g.name}">
+        <span class="lg-main">
+          <span class="lg-name">${escapeHtml(display)}</span>
+          ${sameAsGroup ? '' : `<span class="lg-group">${escapeHtml(g.name)}</span>`}
+          ${g.cluster ? `<span class="lg-group lg-cluster">cluster ${escapeHtml(g.cluster)}</span>` : ''}
+        </span>
         <span class="lg-size">${g.stored_bytes != null ? formatBytes(g.stored_bytes) : ''}</span>
-      </button>`).join('');
-  $('#awsGroupList').querySelectorAll('[data-group]').forEach(btn => {
-    btn.addEventListener('click', () => openAwsGroup(btn.dataset.group));
+        ${me.role === 'admin' ? `<button class="link lg-rename" data-rename-group="${escapeHtml(g.name)}">Rename</button>` : ''}
+      </div>`;
+    }).join('');
+  $('#awsGroupList').querySelectorAll('[data-group]').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('[data-rename-group]')) return;  // the rename button owns its own click
+      openAwsGroup(row.dataset.group);
+    });
+  });
+  $('#awsGroupList').querySelectorAll('[data-rename-group]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const group = btn.dataset.renameGroup;
+      const current = awsGroups.find(g => g.name === group);
+      const next = prompt(`Name for ${group}
+
+Leave blank to use the ECS service name, or the log group itself.`,
+                          (current && current.label) || '');
+      if (next === null) return;
+      try {
+        await api('/aws-log-accounts/' + awsSelectedAccount + '/log-groups/label', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ log_group: group, label: next.trim() }),
+        });
+        awsGroups = await api('/aws-log-accounts/' + awsSelectedAccount + '/log-groups');
+        renderAwsGroups();
+      } catch (err) { awsNote('err', err.message); }
+    });
   });
 }
 
@@ -3482,7 +3531,8 @@ function openAwsGroup(group) {
 
   $('#awsViewerEmpty').style.display = 'none';
   $('#awsViewerBody').style.display = 'block';
-  $('#awsViewerTitle').textContent = group;
+  const meta = awsGroups.find(g => g.name === group);
+  $('#awsViewerTitle').textContent = meta ? displayName(meta) : group;
   $('#awsLogContent').innerHTML = '';
   awsFootCount();
   $('#awsSearch').value = '';
@@ -3490,6 +3540,7 @@ function openAwsGroup(group) {
 
   const account = awsAccounts.find(a => a.id === awsSelectedAccount);
   $('#awsFootSource').textContent = `streaming ${group} from ${account ? account.name : 'AWS'}`;
+  $('#awsViewerTitle').title = group;
   setAwsStatus('', 'Connecting…');
 
   const url = wsBase() + `/aws-log-accounts/${awsSelectedAccount}/logs/ws`

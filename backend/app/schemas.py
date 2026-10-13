@@ -340,3 +340,11 @@ class LogGroupOut(BaseModel):
     name: str
     stored_bytes: Optional[int] = None
     retention_days: Optional[int] = None
+    label: Optional[str] = None          # manual override, when one is set
+    services: list[str] = []             # ECS services writing here, if discoverable
+    cluster: Optional[str] = None
+
+
+class LogGroupLabelIn(BaseModel):
+    log_group: str
+    label: str = ""                      # blank clears the override

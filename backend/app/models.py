@@ -343,3 +343,18 @@ class UserAwsLogAccess(Base):
     account_id = Column(UUID(as_uuid=False), ForeignKey("aws_log_accounts.id"), nullable=False)
 
     user = relationship("User", back_populates="aws_log_access")
+
+
+class AwsLogLabel(Base):
+    """A display name for one log group.
+
+    ECS service names are discovered live; this is the manual override, and
+    the only way to name anything ECS does not own.
+    """
+    __tablename__ = "aws_log_labels"
+    __table_args__ = (UniqueConstraint("account_id", "log_group", name="uq_aws_log_label"),)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    account_id = Column(UUID(as_uuid=False), ForeignKey("aws_log_accounts.id"), nullable=False)
+    log_group = Column(String, nullable=False)
+    label = Column(String, nullable=False)

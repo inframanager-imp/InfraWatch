@@ -78,10 +78,11 @@ def session_for(connection) -> boto3.Session:
 
 
 def forget(connection_id: str) -> None:
-    """Drop cached sessions for an account whose settings just changed."""
+    """Drop cached sessions and discovery for an account whose settings changed."""
     with _lock:
         for key in [k for k in _sessions if k.startswith(f"{connection_id}:")]:
             _sessions.pop(key, None)
+    _ecs_cache.pop(str(connection_id), None)
 
 
 def check_connection(connection) -> dict:
@@ -185,3 +186,72 @@ def tail(connection, log_group: str, stop: threading.Event, on_line, poll_second
             stop.wait(10)
             continue
         stop.wait(poll_seconds)
+
+# --------------------------------------------------------------- ECS names --
+# A log group is named after a task definition, an ECS service after itself, and
+# the two rarely match -- CREDA-CCM-UAT-API-TASK-service-ys4yod8t writes to
+# /ecs/CREDA-CCM-UAT-API-TASK. Translating that by hand is exactly the friction
+# that sends people back to the AWS console, so the mapping is read from ECS.
+_ECS_TTL = 5 * 60
+_ecs_cache: dict[str, tuple[float, list[dict]]] = {}
+
+
+def discover_ecs_services(connection) -> list[dict]:
+    """[{cluster, service, log_group}] for every ECS service in the account.
+
+    Returns [] rather than raising when the role lacks ecs:* -- the log group
+    list has to keep working whether or not those permissions were granted.
+    """
+    key = str(connection.id)
+    now = time.monotonic()
+    cached = _ecs_cache.get(key)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    found: list[dict] = []
+    try:
+        session = session_for(connection)
+        ecs = session.client("ecs", config=_CLIENT_CONFIG)
+        task_def_groups: dict[str, str | None] = {}
+
+        for cluster_page in ecs.get_paginator("list_clusters").paginate():
+            for cluster_arn in cluster_page.get("clusterArns", []):
+                cluster = cluster_arn.rsplit("/", 1)[-1]
+                for svc_page in ecs.get_paginator("list_services").paginate(cluster=cluster_arn):
+                    arns = svc_page.get("serviceArns", [])
+                    # describe_services takes at most 10 at a time.
+                    for chunk in (arns[i:i + 10] for i in range(0, len(arns), 10)):
+                        if not chunk:
+                            continue
+                        described = ecs.describe_services(cluster=cluster_arn, services=chunk)
+                        for svc in described.get("services", []):
+                            task_def = svc.get("taskDefinition")
+                            if task_def not in task_def_groups:
+                                task_def_groups[task_def] = _task_def_log_group(ecs, task_def)
+                            found.append({
+                                "cluster": cluster,
+                                "service": svc.get("serviceName"),
+                                "log_group": task_def_groups.get(task_def),
+                            })
+    except Exception:
+        # Most often AccessDenied because ecs:* was never added. Cached as an
+        # empty result so a missing permission does not mean an ECS call on
+        # every page load.
+        found = []
+
+    _ecs_cache[key] = (now + _ECS_TTL, found)
+    return found
+
+
+def _task_def_log_group(ecs, task_definition: str | None) -> str | None:
+    if not task_definition:
+        return None
+    try:
+        described = ecs.describe_task_definition(taskDefinition=task_definition)
+        for container in described["taskDefinition"].get("containerDefinitions", []):
+            config = container.get("logConfiguration") or {}
+            if config.get("logDriver") == "awslogs":
+                return (config.get("options") or {}).get("awslogs-group")
+    except Exception:
+        return None
+    return None

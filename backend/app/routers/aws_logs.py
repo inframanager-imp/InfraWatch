@@ -6,9 +6,12 @@ from sqlalchemy.orm import Session
 
 from .. import schemas
 from ..audit import log_action
-from ..cloudwatch import CloudWatchError, check_connection, fetch_backlog, forget, list_log_groups, tail
+from ..cloudwatch import (
+    CloudWatchError, check_connection, discover_ecs_services, fetch_backlog, forget,
+    list_log_groups, tail,
+)
 from ..database import SessionLocal, get_db
-from ..models import AwsLogAccount, User
+from ..models import AwsLogAccount, AwsLogLabel, User
 from ..security import get_current_user, get_user_from_token, require_admin
 
 router = APIRouter(tags=["aws-logs"])
@@ -131,9 +134,62 @@ async def account_log_groups(account_id: str, prefix: str | None = Query(None),
                              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     account = _readable_account_or_403(db, user, account_id)
     try:
-        return await asyncio.to_thread(list_log_groups, account, prefix)
+        groups = await asyncio.to_thread(list_log_groups, account, prefix)
     except CloudWatchError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Returns [] if the role lacks ecs:*, which leaves the raw names showing
+    # rather than failing the whole listing.
+    services = await asyncio.to_thread(discover_ecs_services, account)
+    by_group: dict[str, list[dict]] = {}
+    for item in services:
+        if item.get("log_group"):
+            by_group.setdefault(item["log_group"], []).append(item)
+
+    labels = {
+        row.log_group: row.label
+        for row in db.query(AwsLogLabel).filter(AwsLogLabel.account_id == account.id).all()
+    }
+
+    out = []
+    for group in groups:
+        matches = by_group.get(group["name"], [])
+        out.append(schemas.LogGroupOut(
+            name=group["name"],
+            stored_bytes=group.get("stored_bytes"),
+            retention_days=group.get("retention_days"),
+            label=labels.get(group["name"]),
+            services=sorted({m["service"] for m in matches if m.get("service")}),
+            cluster=next((m["cluster"] for m in matches if m.get("cluster")), None),
+        ))
+    return out
+
+
+@router.put("/aws-log-accounts/{account_id}/log-groups/label", response_model=schemas.LogGroupOut)
+def set_log_group_label(account_id: str, payload: schemas.LogGroupLabelIn,
+                        db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Name a log group something a human recognises. A blank label removes the
+    override, so the ECS service name (or the raw name) shows again."""
+    account = _get_account(db, account_id)
+    label = payload.label.strip()
+    row = (
+        db.query(AwsLogLabel)
+        .filter(AwsLogLabel.account_id == account.id, AwsLogLabel.log_group == payload.log_group)
+        .first()
+    )
+    if not label:
+        if row:
+            db.delete(row)
+            db.commit()
+        return schemas.LogGroupOut(name=payload.log_group)
+
+    if row:
+        row.label = label
+    else:
+        db.add(AwsLogLabel(account_id=account.id, log_group=payload.log_group, label=label))
+    db.commit()
+    log_action(db, admin.email, "aws_log_label.set", target=payload.log_group, detail=label)
+    return schemas.LogGroupOut(name=payload.log_group, label=label)
 
 
 @router.websocket("/aws-log-accounts/{account_id}/logs/ws")

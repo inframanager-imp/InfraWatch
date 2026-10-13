@@ -308,3 +308,32 @@ class UrlMonitorOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AwsLogAccountIn(BaseModel):
+    name: str
+    role_arn: str
+    external_id: Optional[str] = None
+    region: str = "us-east-1"
+    enabled: bool = True
+
+
+class AwsLogAccountOut(BaseModel):
+    id: str
+    name: str
+    role_arn: str
+    external_id: Optional[str]
+    region: str
+    enabled: bool
+    last_checked_at: Optional[datetime]
+    last_check_ok: Optional[bool]
+    last_check_detail: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class LogGroupOut(BaseModel):
+    name: str
+    stored_bytes: Optional[int] = None
+    retention_days: Optional[int] = None

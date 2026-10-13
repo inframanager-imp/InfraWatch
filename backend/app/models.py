@@ -303,3 +303,26 @@ class UrlCheckSample(Base):
     status_code = Column(Integer, nullable=True)
 
     monitor = relationship("UrlMonitor", back_populates="samples")
+
+
+class AwsLogAccount(Base):
+    """An AWS account whose CloudWatch Logs InfraWatch can read.
+
+    Holds no secret. Access is by assuming role_arn from the EC2 instance
+    role, so the credentials are temporary and nothing here is worth stealing
+    on its own -- the external ID is a guard against confused-deputy use, not
+    a password.
+    """
+    __tablename__ = "aws_log_accounts"
+    __table_args__ = (UniqueConstraint("name", name="uq_aws_log_account_name"),)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    name = Column(String, nullable=False)
+    role_arn = Column(String, nullable=False)
+    external_id = Column(String, nullable=True)
+    region = Column(String, nullable=False, default="us-east-1")
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_checked_at = Column(DateTime, nullable=True)
+    last_check_ok = Column(Boolean, nullable=True)
+    last_check_detail = Column(String, nullable=True)

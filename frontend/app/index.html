@@ -845,6 +845,25 @@
   .mount-row .k{ font-family:var(--mono); font-size:11px; color:var(--muted); }
   .mount-row .n{ font-family:var(--mono); font-size:11.5px; font-variant-numeric:tabular-nums; }
 
+  .aws-layout{ display:grid; grid-template-columns:300px minmax(0,1fr); gap:16px; align-items:start; }
+  @media (max-width:1000px){ .aws-layout{ grid-template-columns:minmax(0,1fr); } }
+  .acct-row{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:11px 14px;
+    border:0; border-top:1px solid var(--divider); background:none; color:inherit; cursor:pointer; }
+  .acct-row:first-child{ border-top:0; }
+  .acct-row:hover{ background:var(--raised); }
+  .acct-row[aria-current="true"]{ background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent); }
+  .acct-main{ flex:1; min-width:0; }
+  .acct-name{ font-size:13px; font-weight:600; }
+  .acct-meta{ font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-top:2px; overflow-wrap:anywhere; }
+  .group-list{ max-height:calc(100dvh - 300px); overflow-y:auto; }
+  .lg-row{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:10px 14px;
+    border:0; border-top:1px solid var(--divider); background:none; color:inherit; cursor:pointer; }
+  .lg-row:first-child{ border-top:0; }
+  .lg-row:hover{ background:var(--raised); }
+  .lg-row[aria-current="true"]{ background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent); }
+  .lg-name{ flex:1; min-width:0; font-family:var(--mono); font-size:12px; overflow-wrap:anywhere; }
+  .lg-size{ font-family:var(--mono); font-size:10.5px; color:var(--muted); flex:none; }
+
   .mon-url{ font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-top:2px; overflow-wrap:anywhere; }
   .mon-sub{ font-size:10.5px; color:var(--muted); margin-top:2px; }
   /* One bar per day, oldest left. A day with no checks is drawn as an empty
@@ -1181,6 +1200,7 @@
     <nav class="sidebar-nav" aria-label="Sections">
       <button class="active" id="navOverview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Overview</button>
       <button id="navVms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg> VMs <span class="nav-count" id="navVmCount"></span></button>
+      <button id="navAwsLogs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10a5 5 0 0 0-9.6-1.6A4 4 0 1 0 7 18h10.5a4.5 4.5 0 0 0 .5-8Z"/><path d="M9 14h6"/></svg> AWS logs</button>
       <button id="navUrls"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg> URLs <span class="nav-count" id="navUrlCount"></span></button>
       <button id="navAlerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/></svg> Alerts <span class="nav-count" id="navAlertCount"></span></button>
       <button id="navSettings" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg> Settings</button>
@@ -1409,6 +1429,98 @@
           </table>
         </div>
       </section>
+    </div>
+
+    <div class="page" id="viewAwsLogs" style="display:none">
+      <div class="page-head">
+        <div>
+          <h1>AWS logs</h1>
+          <div class="page-sub">CloudWatch log groups, read with a role in each account</div>
+        </div>
+        <div class="page-head-actions">
+          <button class="btn primary" id="awsAddBtn" style="display:none">+ Add account</button>
+        </div>
+      </div>
+
+      <div class="error-box" id="awsError" role="alert"></div>
+      <div class="ok-box" id="awsOk" role="status"></div>
+
+      <div id="awsAccountForm" class="mon-form" style="display:none">
+        <div class="mon-grid">
+          <div class="field">
+            <label for="awsName">Account name</label>
+            <input id="awsName" class="input" placeholder="credahealth" />
+            <div class="help">Shown in the list. Any label you recognise.</div>
+          </div>
+          <div class="field span2">
+            <label for="awsRoleArn">Role ARN</label>
+            <input id="awsRoleArn" class="input mono" placeholder="arn:aws:iam::325204716906:role/InfraWatch-CloudWatchLogsRead" />
+            <div class="help">A read-only role in that account, trusting this server's instance role.</div>
+          </div>
+          <div class="field">
+            <label for="awsExternalId">External ID</label>
+            <input id="awsExternalId" class="input mono" placeholder="optional" />
+            <div class="help">Must match the condition in the role's trust policy.</div>
+          </div>
+          <div class="field">
+            <label for="awsRegion">Region</label>
+            <input id="awsRegion" class="input mono" placeholder="us-east-2" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn primary" id="awsSaveBtn">Save account</button>
+          <button type="button" class="btn" id="awsCancelBtn">Cancel</button>
+        </div>
+      </div>
+
+      <div class="aws-layout">
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <section class="panel">
+            <div class="panel-head"><h2>Accounts</h2><span class="count" id="awsAcctCount"></span></div>
+            <div id="awsAccountList"></div>
+          </section>
+          <section class="panel" id="awsGroupsPanel" style="display:none">
+            <div class="panel-head"><h2>Log groups</h2><span class="count" id="awsGroupCount"></span></div>
+            <div style="padding:10px 14px 0">
+              <input class="input mono" id="awsGroupFilter" placeholder="Filter log groups" />
+            </div>
+            <div class="group-list" id="awsGroupList"></div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2 id="awsViewerTitle">Select a log group</h2>
+            <span class="log-status" id="awsLogStatus"></span>
+          </div>
+          <div style="padding:16px">
+            <div id="awsViewerEmpty" class="help">Pick an account, then a log group, to stream it here.</div>
+            <div id="awsViewerBody" style="display:none">
+              <div class="log-toolbar">
+                <div class="level-toggle" id="awsLevelToggle">
+                  <button class="lvl-chip info"  data-lvl="INFO"  aria-pressed="true">INFO</button>
+                  <button class="lvl-chip warn"  data-lvl="WARN"  aria-pressed="true">WARN</button>
+                  <button class="lvl-chip error" data-lvl="ERROR" aria-pressed="true">ERROR</button>
+                  <button class="lvl-chip debug" data-lvl="DEBUG" aria-pressed="true">DEBUG</button>
+                </div>
+                <div class="log-search">
+                  <input type="text" id="awsSearch" placeholder="grep &hellip;" />
+                </div>
+                <label class="autoscroll-label"><input type="checkbox" id="awsAutoscroll" checked /> Auto-scroll</label>
+                <button class="btn small" id="awsReloadBtn">&#8635; Reload</button>
+                <button class="btn small" id="awsClearBtn">Clear</button>
+                <button class="btn small" id="awsExportBtn">Export logs</button>
+                <button class="btn small" id="awsExpandBtn" aria-pressed="false">&#9713; Full screen</button>
+              </div>
+              <div class="terminal" id="awsLogContent"></div>
+              <div class="log-foot">
+                <span id="awsFootSource">—</span><span class="sep">·</span>
+                <span id="awsFootCount">0 lines buffered</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
 
     <div class="page" id="viewUrls" style="display:none">
@@ -3198,7 +3310,7 @@ function renderUsers() {
   });
 }
 
-const NAV_PAGES = ['overview', 'vms', 'urls', 'users', 'alerts', 'settings'];
+const NAV_PAGES = ['overview', 'vms', 'awsLogs', 'urls', 'users', 'alerts', 'settings'];
 function showView(name) {
   NAV_PAGES.forEach(p => {
     const capitalized = p.charAt(0).toUpperCase() + p.slice(1);
@@ -3209,11 +3321,257 @@ function showView(name) {
   if (name === 'alerts') renderFleetAlerts();
   if (name === 'settings') { loadSmtpSettings(); loadAlertGroups(); renderEnvironments(); }
   if (name === 'urls') loadAllUrlMonitors();
+  if (name === 'awsLogs') loadAwsAccounts();
+  if (name !== 'awsLogs') stopAwsStream();
 }
 $('#navOverview').addEventListener('click', () => showView('overview'));
 $('#navVms').addEventListener('click', () => showView('vms'));
 $('#navUsers').addEventListener('click', () => showView('users'));
+$('#navAwsLogs').addEventListener('click', () => showView('awsLogs'));
 $('#navUrls').addEventListener('click', () => showView('urls'));
+
+/* ---------- AWS logs ----------
+   Fargate tasks have no host to put an agent on, so these come from
+   CloudWatch, pulled by the server with a role it assumes in each account.
+   The viewer is the same terminal as the agent log tab. */
+let awsAccounts = [];
+let awsSelectedAccount = null;
+let awsGroups = [];
+let awsSelectedGroup = null;
+let awsSocket = null;
+let awsEditingId = null;
+
+function awsNote(kind, text) {
+  $('#awsError').classList.remove('show');
+  $('#awsOk').classList.remove('show');
+  if (!text) return;
+  const box = kind === 'ok' ? $('#awsOk') : $('#awsError');
+  box.textContent = text;
+  box.classList.add('show');
+}
+
+async function loadAwsAccounts() {
+  $('#awsAddBtn').style.display = me.role === 'admin' ? 'inline-flex' : 'none';
+  try {
+    awsAccounts = await api('/aws-log-accounts');
+  } catch (err) {
+    awsAccounts = [];
+    awsNote('err', err.message);
+  }
+  renderAwsAccounts();
+}
+
+function renderAwsAccounts() {
+  $('#awsAcctCount').textContent = awsAccounts.length || '';
+  const el = $('#awsAccountList');
+  if (awsAccounts.length === 0) {
+    el.innerHTML = '<div class="empty-state">No AWS accounts yet.</div>';
+    return;
+  }
+  el.innerHTML = awsAccounts.map(acct => `
+    <button type="button" class="acct-row" data-acct="${acct.id}" aria-current="${awsSelectedAccount === acct.id}">
+      <span class="status-dot ${acct.last_check_ok === false ? 'offline' : acct.last_check_ok ? 'online' : 'pending'}" aria-hidden="true"></span>
+      <span class="acct-main">
+        <span class="acct-name">${escapeHtml(acct.name)}</span>
+        <span class="acct-meta">${escapeHtml(acct.region)} · ${escapeHtml(acct.role_arn.split(':')[4] || '')}</span>
+      </span>
+    </button>`).join('');
+
+  el.querySelectorAll('[data-acct]').forEach(btn => {
+    btn.addEventListener('click', () => selectAwsAccount(btn.dataset.acct));
+  });
+}
+
+async function selectAwsAccount(id) {
+  awsSelectedAccount = id;
+  awsSelectedGroup = null;
+  renderAwsAccounts();
+  $('#awsGroupsPanel').style.display = 'block';
+  $('#awsGroupList').innerHTML = '<div class="help" style="padding:12px 14px">Loading log groups…</div>';
+  awsNote(null, '');
+  try {
+    awsGroups = await api('/aws-log-accounts/' + id + '/log-groups');
+    renderAwsGroups();
+  } catch (err) {
+    awsGroups = [];
+    $('#awsGroupList').innerHTML = '';
+    awsNote('err', err.message);
+  }
+}
+
+function renderAwsGroups() {
+  const q = $('#awsGroupFilter').value.trim().toLowerCase();
+  const list = q ? awsGroups.filter(g => g.name.toLowerCase().includes(q)) : awsGroups;
+  $('#awsGroupCount').textContent = awsGroups.length || '';
+  $('#awsGroupList').innerHTML = list.length === 0
+    ? '<div class="help" style="padding:12px 14px">No log groups match.</div>'
+    : list.map(g => `
+      <button type="button" class="lg-row" data-group="${escapeHtml(g.name)}" aria-current="${awsSelectedGroup === g.name}">
+        <span class="lg-name">${escapeHtml(g.name)}</span>
+        <span class="lg-size">${g.stored_bytes != null ? formatBytes(g.stored_bytes) : ''}</span>
+      </button>`).join('');
+  $('#awsGroupList').querySelectorAll('[data-group]').forEach(btn => {
+    btn.addEventListener('click', () => openAwsGroup(btn.dataset.group));
+  });
+}
+
+function formatBytes(n) {
+  if (n < 1024) return n + ' B';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let v = n / 1024, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return v.toFixed(v < 10 ? 1 : 0) + ' ' + units[i];
+}
+
+$('#awsGroupFilter').addEventListener('input', renderAwsGroups);
+
+function awsFootCount() {
+  const n = document.querySelectorAll('#awsLogContent .log-line').length;
+  $('#awsFootCount').textContent = n.toLocaleString() + (n === 1 ? ' line' : ' lines') + ' buffered';
+}
+
+function awsLineMatches(el) {
+  const search = $('#awsSearch').value.toLowerCase();
+  const levels = [...document.querySelectorAll('#awsLevelToggle .lvl-chip')]
+    .filter(c => c.getAttribute('aria-pressed') === 'true').map(c => c.dataset.lvl);
+  const level = el.dataset.level;
+  return (!level || levels.includes(level)) && (!search || el.textContent.toLowerCase().includes(search));
+}
+
+function awsApplyFilters() {
+  document.querySelectorAll('#awsLogContent .log-line').forEach(el => {
+    el.classList.toggle('hidden', !awsLineMatches(el));
+  });
+}
+
+function awsAppend(raw) {
+  const box = $('#awsLogContent');
+  const wrap = document.createElement('div');
+  wrap.innerHTML = logLineHtml(raw);
+  const line = wrap.firstElementChild;
+  line.classList.toggle('hidden', !awsLineMatches(line));
+  box.appendChild(line);
+  awsFootCount();
+  if ($('#awsAutoscroll').checked) box.scrollTop = box.scrollHeight;
+}
+
+function stopAwsStream() {
+  if (awsSocket) { awsSocket.close(); awsSocket = null; }
+  if ($('#awsViewerBody') && $('#awsViewerBody').classList.contains('logs-expanded')) {
+    setAwsExpanded(false);
+  }
+}
+
+function openAwsGroup(group) {
+  awsSelectedGroup = group;
+  renderAwsGroups();
+  stopAwsStream();
+
+  $('#awsViewerEmpty').style.display = 'none';
+  $('#awsViewerBody').style.display = 'block';
+  $('#awsViewerTitle').textContent = group;
+  $('#awsLogContent').innerHTML = '';
+  awsFootCount();
+  $('#awsSearch').value = '';
+  document.querySelectorAll('#awsLevelToggle .lvl-chip').forEach(c => c.setAttribute('aria-pressed', 'true'));
+
+  const account = awsAccounts.find(a => a.id === awsSelectedAccount);
+  $('#awsFootSource').textContent = `streaming ${group} from ${account ? account.name : 'AWS'}`;
+  setAwsStatus('', 'Connecting…');
+
+  const url = wsBase() + `/aws-log-accounts/${awsSelectedAccount}/logs/ws`
+    + `?token=${encodeURIComponent(token)}&log_group=${encodeURIComponent(group)}`;
+  const socket = new WebSocket(url);
+  awsSocket = socket;
+  socket.onopen = () => setAwsStatus('live', 'Live');
+  socket.onmessage = ev => awsAppend(ev.data);
+  socket.onclose = () => { if (awsSocket === socket) { awsSocket = null; setAwsStatus('', 'Disconnected'); } };
+  socket.onerror = () => setAwsStatus('err', 'Connection error');
+}
+
+function setAwsStatus(state, label) {
+  const el = $('#awsLogStatus');
+  el.className = 'log-status ' + state;
+  el.innerHTML = '<i></i>' + escapeHtml(label);
+}
+
+function setAwsExpanded(on) {
+  const panel = $('#awsViewerBody');
+  panel.classList.toggle('logs-expanded', on);
+  panel.style.display = on ? 'flex' : 'block';
+  const btn = $('#awsExpandBtn');
+  btn.innerHTML = on ? '\u2715 Exit full screen' : '\u2751 Full screen';
+  btn.setAttribute('aria-pressed', String(on));
+  if ($('#awsAutoscroll').checked) {
+    const box = $('#awsLogContent');
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
+$('#awsSearch').addEventListener('input', awsApplyFilters);
+document.querySelectorAll('#awsLevelToggle .lvl-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    chip.setAttribute('aria-pressed', String(chip.getAttribute('aria-pressed') !== 'true'));
+    awsApplyFilters();
+  });
+});
+$('#awsClearBtn').addEventListener('click', () => { $('#awsLogContent').innerHTML = ''; awsFootCount(); });
+$('#awsReloadBtn').addEventListener('click', () => { if (awsSelectedGroup) openAwsGroup(awsSelectedGroup); });
+$('#awsExpandBtn').addEventListener('click', () =>
+  setAwsExpanded(!$('#awsViewerBody').classList.contains('logs-expanded')));
+$('#awsExportBtn').addEventListener('click', () => {
+  const lines = [...document.querySelectorAll('#awsLogContent .log-line')].map(el => el.textContent.trim());
+  if (lines.length === 0) return;
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(awsSelectedGroup || 'aws').replace(/[^a-z0-9_.-]/gi, '_')}-${Date.now()}.log`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+/* ---------- accounts: add, edit, verify ---------- */
+function openAwsForm(account) {
+  awsEditingId = account ? account.id : null;
+  $('#awsName').value = account ? account.name : '';
+  $('#awsRoleArn').value = account ? account.role_arn : '';
+  $('#awsExternalId').value = account && account.external_id ? account.external_id : '';
+  $('#awsRegion').value = account ? account.region : 'us-east-2';
+  $('#awsAccountForm').style.display = 'block';
+  awsNote(null, '');
+  $('#awsName').focus();
+}
+
+$('#awsAddBtn').addEventListener('click', () => openAwsForm(null));
+$('#awsCancelBtn').addEventListener('click', () => { $('#awsAccountForm').style.display = 'none'; });
+
+$('#awsSaveBtn').addEventListener('click', async () => {
+  const body = {
+    name: $('#awsName').value.trim(),
+    role_arn: $('#awsRoleArn').value.trim(),
+    external_id: $('#awsExternalId').value.trim() || null,
+    region: $('#awsRegion').value.trim() || 'us-east-2',
+    enabled: true,
+  };
+  try {
+    if (!body.name || !body.role_arn) throw new Error('A name and role ARN are both required.');
+    const saved = await api(awsEditingId ? '/aws-log-accounts/' + awsEditingId : '/aws-log-accounts', {
+      method: awsEditingId ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    $('#awsAccountForm').style.display = 'none';
+    // Verify straight away: a role ARN typo or a trust-policy mismatch should
+    // surface here, not the first time someone opens a log group.
+    const checked = await api('/aws-log-accounts/' + saved.id + '/check', { method: 'POST' });
+    await loadAwsAccounts();
+    awsNote(checked.last_check_ok ? 'ok' : 'err', checked.last_check_detail || '');
+    if (checked.last_check_ok) selectAwsAccount(saved.id);
+  } catch (err) {
+    awsNote('err', err.message);
+  }
+});
 $('#navAlerts').addEventListener('click', () => showView('alerts'));
 
 /* ---------- fleet-wide URL monitors ----------

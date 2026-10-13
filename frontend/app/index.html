@@ -1485,7 +1485,11 @@
           </section>
           <section class="panel" id="awsGroupsPanel" style="display:none">
             <div class="panel-head"><h2>Log groups</h2><span class="count" id="awsGroupCount"></span></div>
-            <div style="padding:10px 14px 0">
+            <div style="padding:10px 14px 0;display:flex;flex-direction:column;gap:8px">
+              <div class="seg" id="awsScopeFilter">
+                <button data-aws-scope="ecs" aria-pressed="true">ECS services</button>
+                <button data-aws-scope="all" aria-pressed="false">All groups</button>
+              </div>
               <input class="input mono" id="awsGroupFilter" placeholder="Filter log groups" />
             </div>
             <div class="group-list" id="awsGroupList"></div>
@@ -3422,15 +3426,33 @@ function displayName(g) {
   return g.name;                                     // the raw log group
 }
 
+let awsScope = 'ecs';
+
+document.querySelectorAll('#awsScopeFilter [data-aws-scope]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    awsScope = btn.dataset.awsScope;
+    document.querySelectorAll('#awsScopeFilter [data-aws-scope]').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.dataset.awsScope === awsScope)));
+    renderAwsGroups();
+  });
+});
+
 function renderAwsGroups() {
   const q = $('#awsGroupFilter').value.trim().toLowerCase();
   // Filter across every name a group answers to, so searching the service
   // name finds it even when the group is called something else.
+  // An account holds far more than its ECS services -- RDS, VPC flow logs,
+  // groups left behind by task definitions nobody runs any more. Default to
+  // what someone came looking for, and keep the rest one click away.
+  const ecsOnly = awsGroups.filter(g => (g.services || []).length > 0);
+  // With no ecs:* permission nothing is discoverable, so filtering to it would
+  // show an empty list and look broken. Fall back to everything.
+  const scoped = (awsScope === 'ecs' && ecsOnly.length > 0) ? ecsOnly : awsGroups;
   const list = q
-    ? awsGroups.filter(g => [g.name, g.label, ...(g.services || [])]
+    ? scoped.filter(g => [g.name, g.label, ...(g.services || [])]
         .some(v => v && v.toLowerCase().includes(q)))
-    : awsGroups;
-  $('#awsGroupCount').textContent = awsGroups.length || '';
+    : scoped;
+  $('#awsGroupCount').textContent = scoped.length || '';
   $('#awsGroupList').innerHTML = list.length === 0
     ? '<div class="help" style="padding:12px 14px">No log groups match.</div>'
     : list.map(g => {

@@ -1383,7 +1383,6 @@
                   <th class="sortable-th" data-sort-key="cpu_percent">CPU<span class="sort-arrow">&#8645;</span></th>
                   <th class="sortable-th" data-sort-key="mem_usage">Memory<span class="sort-arrow">&#8645;</span></th>
                   <th class="sortable-th" data-sort-key="started_at">Up since<span class="sort-arrow">&#8645;</span></th>
-                  <th class="sortable-th" data-sort-key="last_seen">Last seen<span class="sort-arrow">&#8645;</span></th>
                   <th>Monitor</th><th>Logs</th><th></th>
                 </tr></thead>
                 <tbody id="dockerBody"></tbody></table>
@@ -1409,7 +1408,6 @@
                   <th class="sortable-th" data-sort-key="status">Active<span class="sort-arrow">&#8645;</span></th>
                   <th class="sortable-th" data-sort-key="sub_state">Sub-state<span class="sort-arrow">&#8645;</span></th>
                   <th class="sortable-th" data-sort-key="started_at">Up since<span class="sort-arrow">&#8645;</span></th>
-                  <th class="sortable-th" data-sort-key="last_seen">Last seen<span class="sort-arrow">&#8645;</span></th>
                   <th>Monitor</th><th>Logs</th><th></th>
                 </tr></thead>
                 <tbody id="systemdBody"></tbody></table>
@@ -2753,13 +2751,13 @@ function renderDetail(id) {
       glyph: '\u25A3', kind: 'Docker container', type: 'container', name: c.name,
       pill: /up/i.test(c.status || '') ? 'ok' : 'neutral',
       state: /up/i.test(c.status || '') ? 'running' : (c.status || 'stopped'),
-      cpu: c.cpu_percent, last: c.last_seen, logs: c.logs_enabled,
+      cpu: c.cpu_percent, logs: c.logs_enabled,
       started: /up/i.test(c.status || '') ? c.started_at : null,
     })),
     ...data.services.filter(s => s.monitor_enabled).map(s => ({
       glyph: '\u2699', kind: 'systemd unit', type: 'service', name: s.name,
       pill: s.status === 'active' ? 'ok' : s.status === 'failed' ? 'crit' : 'neutral',
-      state: s.status, cpu: null, last: s.last_seen, logs: s.logs_enabled,
+      state: s.status, cpu: null, logs: s.logs_enabled,
       started: s.status === 'active' ? s.started_at : null,
     })),
   ];
@@ -2784,7 +2782,7 @@ function renderDetail(id) {
           ? 'Nothing on this VM is being monitored yet — switch Monitor on for a container or unit.'
           : 'No agent connected yet — run the install command on this VM (see “+ Add VM”) to start seeing Docker and systemd data here.'}</div>`
       : `<div class="table-scroll"><table>
-          <thead><tr><th><span class="visually-hidden">Kind</span></th><th>Name</th><th>Status</th><th>CPU</th><th>Up since</th><th>Last seen</th><th><span class="visually-hidden">Logs</span></th></tr></thead>
+          <thead><tr><th><span class="visually-hidden">Kind</span></th><th>Name</th><th>Status</th><th>CPU</th><th>Up since</th><th><span class="visually-hidden">Logs</span></th></tr></thead>
           <tbody>${units.map(u => `
             <tr>
               <td class="unit-glyph">${u.glyph}<span class="visually-hidden">${u.kind}</span></td>
@@ -2792,7 +2790,6 @@ function renderDetail(id) {
               <td><span class="pill ${u.pill}">${escapeHtml(u.state)}</span></td>
               <td class="mono">${u.cpu != null ? u.cpu + '%' : '—'}</td>
               <td>${upSince(u.started)}</td>
-              <td class="cell-sub">${shortAgo(u.last)}</td>
               <td><button class="link" data-unit-logs="${u.type}" data-unit-name="${escapeHtml(u.name)}" ${u.logs ? '' : 'disabled'}>Logs</button></td>
             </tr>`).join('')}</tbody>
         </table></div>`}`;
@@ -2873,7 +2870,7 @@ function renderDetail(id) {
 
   const sortedContainers = sortList(data.containers, dockerSort, dockerAccessors);
   $('#dockerBody').innerHTML = sortedContainers.length === 0
-    ? `<tr><td colspan="9" class="empty-state">No containers reported yet.</td></tr>`
+    ? `<tr><td colspan="8" class="empty-state">No containers reported yet.</td></tr>`
     : sortedContainers.map(c => {
         const up = /up/i.test(c.status || '');
         return `
@@ -2883,7 +2880,6 @@ function renderDetail(id) {
           <td class="mono">${c.cpu_percent != null ? c.cpu_percent + '%' : '—'}</td>
           <td class="cell-sub">${escapeHtml(c.mem_usage || '—')}</td>
           <td>${up ? upSince(c.started_at) : '<span class="cell-sub">—</span>'}</td>
-          <td class="cell-sub">${shortAgo(c.last_seen)}</td>
           <td>${toggleHtml('container', c.name, 'monitor_enabled', c.monitor_enabled)}</td>
           <td>${toggleHtml('container', c.name, 'logs_enabled', c.logs_enabled)}</td>
           <td><button class="link" data-live-container="${escapeHtml(c.name)}" ${c.logs_enabled ? '' : 'disabled'}>Logs</button></td>
@@ -2902,14 +2898,13 @@ function renderDetail(id) {
     btn.setAttribute('aria-pressed', String(btn.dataset.groupFilter === systemdGroupFilter));
   });
   $('#systemdBody').innerHTML = sortedServices.length === 0
-    ? `<tr><td colspan="8" class="empty-state">${data.services.length === 0 ? 'No services reported yet.' : 'No services in this group.'}</td></tr>`
+    ? `<tr><td colspan="7" class="empty-state">${data.services.length === 0 ? 'No services reported yet.' : 'No services in this group.'}</td></tr>`
     : sortedServices.map(s => `
         <tr class="${s.monitor_enabled ? '' : 'row-dimmed'}">
           <td class="cell-name">${escapeHtml(s.name)}</td>
           <td><span class="pill ${s.status === 'active' ? 'ok' : s.status === 'failed' ? 'crit' : 'neutral'}">${escapeHtml(s.status)}</span></td>
           <td class="cell-sub">${escapeHtml(s.sub_state || '—')}</td>
           <td>${s.status === 'active' ? upSince(s.started_at) : '<span class="cell-sub">—</span>'}</td>
-          <td class="cell-sub">${shortAgo(s.last_seen)}</td>
           <td>${toggleHtml('service', s.name, 'monitor_enabled', s.monitor_enabled)}</td>
           <td>${toggleHtml('service', s.name, 'logs_enabled', s.logs_enabled)}</td>
           <td><button class="link" data-live-service="${escapeHtml(s.name)}" ${s.logs_enabled ? '' : 'disabled'}>Logs</button></td>
@@ -3028,7 +3023,6 @@ const dockerAccessors = {
   cpu_percent: c => c.cpu_percent,
   mem_usage: c => c.mem_usage,
   started_at: c => startedEpoch(c.started_at),
-  last_seen: c => new Date(c.last_seen).getTime(),
 };
 
 const systemdAccessors = {
@@ -3036,7 +3030,6 @@ const systemdAccessors = {
   status: s => s.status,
   sub_state: s => s.sub_state,
   started_at: s => startedEpoch(s.started_at),
-  last_seen: s => new Date(s.last_seen).getTime(),
 };
 
 function compareValues(a, b) {

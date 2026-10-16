@@ -3,7 +3,8 @@ import secrets
 import uuid
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from .. import schemas
@@ -11,7 +12,9 @@ from ..audit import log_action
 from ..database import SessionLocal, get_db
 from ..models import AlertGroup, Container, LogSource, ResourceSetting, Service, User, VM, VMAlertGroup
 from ..security import get_current_user, get_user_from_token, hash_password, require_admin
-from ..streams import KEEPALIVE_SECONDS, STREAM_PING, agent_sockets, browser_sockets, stream_vms
+from ..streams import (
+    KEEPALIVE_SECONDS, STREAM_PING, agent_sockets, browser_sockets, export_queues, stream_vms,
+)
 
 router = APIRouter(prefix="/vms", tags=["vms"])
 
@@ -247,6 +250,77 @@ def delete_log_source(vm_id: str, source_id: str, db: Session = Depends(get_db),
     db.delete(source)
     db.commit()
     log_action(db, admin.email, "log_source.delete", target=f"{vm_id}:{source.path}")
+
+
+EXPORT_MAX_LINES = 200_000
+EXPORT_IDLE_TIMEOUT = 120  # seconds of silence from the agent before giving up
+
+
+@router.get("/{vm_id}/logs/export")
+async def export_logs(
+    vm_id: str,
+    type: str = Query(...),
+    name: str = Query(...),
+    since: str | None = Query(None),
+    until: str | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Download a date range of one log source as a file.
+
+    Deliberately not rendered: a week of a busy service is millions of lines,
+    which no browser will draw. The agent dumps the range, the server relays
+    it straight to a download, and nothing is held in memory on either side
+    beyond the line in flight.
+    """
+    vm = _get_accessible_vm(db, user, vm_id)
+    agent_ws = agent_sockets.get(vm.name)
+    if agent_ws is None:
+        raise HTTPException(status_code=409, detail="The agent on this VM is not connected")
+
+    stream_id = str(uuid.uuid4())
+    queue: asyncio.Queue = asyncio.Queue(maxsize=10000)
+    export_queues[stream_id] = queue
+    try:
+        await agent_ws.send_json({
+            "action": "export_logs", "stream_id": stream_id,
+            "type": type, "name": name, "since": since, "until": until,
+            "max_lines": EXPORT_MAX_LINES,
+        })
+    except Exception:
+        export_queues.pop(stream_id, None)
+        raise HTTPException(status_code=502, detail="Could not reach the agent on this VM")
+
+    async def body():
+        header = f"# InfraWatch export — {vm.name} — {type}:{name}\n"
+        if since or until:
+            header += f"# range: {since or 'beginning'} to {until or 'now'}\n"
+        if type == "file":
+            # tail/cat cannot select by time, and rotated files are gone.
+            header += "# note: file sources export whole, the date range does not apply\n"
+        yield header + "#\n"
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=EXPORT_IDLE_TIMEOUT)
+                except asyncio.TimeoutError:
+                    yield "\n# export stopped: no response from the agent\n"
+                    return
+                if item.get("done"):
+                    if item.get("truncated"):
+                        yield f"\n# truncated at {EXPORT_MAX_LINES} lines — narrow the range for the rest\n"
+                    return
+                yield item["line"] + "\n"
+        finally:
+            export_queues.pop(stream_id, None)
+
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M")
+    safe = "".join(c if c.isalnum() or c in "-._" else "_" for c in name)[:60]
+    return StreamingResponse(
+        body(),
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="{vm.name}-{safe}-{stamp}.log"'},
+    )
 
 
 @router.websocket("/{vm_id}/logs/ws")

@@ -974,6 +974,14 @@
   .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
   .modal-grid2{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
   @media (max-width:420px){ .modal-grid2{ grid-template-columns:minmax(0,1fr); } }
+  .range-presets{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+  .range-chip{
+    font-size:11.5px; font-weight:500; padding:6px 10px; border-radius:var(--r-sm);
+    border:1px solid var(--border); background:var(--surface); color:var(--muted); cursor:pointer;
+  }
+  .range-chip:hover{ color:var(--text); }
+  .range-chip[aria-pressed="true"]{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  .export-source{ font-family:var(--mono); font-size:11.5px; color:var(--text); overflow-wrap:anywhere; }
   .code-block{
     position:relative; margin:0; background:var(--term-bg); border:1px solid var(--term-edge);
     border-radius:var(--r-md); padding:13px 14px; font-family:var(--mono); font-size:11px;
@@ -1393,7 +1401,7 @@
                   <label class="autoscroll-label"><input type="checkbox" id="liveLogsAutoscroll" checked /> Auto-scroll</label>
                   <button class="btn small" id="liveLogsReloadBtn" title="Reconnect and re-fetch the last 500 lines">&#8635; Reload</button>
                   <button class="btn small" id="liveLogsClearBtn">Clear</button>
-                  <button class="btn small" id="liveLogsExportBtn">Export logs</button>
+                  <button class="btn small" id="liveLogsExportBtn" title="Download a date range straight from the VM">&#8681; Export</button>
                   <button class="btn small" id="liveLogsExpandBtn" aria-pressed="false">&#9713; Full screen</button>
                   <span class="log-status" id="liveLogsUpdated"></span>
                 </div>
@@ -1775,6 +1783,33 @@
           <button type="submit" class="btn primary" id="userSubmitBtn">Create user</button>
         </div>
       </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="logExportOverlay" style="display:none">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="logExportTitle">
+    <div class="modal-head"><h3 id="logExportTitle">Export logs</h3><button class="modal-close" id="logExportClose" aria-label="Close">&#10005;</button></div>
+    <div class="modal-body">
+      <p class="modal-hint">Reads the range straight off the VM into a file. Nothing is drawn on screen, so this can cover far more than the live view holds.</p>
+      <div class="error-box" id="logExportError" role="alert"></div>
+      <div class="field"><label>Source</label><div class="export-source" id="logExportSource">&mdash;</div></div>
+      <div class="range-presets" id="logExportPresets">
+        <button type="button" class="range-chip" data-days="1" aria-pressed="false">Last 24 hours</button>
+        <button type="button" class="range-chip" data-days="3" aria-pressed="false">Last 3 days</button>
+        <button type="button" class="range-chip" data-days="7" aria-pressed="true">Last 7 days</button>
+        <button type="button" class="range-chip" data-days="30" aria-pressed="false">Last 30 days</button>
+        <button type="button" class="range-chip" data-days="" aria-pressed="false">Custom</button>
+      </div>
+      <div class="modal-grid2">
+        <div class="field"><label for="logExportFrom">From</label><input id="logExportFrom" type="datetime-local" /></div>
+        <div class="field"><label for="logExportTo">To</label><input id="logExportTo" type="datetime-local" /></div>
+      </div>
+      <div class="help" id="logExportNote"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="logExportBufferBtn">Save what&rsquo;s on screen</button>
+        <button type="button" class="btn primary" id="logExportRunBtn">Download</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3114,22 +3149,141 @@ function stopLiveLogsPolling() {
   collapseLogsOnLeave();
 }
 
-function exportLiveLogs() {
+function exportVisibleLogs() {
   const lines = [...document.querySelectorAll('#liveLogsContent .log-line')]
     .map(el => el.textContent.trim())
     .filter(line => line && !line.includes(STREAM_PING));
   if (lines.length === 0) return;
   const target = ($('#liveLogsSelect').value.split('::')[1] || 'logs').replace(/[^a-z0-9_.-]/gi, '_');
   const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  downloadBlob(blob, `${target}-${Date.now()}.log`);
+}
+
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${target}-${Date.now()}.log`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+/* ---------------------------------------------- date-range log export ----
+   The live view keeps a few thousand lines because every one is a DOM node.
+   A week of a busy service is orders of magnitude more than that, so a range
+   that long is never rendered -- it goes from the VM to a file and the
+   operator opens it in whatever they already use to read logs. */
+let logExportBusy = false;
+
+function logExportTarget() {
+  const [type, name] = ($('#liveLogsSelect').value || '').split('::');
+  return { type, name };
+}
+
+// What a datetime-local input wants: local wall clock, no zone.
+function localStamp(date) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+       + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// What the agent wants: UTC with an explicit Z, so the range means the same
+// instant whether or not the VM's clock is on the viewer's timezone.
+function utcWire(localValue) {
+  return new Date(localValue).toISOString().slice(0, 19) + 'Z';
+}
+
+function applyLogExportPreset(days) {
+  const now = new Date();
+  $('#logExportTo').value = localStamp(now);
+  $('#logExportFrom').value = localStamp(new Date(now.getTime() - days * 86400000));
+}
+
+function markLogExportPreset(days) {
+  for (const chip of document.querySelectorAll('#logExportPresets .range-chip')) {
+    chip.setAttribute('aria-pressed', String(chip.dataset.days === days));
+  }
+}
+
+function openLogExport() {
+  const { type, name } = logExportTarget();
+  if (!type || !name) return;
+  $('#logExportSource').textContent = `${type}: ${name}`;
+  $('#logExportNote').textContent = type === 'file'
+    ? 'A plain file has no notion of a time range, so the whole current file is exported \u2014 anything already rotated away is gone.'
+    : 'A long range takes a while: the VM reads it off disk and the file arrives as it goes.';
+  $('#logExportError').classList.remove('show');
+  applyLogExportPreset(7);
+  markLogExportPreset('7');
+  $('#logExportOverlay').style.display = 'flex';
+}
+
+function closeLogExport() { $('#logExportOverlay').style.display = 'none'; }
+
+function logExportFail(message) {
+  const box = $('#logExportError');
+  box.textContent = message;
+  box.classList.add('show');
+}
+
+async function runLogExport() {
+  if (logExportBusy) return;
+  const { type, name } = logExportTarget();
+  if (!selectedVmId || !type || !name) return;
+  $('#logExportError').classList.remove('show');
+
+  const from = $('#logExportFrom').value, to = $('#logExportTo').value;
+  if (!from || !to) return logExportFail('Pick both a start and an end.');
+  if (new Date(from) >= new Date(to)) return logExportFail('The start has to come before the end.');
+
+  const params = new URLSearchParams({ type, name, since: utcWire(from), until: utcWire(to) });
+  const btn = $('#logExportRunBtn');
+  logExportBusy = true;
+  btn.disabled = true;
+  btn.textContent = 'Collecting\u2026';
+  try {
+    const res = await fetch(`${API_BASE}/vms/${selectedVmId}/logs/export?${params}`, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+    if (res.status === 401) { logout(); return; }
+    if (!res.ok) {
+      let detail = `Export failed (${res.status})`;
+      try { const body = await res.json(); if (body && body.detail) detail = body.detail; } catch (e) { /* no body */ }
+      throw new Error(detail);
+    }
+    const safe = name.replace(/[^a-z0-9_.-]/gi, '_').slice(0, 60);
+    downloadBlob(await res.blob(), `${safe}-${from.slice(0, 10)}_${to.slice(0, 10)}.log`);
+    closeLogExport();
+  } catch (e) {
+    logExportFail(e.message);
+  } finally {
+    logExportBusy = false;
+    btn.disabled = false;
+    btn.textContent = 'Download';
+  }
+}
+
+$('#logExportPresets').addEventListener('click', e => {
+  const chip = e.target.closest('.range-chip');
+  if (!chip) return;
+  markLogExportPreset(chip.dataset.days);
+  if (chip.dataset.days) applyLogExportPreset(Number(chip.dataset.days));
+});
+
+// Typing a boundary by hand is a custom range by definition, so the preset
+// chips stop claiming to describe what the inputs say.
+for (const id of ['#logExportFrom', '#logExportTo']) {
+  $(id).addEventListener('input', () => markLogExportPreset(''));
+}
+
+$('#logExportClose').addEventListener('click', closeLogExport);
+$('#logExportRunBtn').addEventListener('click', runLogExport);
+$('#logExportBufferBtn').addEventListener('click', () => { exportVisibleLogs(); closeLogExport(); });
+$('#logExportOverlay').addEventListener('click', e => {
+  if (e.target === $('#logExportOverlay')) closeLogExport();
+});
 
 // Wrapped, not passed directly: the handler's Event would land in the
 // resume argument and make a deliberate source switch behave like a
@@ -3160,7 +3314,7 @@ $('#liveLogsClearBtn').addEventListener('click', () => {
   $('#liveLogsContent').innerHTML = '';
   updateLogFootCount();
 });
-$('#liveLogsExportBtn').addEventListener('click', exportLiveLogs);
+$('#liveLogsExportBtn').addEventListener('click', openLogExport);
 
 function logsExpanded() { return $('#liveLogsBody').classList.contains('logs-expanded'); }
 

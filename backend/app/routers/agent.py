@@ -13,7 +13,7 @@ from ..notifications import alert_summary, send_alert_notification
 from ..recipients import recipients_for_vm
 from ..security import verify_password
 from ..settings_store import smtp_config
-from ..streams import agent_sockets, browser_sockets, stream_vms
+from ..streams import agent_sockets, browser_sockets, export_queues, stream_vms
 
 router = APIRouter(tags=["agent"])
 
@@ -121,6 +121,18 @@ async def agent_ws(websocket: WebSocket, name: str, token: str):
         while True:
             data = await websocket.receive_json()
             stream_id = data.get("stream_id")
+
+            # An export is being collected into a file rather than shown live,
+            # so its lines go to a queue and its end is explicit.
+            queue = export_queues.get(stream_id)
+            if queue is not None:
+                if data.get("done"):
+                    await queue.put({"done": True, "lines": data.get("lines"),
+                                     "truncated": bool(data.get("truncated"))})
+                else:
+                    await queue.put({"line": data.get("line", "")})
+                continue
+
             browser_ws = browser_sockets.get(stream_id)
             if browser_ws:
                 try:

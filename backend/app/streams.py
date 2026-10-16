@@ -10,6 +10,10 @@ from fastapi import WebSocket
 agent_sockets: dict[str, WebSocket] = {}    # vm name -> agent's websocket
 browser_sockets: dict[str, WebSocket] = {}  # stream_id -> browser's websocket
 stream_vms: dict[str, str] = {}             # stream_id -> vm name serving it
+# stream_id -> asyncio.Queue, for an export being collected into a download.
+# Separate from browser_sockets because an export has an end and a live
+# stream does not: the queue receives a sentinel when the agent is done.
+export_queues: dict[str, object] = {}
 
 # Sent to a browser on an idle stream so the connection keeps showing traffic.
 # Proxies (nginx defaults to a 60s read timeout) drop a socket that has gone

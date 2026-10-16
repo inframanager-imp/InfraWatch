@@ -281,6 +281,58 @@ def stream_worker(ws, stream_id, cmd):
                 pass
 
 
+def _journal_time(value):
+    """Translate the wire format (UTC ISO, trailing Z) into journald's.
+
+    systemd's parser takes neither the "T" separator nor "Z", but it does
+    accept a trailing zone name, so the instant survives even on a VM whose
+    clock is not set to UTC. docker takes the RFC3339 form unchanged, which
+    is why only this side needs translating.
+    """
+    if not value:
+        return value
+    return value.replace("T", " ").replace("Z", " UTC")
+
+
+def export_worker(ws, stream_id, cmd, max_lines):
+    """Runs a bounded log dump and sends it, then marks the end explicitly.
+
+    Unlike stream_worker this finishes: the server is collecting into a file
+    download and has to know when to stop waiting. The done marker carries a
+    reason so a truncated export can say so rather than appearing complete.
+    """
+    sent = 0
+    truncated = False
+    proc = None
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        for line in proc.stdout:
+            if sent >= max_lines:
+                truncated = True
+                break
+            with _ws_send_lock:
+                ws.send(json.dumps({"stream_id": stream_id, "line": line.rstrip(chr(10))}))
+            sent += 1
+    except Exception as e:
+        try:
+            with _ws_send_lock:
+                ws.send(json.dumps({"stream_id": stream_id, "line": f"[agent] export failed: {e}"}))
+        except Exception:
+            pass
+    finally:
+        if proc is not None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        try:
+            with _ws_send_lock:
+                ws.send(json.dumps({"stream_id": stream_id, "done": True,
+                                    "lines": sent, "truncated": truncated}))
+        except Exception:
+            pass
+
+
 def handle_ws_message(ws, msg):
     try:
         data = json.loads(msg)
@@ -304,6 +356,32 @@ def handle_ws_message(ws, msg):
         else:
             return
         threading.Thread(target=stream_worker, args=(ws, stream_id, cmd), daemon=True).start()
+    elif action == "export_logs":
+        # since/until are ISO timestamps; journalctl and docker both accept
+        # that form directly, so no translation is needed.
+        target_type, target_name = data.get("type"), data.get("name")
+        since, until = data.get("since"), data.get("until")
+        max_lines = int(data.get("max_lines") or 200000)
+        if target_type == "container":
+            cmd = ["docker", "logs", "--timestamps", target_name]
+            if since:
+                cmd += ["--since", since]
+            if until:
+                cmd += ["--until", until]
+        elif target_type == "service":
+            cmd = ["journalctl", "-u", target_name, "--no-pager"]
+            if since:
+                cmd += ["--since", _journal_time(since)]
+            if until:
+                cmd += ["--until", _journal_time(until)]
+        elif target_type == "file":
+            # A plain file has no notion of a time range, and anything already
+            # rotated away is simply gone, so the whole current file is sent
+            # and the server notes the range could not be applied.
+            cmd = ["cat", target_name]
+        else:
+            return
+        threading.Thread(target=export_worker, args=(ws, stream_id, cmd, max_lines), daemon=True).start()
     elif action == "stop_stream":
         proc = _active_streams.pop(stream_id, None)
         if proc is not None:

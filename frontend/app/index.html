@@ -1014,6 +1014,9 @@
   .cal-day.today:not(.edge){ box-shadow:inset 0 0 0 1px var(--border); }
   .cal-times{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
   .cal-date{ font-family:var(--mono); font-size:10.5px; color:var(--muted); font-weight:400; }
+  .time-pair{ display:flex; align-items:center; gap:5px; }
+  .time-pair select{ flex:1; min-width:0; text-align:center; font-family:var(--mono); }
+  .time-pair > span{ color:var(--muted); font-weight:600; }
   .code-block{
     position:relative; margin:0; background:var(--term-bg); border:1px solid var(--term-edge);
     border-radius:var(--r-md); padding:13px 14px; font-family:var(--mono); font-size:11px;
@@ -1846,12 +1849,16 @@
       </div>
       <div class="cal-times">
         <div class="field">
-          <label for="logExportStartTime">From <span class="cal-date" id="logExportStartLabel">&mdash;</span></label>
-          <input id="logExportStartTime" type="time" value="00:00" />
+          <label for="logExportStartHour">From <span class="cal-date" id="logExportStartLabel">&mdash;</span></label>
+          <div class="time-pair">
+            <select id="logExportStartHour" aria-label="Start hour"></select><span>:</span><select id="logExportStartMin" aria-label="Start minute"></select>
+          </div>
         </div>
         <div class="field">
-          <label for="logExportEndTime">To <span class="cal-date" id="logExportEndLabel">&mdash;</span></label>
-          <input id="logExportEndTime" type="time" value="23:59" />
+          <label for="logExportEndHour">To <span class="cal-date" id="logExportEndLabel">&mdash;</span></label>
+          <div class="time-pair">
+            <select id="logExportEndHour" aria-label="End hour"></select><span>:</span><select id="logExportEndMin" aria-label="End minute"></select>
+          </div>
         </div>
       </div>
       <div class="help" id="logExportNote"></div>
@@ -3250,7 +3257,31 @@ let calStart = null, calEnd = null; // local midnight of each chosen day
 function midnight(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
 function sameDay(a, b) { return !!a && !!b && a.getTime() === b.getTime(); }
 function isoDay(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
-function clockStamp(d) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+
+/* Two selects rather than <input type="time">: the native picker opens as an
+   outsized panel that covers the calendar, and reaching an hour means
+   scrolling the whole day. These also render identically everywhere. */
+function fillClocks() {
+  const opts = n => Array.from({ length: n }, (_, i) => `<option value="${i}">${pad2(i)}</option>`).join('');
+  $('#logExportStartHour').innerHTML = $('#logExportEndHour').innerHTML = opts(24);
+  $('#logExportStartMin').innerHTML = $('#logExportEndMin').innerHTML = opts(60);
+}
+fillClocks();
+
+function setClock(which, d) {
+  $(`#logExport${which}Hour`).value = String(d.getHours());
+  $(`#logExport${which}Min`).value = String(d.getMinutes());
+}
+function setClockTo(which, h, m) {
+  $(`#logExport${which}Hour`).value = String(h);
+  $(`#logExport${which}Min`).value = String(m);
+}
+function readClock(which) {
+  return {
+    h: Number($(`#logExport${which}Hour`).value),
+    m: Number($(`#logExport${which}Min`).value),
+  };
+}
 function calLabel(d) {
   return d ? `${pad2(d.getDate())} ${CAL_MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}` : '\u2014';
 }
@@ -3296,19 +3327,18 @@ function applyLogExportPreset(days) {
   calStart = midnight(from);
   calEnd = midnight(now);
   calCursor = new Date(now.getFullYear(), now.getMonth(), 1);
-  $('#logExportStartTime').value = clockStamp(from);
-  $('#logExportEndTime').value = clockStamp(now);
+  setClock('Start', from);
+  setClock('End', now);
   renderCalendar();
 }
 
 function logExportBounds() {
   if (!calStart) return null;
   const end = calEnd || calStart;
-  const [sh, sm] = ($('#logExportStartTime').value || '00:00').split(':');
-  const [eh, em] = ($('#logExportEndTime').value || '23:59').split(':');
+  const s = readClock('Start'), e = readClock('End');
   return {
-    from: new Date(calStart.getFullYear(), calStart.getMonth(), calStart.getDate(), +sh, +sm),
-    to: new Date(end.getFullYear(), end.getMonth(), end.getDate(), +eh, +em),
+    from: new Date(calStart.getFullYear(), calStart.getMonth(), calStart.getDate(), s.h, s.m),
+    to: new Date(end.getFullYear(), end.getMonth(), end.getDate(), e.h, e.m),
   };
 }
 
@@ -3318,8 +3348,14 @@ $('#logExportDays').addEventListener('click', e => {
   const date = new Date(calCursor.getFullYear(), calCursor.getMonth(), Number(cell.dataset.day));
   // Clicking before the start moves the start rather than refusing, so a
   // misclick costs one more click instead of a reset.
-  if (!calStart || calEnd || date < calStart) { calStart = date; calEnd = null; }
-  else { calEnd = date; }
+  if (!calStart || calEnd || date < calStart) {
+    calStart = date;
+    calEnd = null;
+    setClockTo('Start', 0, 0);
+    setClockTo('End', 23, 59);
+  } else {
+    calEnd = date;
+  }
   markLogExportPreset('');
   renderCalendar();
 });
@@ -3408,8 +3444,9 @@ $('#logExportPresets').addEventListener('click', e => {
 
 // Typing a boundary by hand is a custom range by definition, so the preset
 // chips stop claiming to describe what the inputs say.
-for (const id of ['#logExportStartTime', '#logExportEndTime']) {
-  $(id).addEventListener('input', () => markLogExportPreset(''));
+for (const id of ['#logExportStartHour', '#logExportStartMin',
+                  '#logExportEndHour', '#logExportEndMin']) {
+  $(id).addEventListener('change', () => markLogExportPreset(''));
 }
 
 $('#logExportClose').addEventListener('click', closeLogExport);

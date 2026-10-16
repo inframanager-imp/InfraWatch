@@ -100,6 +100,7 @@ class ContainerOut(BaseModel):
     mem_usage: Optional[str]
     restart_count: Optional[int]
     ports: Optional[str]
+    started_at: Optional[datetime] = None
     last_seen: datetime
     monitor_enabled: bool = True
     logs_enabled: bool = True
@@ -114,6 +115,7 @@ class ServiceOut(BaseModel):
     status: str
     sub_state: Optional[str]
     is_custom: Optional[bool] = None
+    started_at: Optional[datetime] = None
     last_seen: datetime
     monitor_enabled: bool = True
     logs_enabled: bool = True
@@ -131,12 +133,14 @@ class ContainerIn(BaseModel):
     mem_usage: Optional[str] = None
     restart_count: Optional[int] = None
     ports: Optional[str] = None
+    started_at: Optional[datetime] = None
 
 
 class ServiceIn(BaseModel):
     name: str
     status: str
     sub_state: Optional[str] = None
+    started_at: Optional[datetime] = None
     custom: Optional[bool] = None  # True if the agent found a hand-written unit file at
     # /etc/systemd/system/<name> rather than one shipped by an OS package. Used only to pick
     # a sensible default the FIRST time this service is ever seen for a VM — never overrides

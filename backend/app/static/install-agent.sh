@@ -188,6 +188,87 @@ def read_disk_percent():
         return None
 
 
+def iso_utc(epoch):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
+
+
+def normalize_started(value):
+    """docker reports nanoseconds; datetime stops at microseconds.
+
+    A container that has never run reports the zero time, which means "never
+    started" rather than a date in year 1.
+    """
+    value = (value or "").strip()
+    if not value or value.startswith("0001-01-01"):
+        return None
+    head, dot, tail = value.partition(".")
+    if not dot:
+        return value if value.endswith("Z") else value + "Z"
+    digits = "".join(ch for ch in tail if ch.isdigit())[:6]
+    return head + "." + digits + "Z"
+
+
+def container_start_times():
+    """The instant each container last started, not docker's "Up 2 hours".
+
+    That string is coarse and relative to the moment it was read, so it goes
+    stale between heartbeats. State.StartedAt is the real instant and moves
+    on every restart, which is what makes it worth showing beside an alert.
+    """
+    ids = run(["docker", "ps", "-aq"]).split()
+    if not ids:
+        return {}
+    out = run(["docker", "inspect", "--format", "{{.Name}}|{{.State.StartedAt}}"] + ids, timeout=20)
+    started = {}
+    for line in out.strip().splitlines():
+        name, sep, raw = line.partition("|")
+        if sep:
+            # inspect prefixes the container name with a slash; ps does not.
+            started[name.lstrip("/")] = normalize_started(raw)
+    return started
+
+
+def service_start_times(names):
+    """When each unit last entered active state, derived without timezones.
+
+    systemd prints ActiveEnterTimestamp in the VM's local zone with an
+    abbreviation that cannot be parsed reliably across hosts. The monotonic
+    form is just microseconds since boot, so pair it with /proc/uptime and
+    do the arithmetic here, where both numbers come from the same clock.
+    """
+    if not names:
+        return {}
+    try:
+        with open("/proc/uptime") as f:
+            uptime = float(f.read().split()[0])
+    except Exception:
+        return {}
+    now = time.time()
+    out = run(["systemctl", "show", "--property=Id",
+               "--property=ActiveEnterTimestampMonotonic"] + list(names), timeout=20)
+    started = {}
+    # Blocks are blank-line separated; systemd does not promise the order the
+    # properties were asked for, so read each block as a whole.
+    for block in out.split(chr(10) + chr(10)):
+        props = {}
+        for line in block.splitlines():
+            key, sep, value = line.partition("=")
+            if sep:
+                props[key.strip()] = value.strip()
+        unit = props.get("Id")
+        raw = props.get("ActiveEnterTimestampMonotonic")
+        if not unit or not raw:
+            continue
+        try:
+            since_boot = int(raw) / 1000000.0
+        except ValueError:
+            continue
+        # Zero means the unit has never been active, not "started at boot".
+        if since_boot > 0:
+            started[unit] = iso_utc(now - (uptime - since_boot))
+    return started
+
+
 def collect_containers():
     out = run(["docker", "ps", "-a", "--format", "{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}"])
     containers = []
@@ -215,6 +296,10 @@ def collect_containers():
         # per-container timeout small so this can't meaningfully delay
         # the heartbeat even with several containers.
         c["logs"] = run_logs(["docker", "logs", "--tail", "50", "--timestamps", c["name"]])
+
+    started = container_start_times()
+    for c in containers:
+        c["started_at"] = started.get(c["name"])
         rc = run(["docker", "inspect", "-f", "{{.RestartCount}}", c["name"]], timeout=5).strip()
         c["restart_count"] = int(rc) if rc.isdigit() else None
     return containers
@@ -251,6 +336,10 @@ def collect_services():
         if len(parts) >= 4:
             name, _load, active, sub = parts[0], parts[1], parts[2], parts[3]
             services.append({"name": name, "status": active, "sub_state": sub, "custom": is_custom_unit(name)})
+
+    started = service_start_times([s["name"] for s in services])
+    for s in services:
+        s["started_at"] = started.get(s["name"])
     return services
 
 

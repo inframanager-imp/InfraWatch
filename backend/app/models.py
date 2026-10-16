@@ -79,6 +79,9 @@ class Container(Base):
     mem_usage = Column(String, nullable=True)  # kept as docker's own text, e.g. "45.2MiB / 512MiB"
     restart_count = Column(Integer, nullable=True)
     ports = Column(String, nullable=True)
+    # When the container last started, as docker reports it. Null means the
+    # agent predates this field or the container has never run.
+    started_at = Column(DateTime, nullable=True)
     last_seen = Column(DateTime, default=datetime.utcnow)
 
     vm = relationship("VM", back_populates="containers")
@@ -94,6 +97,9 @@ class Service(Base):
     sub_state = Column(String, nullable=True)  # systemd "sub" column: running | dead | exited ...
     is_custom = Column(Boolean, nullable=True)  # unit file under /etc/systemd/system vs an OS package;
     # None means an older agent that hasn't reported this yet.
+    # When the unit last entered active state. Null for a unit that has never
+    # been active, or an agent that predates this field.
+    started_at = Column(DateTime, nullable=True)
     last_seen = Column(DateTime, default=datetime.utcnow)
 
     vm = relationship("VM", back_populates="services")

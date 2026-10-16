@@ -982,6 +982,38 @@
   .range-chip:hover{ color:var(--text); }
   .range-chip[aria-pressed="true"]{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
   .export-source{ font-family:var(--mono); font-size:11.5px; color:var(--text); overflow-wrap:anywhere; }
+  .cal{ border:1px solid var(--border); border-radius:var(--r-md); padding:10px 12px 12px; margin-bottom:14px; }
+  .cal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:9px; }
+  .cal-title{ font-size:12.5px; font-weight:600; letter-spacing:-.01em; }
+  .cal-nav{
+    border:1px solid var(--border); background:var(--surface); color:var(--muted);
+    border-radius:var(--r-sm); width:24px; height:24px; line-height:1; font-size:13px; cursor:pointer;
+  }
+  .cal-nav:hover:not(:disabled){ color:var(--text); }
+  .cal-nav:disabled{ opacity:.35; cursor:default; }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); }
+  .cal-dow{ margin-bottom:3px; }
+  .cal-dow span{
+    text-align:center; font-size:9.5px; font-weight:600; letter-spacing:.06em;
+    color:var(--muted); text-transform:uppercase;
+  }
+  .cal-day{
+    border:0; background:none; color:var(--text); font:inherit; font-size:11.5px;
+    height:28px; cursor:pointer; font-variant-numeric:tabular-nums; border-radius:var(--r-sm);
+  }
+  .cal-day.blank{ visibility:hidden; }
+  .cal-day:disabled{ color:var(--muted); opacity:.4; cursor:default; }
+  .cal-day:hover:not(:disabled):not(.edge){ background:var(--accent-soft); }
+  /* The in-range fill is square so consecutive days read as one bar, and
+     only the two ends of the range get rounded off. */
+  .cal-day.in-range{ background:var(--accent-soft); border-radius:0; }
+  .cal-day.edge{ background:var(--accent); color:oklch(1 0 0); font-weight:600; }
+  .cal-day.edge.start{ border-radius:var(--r-sm) 0 0 var(--r-sm); }
+  .cal-day.edge.end{ border-radius:0 var(--r-sm) var(--r-sm) 0; }
+  .cal-day.edge.start.end{ border-radius:var(--r-sm); }
+  .cal-day.today:not(.edge){ box-shadow:inset 0 0 0 1px var(--border); }
+  .cal-times{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
+  .cal-date{ font-family:var(--mono); font-size:10.5px; color:var(--muted); font-weight:400; }
   .code-block{
     position:relative; margin:0; background:var(--term-bg); border:1px solid var(--term-edge);
     border-radius:var(--r-md); padding:13px 14px; font-family:var(--mono); font-size:11px;
@@ -1801,9 +1833,26 @@
         <button type="button" class="range-chip" data-days="30" aria-pressed="false">Last 30 days</button>
         <button type="button" class="range-chip" data-days="" aria-pressed="false">Custom</button>
       </div>
-      <div class="modal-grid2">
-        <div class="field"><label for="logExportFrom">From</label><input id="logExportFrom" type="datetime-local" /></div>
-        <div class="field"><label for="logExportTo">To</label><input id="logExportTo" type="datetime-local" /></div>
+      <div class="cal">
+        <div class="cal-head">
+          <button type="button" class="cal-nav" id="logExportPrevMonth" aria-label="Previous month">&#8249;</button>
+          <div class="cal-title" id="logExportMonth"></div>
+          <button type="button" class="cal-nav" id="logExportNextMonth" aria-label="Next month">&#8250;</button>
+        </div>
+        <div class="cal-grid cal-dow" aria-hidden="true">
+          <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+        </div>
+        <div class="cal-grid" id="logExportDays"></div>
+      </div>
+      <div class="cal-times">
+        <div class="field">
+          <label for="logExportStartTime">From <span class="cal-date" id="logExportStartLabel">&mdash;</span></label>
+          <input id="logExportStartTime" type="time" value="00:00" />
+        </div>
+        <div class="field">
+          <label for="logExportEndTime">To <span class="cal-date" id="logExportEndLabel">&mdash;</span></label>
+          <input id="logExportEndTime" type="time" value="23:59" />
+        </div>
       </div>
       <div class="help" id="logExportNote"></div>
       <div class="modal-actions">
@@ -3182,24 +3231,107 @@ function logExportTarget() {
   return { type, name };
 }
 
-// What a datetime-local input wants: local wall clock, no zone.
-function localStamp(date) {
-  const pad = n => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-       + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 // What the agent wants: UTC with an explicit Z, so the range means the same
 // instant whether or not the VM's clock is on the viewer's timezone.
-function utcWire(localValue) {
-  return new Date(localValue).toISOString().slice(0, 19) + 'Z';
+function utcWire(date) {
+  return date.toISOString().slice(0, 19) + 'Z';
 }
 
+const pad2 = n => String(n).padStart(2, '0');
+const CAL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+
+/* One calendar picks the two days; the clocks below place the boundaries
+   inside them. Two separate date-and-time pickers made the operator hold the
+   range in their head -- here the span is just visible. */
+let calCursor = null;              // first of the month on screen
+let calStart = null, calEnd = null; // local midnight of each chosen day
+
+function midnight(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function sameDay(a, b) { return !!a && !!b && a.getTime() === b.getTime(); }
+function isoDay(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function clockStamp(d) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+function calLabel(d) {
+  return d ? `${pad2(d.getDate())} ${CAL_MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}` : '\u2014';
+}
+
+function renderCalendar() {
+  const today = midnight(new Date());
+  $('#logExportMonth').textContent = `${CAL_MONTHS[calCursor.getMonth()]} ${calCursor.getFullYear()}`;
+  // Nothing has happened tomorrow yet, so the calendar stops at this month.
+  $('#logExportNextMonth').disabled =
+    calCursor.getFullYear() === today.getFullYear() && calCursor.getMonth() === today.getMonth();
+
+  const year = calCursor.getFullYear(), month = calCursor.getMonth();
+  const lead = (new Date(year, month, 1).getDay() + 6) % 7;  // weeks start Monday
+  const total = new Date(year, month + 1, 0).getDate();
+
+  const cells = [];
+  for (let i = 0; i < lead; i++) {
+    cells.push('<button type="button" class="cal-day blank" tabindex="-1" aria-hidden="true"></button>');
+  }
+  for (let day = 1; day <= total; day++) {
+    const date = new Date(year, month, day);
+    const isStart = sameDay(date, calStart);
+    const isEnd = calEnd ? sameDay(date, calEnd) : isStart;
+    const cls = ['cal-day'];
+    if (sameDay(date, today)) cls.push('today');
+    if (calStart && calEnd && date > calStart && date < calEnd) cls.push('in-range');
+    if (isStart || isEnd) cls.push('edge');
+    if (isStart) cls.push('start');
+    if (isEnd) cls.push('end');
+    const off = date > today ? ' disabled' : '';
+    cells.push(`<button type="button" class="${cls.join(' ')}" data-day="${day}"${off}>${day}</button>`);
+  }
+  $('#logExportDays').innerHTML = cells.join('');
+  $('#logExportStartLabel').textContent = calLabel(calStart);
+  $('#logExportEndLabel').textContent = calLabel(calEnd || calStart);
+}
+
+// A preset is a rolling window ending now, not a run of whole days, so the
+// clocks carry the odd hours and the calendar shows the days it spans.
 function applyLogExportPreset(days) {
   const now = new Date();
-  $('#logExportTo').value = localStamp(now);
-  $('#logExportFrom').value = localStamp(new Date(now.getTime() - days * 86400000));
+  const from = new Date(now.getTime() - days * 86400000);
+  calStart = midnight(from);
+  calEnd = midnight(now);
+  calCursor = new Date(now.getFullYear(), now.getMonth(), 1);
+  $('#logExportStartTime').value = clockStamp(from);
+  $('#logExportEndTime').value = clockStamp(now);
+  renderCalendar();
 }
+
+function logExportBounds() {
+  if (!calStart) return null;
+  const end = calEnd || calStart;
+  const [sh, sm] = ($('#logExportStartTime').value || '00:00').split(':');
+  const [eh, em] = ($('#logExportEndTime').value || '23:59').split(':');
+  return {
+    from: new Date(calStart.getFullYear(), calStart.getMonth(), calStart.getDate(), +sh, +sm),
+    to: new Date(end.getFullYear(), end.getMonth(), end.getDate(), +eh, +em),
+  };
+}
+
+$('#logExportDays').addEventListener('click', e => {
+  const cell = e.target.closest('.cal-day');
+  if (!cell || cell.disabled || !cell.dataset.day) return;
+  const date = new Date(calCursor.getFullYear(), calCursor.getMonth(), Number(cell.dataset.day));
+  // Clicking before the start moves the start rather than refusing, so a
+  // misclick costs one more click instead of a reset.
+  if (!calStart || calEnd || date < calStart) { calStart = date; calEnd = null; }
+  else { calEnd = date; }
+  markLogExportPreset('');
+  renderCalendar();
+});
+
+$('#logExportPrevMonth').addEventListener('click', () => {
+  calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() - 1, 1);
+  renderCalendar();
+});
+$('#logExportNextMonth').addEventListener('click', () => {
+  calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() + 1, 1);
+  renderCalendar();
+});
 
 function markLogExportPreset(days) {
   for (const chip of document.querySelectorAll('#logExportPresets .range-chip')) {
@@ -3234,11 +3366,13 @@ async function runLogExport() {
   if (!selectedVmId || !type || !name) return;
   $('#logExportError').classList.remove('show');
 
-  const from = $('#logExportFrom').value, to = $('#logExportTo').value;
-  if (!from || !to) return logExportFail('Pick both a start and an end.');
-  if (new Date(from) >= new Date(to)) return logExportFail('The start has to come before the end.');
+  const bounds = logExportBounds();
+  if (!bounds) return logExportFail('Pick a day on the calendar.');
+  if (bounds.from >= bounds.to) return logExportFail('The start has to come before the end.');
 
-  const params = new URLSearchParams({ type, name, since: utcWire(from), until: utcWire(to) });
+  const params = new URLSearchParams({
+    type, name, since: utcWire(bounds.from), until: utcWire(bounds.to),
+  });
   const btn = $('#logExportRunBtn');
   logExportBusy = true;
   btn.disabled = true;
@@ -3254,7 +3388,7 @@ async function runLogExport() {
       throw new Error(detail);
     }
     const safe = name.replace(/[^a-z0-9_.-]/gi, '_').slice(0, 60);
-    downloadBlob(await res.blob(), `${safe}-${from.slice(0, 10)}_${to.slice(0, 10)}.log`);
+    downloadBlob(await res.blob(), `${safe}-${isoDay(bounds.from)}_${isoDay(bounds.to)}.log`);
     closeLogExport();
   } catch (e) {
     logExportFail(e.message);
@@ -3274,7 +3408,7 @@ $('#logExportPresets').addEventListener('click', e => {
 
 // Typing a boundary by hand is a custom range by definition, so the preset
 // chips stop claiming to describe what the inputs say.
-for (const id of ['#logExportFrom', '#logExportTo']) {
+for (const id of ['#logExportStartTime', '#logExportEndTime']) {
   $(id).addEventListener('input', () => markLogExportPreset(''));
 }
 

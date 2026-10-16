@@ -599,13 +599,22 @@ def main():
     threading.Thread(target=run_ws_agent, args=(args.server, args.token, args.name), daemon=True).start()
 
     update_check_every = max(1, 600 // args.interval)  # roughly every 10 minutes
+
+    # Check once at startup as well as periodically. Without this a restart
+    # reset the counter and pushed the first check a full interval away, so
+    # restarting an agent to pick up a new version delayed it instead.
+    # Safe against looping: an update rewrites agent.py from the same bytes
+    # this check compares, so the next startup finds them equal.
+    send_heartbeat(args.server, args.token, args.name)
+    check_for_update(args.server)
+
     tick = 0
     while True:
+        time.sleep(args.interval)
         send_heartbeat(args.server, args.token, args.name)
         tick += 1
         if tick % update_check_every == 0:
             check_for_update(args.server)
-        time.sleep(args.interval)
 
 
 if __name__ == "__main__":

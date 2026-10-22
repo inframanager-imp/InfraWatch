@@ -13,7 +13,7 @@ from .recipients import recipients_for_vm
 from .routers import (
     agent, alerts as alerts_router, auth, environments, metrics as metrics_router,
     alert_groups as alert_groups_router, aws_logs as aws_logs_router,
-    settings as settings_router,
+    s3 as s3_router, settings as settings_router,
     url_monitors as url_monitors_router, users, vms,
 )
 from .settings_store import smtp_config
@@ -45,6 +45,7 @@ app.include_router(settings_router.router)
 app.include_router(alert_groups_router.router)
 app.include_router(url_monitors_router.router)
 app.include_router(aws_logs_router.router)
+app.include_router(s3_router.router)
 
 OFFLINE_SWEEP_INTERVAL_SECONDS = 60
 # Monitors carry their own interval; this is just how often the loop looks for

@@ -1248,6 +1248,7 @@
       <button class="active" id="navOverview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Overview</button>
       <button id="navVms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg> VMs <span class="nav-count" id="navVmCount"></span></button>
       <button id="navAwsLogs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10a5 5 0 0 0-9.6-1.6A4 4 0 1 0 7 18h10.5a4.5 4.5 0 0 0 .5-8Z"/><path d="M9 14h6"/></svg> AWS logs</button>
+      <button id="navS3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg> S3 <span class="nav-count" id="navS3Count"></span></button>
       <button id="navUrls"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg> URLs <span class="nav-count" id="navUrlCount"></span></button>
       <button id="navAlerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/></svg> Alerts <span class="nav-count" id="navAlertCount"></span></button>
       <button id="navSettings" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg> Settings</button>
@@ -1573,6 +1574,24 @@
           </div>
         </section>
       </div>
+    </div>
+
+    <div class="page" id="viewS3" style="display:none">
+      <div class="page-head">
+        <div>
+          <h1>S3 buckets</h1>
+          <div class="page-sub" id="s3Sub">&mdash;</div>
+        </div>
+        <div class="page-head-actions">
+          <label class="visually-hidden" for="s3AccountSelect">AWS account</label>
+          <select class="log-select" id="s3AccountSelect"></select>
+          <button class="btn small" id="s3RefreshBtn" title="Re-read from AWS instead of the cached listing">&#8635; Refresh</button>
+        </div>
+      </div>
+      <section class="panel">
+        <div class="error-box" id="s3Error" role="alert"></div>
+        <div id="s3Body"></div>
+      </section>
     </div>
 
     <div class="page" id="viewUrls" style="display:none">
@@ -3670,7 +3689,7 @@ function renderUsers() {
   });
 }
 
-const NAV_PAGES = ['overview', 'vms', 'awsLogs', 'urls', 'users', 'alerts', 'settings'];
+const NAV_PAGES = ['overview', 'vms', 'awsLogs', 's3', 'urls', 'users', 'alerts', 'settings'];
 function showView(name) {
   NAV_PAGES.forEach(p => {
     const capitalized = p.charAt(0).toUpperCase() + p.slice(1);
@@ -3682,13 +3701,157 @@ function showView(name) {
   if (name === 'settings') { loadSmtpSettings(); loadAlertGroups(); renderEnvironments(); }
   if (name === 'urls') loadAllUrlMonitors();
   if (name === 'awsLogs') loadAwsAccounts();
+  if (name === 's3') loadS3();
   if (name !== 'awsLogs') stopAwsStream();
 }
 $('#navOverview').addEventListener('click', () => showView('overview'));
 $('#navVms').addEventListener('click', () => showView('vms'));
 $('#navUsers').addEventListener('click', () => showView('users'));
 $('#navAwsLogs').addEventListener('click', () => showView('awsLogs'));
+$('#navS3').addEventListener('click', () => showView('s3'));
 $('#navUrls').addEventListener('click', () => showView('urls'));
+
+/* ---------- S3 ----------
+   The same accounts and the same assumed role as the AWS logs page. Sizes
+   come from the daily metrics AWS publishes for free and posture from each
+   bucket's own configuration, so nothing here reads object data and a
+   bucket holding a billion objects costs what an empty one costs. */
+let s3Accounts = [];
+let s3SelectedAccount = null;
+let s3Loading = false;
+
+function formatBytes(n) {
+  if (n == null) return '\u2014';
+  if (n === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  const v = n / Math.pow(1024, i);
+  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
+/* Unknown must not look like clean. A role without permission to read a
+   bucket's configuration has told us nothing, and painting that green is
+   the one failure mode that would matter on this page. */
+function s3Pill(state, label) {
+  return `<span class="pill ${state}">${escapeHtml(label)}</span>`;
+}
+
+function accessPill(b) {
+  if (b.policy_public) return s3Pill('crit', 'Public');
+  if (b.block_public_access === true) return s3Pill('ok', 'Blocked');
+  if (b.block_public_access === false) return s3Pill('warn', 'Not blocked');
+  return s3Pill('neutral', 'Unknown');
+}
+
+function encryptionPill(b) {
+  if (b.encryption == null) return s3Pill('neutral', 'Unknown');
+  if (b.encryption === 'none') return s3Pill('warn', 'None');
+  return s3Pill('ok', b.encryption);
+}
+
+function versioningPill(b) {
+  if (b.versioning == null) return s3Pill('neutral', 'Unknown');
+  if (b.versioning === 'Enabled') return s3Pill('ok', 'Enabled');
+  return s3Pill('neutral', b.versioning);
+}
+
+async function loadS3(refresh = false) {
+  if (s3Loading) return;
+  const select = $('#s3AccountSelect');
+  $('#s3Error').classList.remove('show');
+
+  if (s3Accounts.length === 0) {
+    try {
+      s3Accounts = await api('/s3/accounts');
+    } catch (e) {
+      $('#s3Body').innerHTML = '';
+      return s3Fail(e.message);
+    }
+  }
+  if (s3Accounts.length === 0) {
+    select.innerHTML = '';
+    $('#s3Sub').textContent = 'No AWS account is available to you';
+    $('#s3Body').innerHTML = `<div class="note">${me.role === 'admin'
+      ? 'Add an AWS account on the AWS logs page — S3 reads the same accounts.'
+      : 'Ask an administrator to grant you an AWS account.'}</div>`;
+    return;
+  }
+
+  if (!s3SelectedAccount || !s3Accounts.some(a => a.id === s3SelectedAccount)) {
+    s3SelectedAccount = s3Accounts[0].id;
+  }
+  select.innerHTML = s3Accounts
+    .map(a => `<option value="${a.id}"${a.id === s3SelectedAccount ? ' selected' : ''}>${escapeHtml(a.name)}</option>`)
+    .join('');
+
+  s3Loading = true;
+  $('#s3Sub').textContent = refresh ? 'Re-reading from AWS\u2026' : 'Loading\u2026';
+  $('#s3Body').innerHTML = '<div class="note">Listing buckets\u2026</div>';
+  try {
+    const data = await api(`/s3/accounts/${s3SelectedAccount}/buckets${refresh ? '?refresh=true' : ''}`);
+    renderS3(data);
+  } catch (e) {
+    $('#s3Sub').textContent = '\u2014';
+    $('#s3Body').innerHTML = '';
+    s3Fail(e.message);
+  } finally {
+    s3Loading = false;
+  }
+}
+
+function s3Fail(message) {
+  const box = $('#s3Error');
+  box.textContent = message;
+  box.classList.add('show');
+}
+
+function renderS3(data) {
+  const buckets = data.buckets || [];
+  const count = $('#navS3Count');
+  count.textContent = data.flagged ? String(data.flagged) : '';
+  count.style.display = data.flagged ? '' : 'none';
+
+  // Sizes are a daily metric, so say when they were measured rather than
+  // letting the page imply it is reporting live usage.
+  const measured = buckets.map(b => b.measured_at).filter(Boolean).sort().pop();
+  const parts = [
+    `${buckets.length} bucket${buckets.length === 1 ? '' : 's'}`,
+    formatBytes(data.total_bytes),
+    `${data.total_objects.toLocaleString()} objects`,
+  ];
+  if (data.flagged) parts.push(`${data.flagged} with findings`);
+  if (measured) parts.push(`sizes measured ${shortAgo(measured)} ago`);
+  $('#s3Sub').textContent = parts.join(' \u00b7 ');
+
+  if (buckets.length === 0) {
+    $('#s3Body').innerHTML = '<div class="note">No buckets in this account.</div>';
+    return;
+  }
+
+  $('#s3Body').innerHTML = `<div class="table-scroll"><table>
+    <thead><tr>
+      <th>Name</th><th>Region</th><th>Size</th><th>Objects</th>
+      <th>Public access</th><th>Encryption</th><th>Versioning</th>
+    </tr></thead>
+    <tbody>${buckets.map(b => `
+      <tr>
+        <td class="cell-name">${escapeHtml(b.name)}${b.issues.length
+          ? `<div class="cell-sub">${b.issues.map(escapeHtml).join(' \u00b7 ')}</div>` : ''}</td>
+        <td class="cell-sub mono">${escapeHtml(b.region)}</td>
+        <td class="mono">${formatBytes(b.size_bytes)}</td>
+        <td class="mono">${b.object_count == null ? '\u2014' : b.object_count.toLocaleString()}</td>
+        <td>${accessPill(b)}</td>
+        <td>${encryptionPill(b)}</td>
+        <td>${versioningPill(b)}</td>
+      </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+$('#s3AccountSelect').addEventListener('change', e => {
+  s3SelectedAccount = e.target.value;
+  loadS3();
+});
+$('#s3RefreshBtn').addEventListener('click', () => loadS3(true));
 
 /* ---------- AWS logs ----------
    Fargate tasks have no host to put an agent on, so these come from

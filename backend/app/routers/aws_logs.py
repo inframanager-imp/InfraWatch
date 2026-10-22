@@ -10,6 +10,7 @@ from ..cloudwatch import (
     CloudWatchError, check_connection, discover_ecs_services, fetch_backlog, forget,
     list_log_groups, tail,
 )
+from ..s3 import forget as forget_s3
 from ..database import SessionLocal, get_db
 from ..models import AwsLogAccount, AwsLogLabel, User
 from ..security import get_current_user, get_user_from_token, require_admin
@@ -99,6 +100,7 @@ def update_account(account_id: str, payload: schemas.AwsLogAccountIn,
     db.refresh(account)
     # Role or region may have changed, so any cached credentials are now wrong.
     forget(account.id)
+    forget_s3(account.id)
     log_action(db, admin.email, "aws_log_account.update", target=account.name, detail=account.role_arn)
     return account
 
@@ -110,6 +112,7 @@ def delete_account(account_id: str, db: Session = Depends(get_db), admin: User =
     db.delete(account)
     db.commit()
     forget(account_id)
+    forget_s3(account_id)
     log_action(db, admin.email, "aws_log_account.delete", target=name)
 
 
@@ -119,6 +122,7 @@ async def check_account(account_id: str, db: Session = Depends(get_db), admin: U
     setup fail differently, and the message says which."""
     account = _get_account(db, account_id)
     forget(account.id)
+    forget_s3(account.id)
     result = await asyncio.to_thread(check_connection, account)
     from datetime import datetime
     account.last_checked_at = datetime.utcnow()

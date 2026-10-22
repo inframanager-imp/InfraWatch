@@ -3064,8 +3064,15 @@ function compareValues(a, b) {
 function sortList(list, sortState, accessors) {
   if (!sortState.key) return list;
   const get = accessors[sortState.key];
-  const sorted = [...list].sort((a, b) => compareValues(get(a), get(b)));
-  return sortState.dir === 'desc' ? sorted.reverse() : sorted;
+  const flip = sortState.dir === 'desc' ? -1 : 1;
+  // Flip the comparison rather than reversing the result: reversing drags
+  // the empties to the top, which is the one thing compareValues is there
+  // to prevent. A row with no value is not the largest value.
+  return [...list].sort((a, b) => {
+    const av = get(a), bv = get(b);
+    const empty = v => v === null || v === undefined || v === '';
+    return (empty(av) || empty(bv)) ? compareValues(av, bv) : flip * compareValues(av, bv);
+  });
 }
 
 function updateSortIndicators(tableSelector, sortState) {
@@ -3719,14 +3726,52 @@ $('#navUrls').addEventListener('click', () => showView('urls'));
 let s3Accounts = [];
 let s3SelectedAccount = null;
 let s3Loading = false;
+/* Posture columns sort worst-first on the first click. Sorting by
+   "Public access" is a question about risk, not about the alphabet, so the
+   ranks below put what needs attention at the top where it was asked for. */
+let s3Sort = { key: null, dir: 'asc' };
+let s3Data = { buckets: [], total_bytes: 0, total_objects: 0, flagged: 0 };
+
+const ACCESS_RANK = b => b.policy_public ? 0
+  : b.block_public_access === false ? 1
+  : b.block_public_access == null ? 2 : 3;
+const ENCRYPTION_RANK = b => b.encryption === 'none' ? 0 : b.encryption == null ? 1 : 2;
+const VERSIONING_RANK = b => b.versioning === 'Disabled' ? 0
+  : b.versioning === 'Suspended' ? 1
+  : b.versioning == null ? 2 : 3;
+
+const s3Accessors = {
+  name: b => b.name,
+  region: b => b.region,
+  size_bytes: b => b.size_bytes,
+  object_count: b => b.object_count,
+  access: ACCESS_RANK,
+  encryption: ENCRYPTION_RANK,
+  versioning: VERSIONING_RANK,
+};
+
+// Delegated, because the table is rebuilt on every render -- binding to the
+// headers themselves would stack a fresh listener on each one each time.
+$('#s3Body').addEventListener('click', e => {
+  const th = e.target.closest('[data-sort-key]');
+  if (!th) return;
+  if (s3Sort.key === th.dataset.sortKey) {
+    s3Sort.dir = s3Sort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    s3Sort.key = th.dataset.sortKey;
+    s3Sort.dir = 'asc';
+  }
+  renderS3(s3Data);
+});
+
 
 function formatBytes(n) {
   if (n == null) return '\u2014';
-  if (n === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  const v = n / Math.pow(1024, i);
-  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+  if (n < 1024) return n + ' B';
+  const units = ['KB', 'MB', 'GB', 'TB', 'PB'];
+  let v = n / 1024, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
 }
 
 /* Unknown must not look like clean. A role without permission to read a
@@ -3806,7 +3851,10 @@ function s3Fail(message) {
 }
 
 function renderS3(data) {
-  const buckets = data.buckets || [];
+  s3Data = data;
+  // Unsorted, the server's order already puts findings first; a chosen sort
+  // replaces that rather than fighting it.
+  const buckets = sortList(data.buckets || [], s3Sort, s3Accessors);
   const count = $('#navS3Count');
   count.textContent = data.flagged ? String(data.flagged) : '';
   count.style.display = data.flagged ? '' : 'none';
@@ -3830,8 +3878,13 @@ function renderS3(data) {
 
   $('#s3Body').innerHTML = `<div class="table-scroll"><table>
     <thead><tr>
-      <th>Name</th><th>Region</th><th>Size</th><th>Objects</th>
-      <th>Public access</th><th>Encryption</th><th>Versioning</th>
+      <th class="sortable-th" data-sort-key="name">Name<span class="sort-arrow">&#8645;</span></th>
+      <th class="sortable-th" data-sort-key="region">Region<span class="sort-arrow">&#8645;</span></th>
+      <th class="sortable-th" data-sort-key="size_bytes">Size<span class="sort-arrow">&#8645;</span></th>
+      <th class="sortable-th" data-sort-key="object_count">Objects<span class="sort-arrow">&#8645;</span></th>
+      <th class="sortable-th" data-sort-key="access">Public access<span class="sort-arrow">&#8645;</span></th>
+      <th class="sortable-th" data-sort-key="encryption">Encryption<span class="sort-arrow">&#8645;</span></th>
+      <th class="sortable-th" data-sort-key="versioning">Versioning<span class="sort-arrow">&#8645;</span></th>
     </tr></thead>
     <tbody>${buckets.map(b => `
       <tr>
@@ -3845,6 +3898,7 @@ function renderS3(data) {
         <td>${versioningPill(b)}</td>
       </tr>`).join('')}</tbody>
   </table></div>`;
+  updateSortIndicators('#s3Body table', s3Sort);
 }
 
 $('#s3AccountSelect').addEventListener('change', e => {
@@ -4039,14 +4093,6 @@ Leave blank to use the ECS service name, or the log group itself.`,
       } catch (err) { awsNote('err', err.message); }
     });
   });
-}
-
-function formatBytes(n) {
-  if (n < 1024) return n + ' B';
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let v = n / 1024, i = 0;
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-  return v.toFixed(v < 10 ? 1 : 0) + ' ' + units[i];
 }
 
 $('#awsGroupFilter').addEventListener('input', renderAwsGroups);

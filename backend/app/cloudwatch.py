@@ -8,6 +8,7 @@ credentials it gets back expire within the hour.
 Fargate tasks have no host to put an agent on, which is why these logs are
 pulled by the server rather than pushed by an agent like every other source.
 """
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -35,6 +36,12 @@ def _friendly(e: Exception) -> str:
         code = e.response.get("Error", {}).get("Code", "")
         message = e.response.get("Error", {}).get("Message", str(e))
         if code == "AccessDenied":
+            # Only a permissions refusal names the action it wanted; a
+            # refused assume-role does not. That is the tell.
+            action = re.search(r"not authorized to perform:?\s*([\w-]+:[\w*]+)", message)
+            if action:
+                return (f"The role is missing {action.group(1)} — add it to the role's "
+                        f"permissions policy in that AWS account.")
             return f"Access denied — check the role's trust policy and external ID. ({message})"
         if code in ("ResourceNotFoundException",):
             return f"Not found — the log group may have been deleted. ({message})"

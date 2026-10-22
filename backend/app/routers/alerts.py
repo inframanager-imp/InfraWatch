@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from .. import schemas
@@ -28,8 +28,19 @@ def _alert_target(alert: Alert) -> str:
 
 
 @router.get("/alerts", response_model=list[schemas.AlertOut])
-def list_all_alerts(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    query = db.query(Alert).filter(Alert.status == "active")
+def list_all_alerts(
+    status: str = Query("active"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Every alert in one request, rather than one request per VM.
+
+    "pending" is deliberately unreachable here: an outage still inside its
+    grace period is real enough to track but not yet something to show.
+    """
+    if status not in ("active", "resolved"):
+        raise HTTPException(status_code=400, detail="status must be active or resolved")
+    query = db.query(Alert).filter(Alert.status == status)
     if user.role != "admin":
         allowed_ids = {a.vm_id for a in user.vm_access}
         query = query.filter(Alert.vm_id.in_(allowed_ids))

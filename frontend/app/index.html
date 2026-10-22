@@ -1947,9 +1947,14 @@ const ICONS = {
    "Degraded" is not a backend status -- it is online while carrying at least
    one unsnoozed active alert. Derived in one place so the overview tiles, the
    list chips, the row dots and the detail pill can never disagree. */
+/* Every VM's active alerts arrive in one request at sign-in, because the
+   list cannot colour a row without them. Containers and units do not: those
+   are only read once a VM is opened. */
+let alertsByVm = {};
+let resolvedAlerts = null;   // history, fetched the first time it is asked for
+
 function activeAlerts(vmId) {
-  const d = vmDetails[vmId];
-  return (d && d.alerts || []).filter(a => a.status === 'active' && !isSnoozed(a));
+  return (alertsByVm[vmId] || []).filter(a => a.status === 'active' && !isSnoozed(a));
 }
 function vmHealth(vm) {
   if (vm.status === 'offline') return 'offline';
@@ -2143,30 +2148,32 @@ function activateTab(name) {
   onTabOpened(name);
 }
 
-function globalSearch(query) {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  const hits = [];
-  const match = s => s && String(s).toLowerCase().includes(q);
-  vms.forEach(vm => {
-    if (match(vm.name) || match(vm.ip_address) || match(vm.hostname) || match(vm.environment.name)) {
-      hits.push({ kind: 'VM', label: vm.name, sub: `${vm.ip_address || vm.hostname || '—'} · ${vm.environment.name}`, vmId: vm.id, tab: 'overview' });
-    }
-    const d = vmDetails[vm.id];
-    if (!d) return;
-    (d.containers || []).forEach(c => { if (match(c.name)) hits.push({ kind: 'Container', label: c.name, sub: vm.name, vmId: vm.id, tab: 'docker' }); });
-    (d.services || []).forEach(s => { if (match(s.name)) hits.push({ kind: 'Unit', label: s.name, sub: vm.name, vmId: vm.id, tab: 'systemd' }); });
-    (d.logSources || []).forEach(s => { if (match(s.name) || match(s.path)) hits.push({ kind: 'Log', label: s.name, sub: `${vm.name} · ${s.path}`, vmId: vm.id, tab: 'logs' }); });
-  });
-  return hits.slice(0, 20);
-}
-
 function closeSearch() { $('#searchResults').classList.remove('show'); }
 
+/* Search is answered by the database. Doing it in the browser meant holding
+   a copy of every container and unit on every VM, which meant downloading
+   all of it before the app could open. */
+let searchTimer = null;
+let searchSeq = 0;
+
 function renderSearch(query) {
+  const text = query.trim();
+  if (text.length < 2) { closeSearch(); return; }
+  clearTimeout(searchTimer);
+  // One request per pause in typing rather than one per keystroke.
+  searchTimer = setTimeout(() => runSearch(text), 180);
+}
+
+async function runSearch(text) {
+  const seq = ++searchSeq;
+  let hits = [];
+  try { hits = await api('/search?q=' + encodeURIComponent(text)); } catch (e) { hits = []; }
+  // A slow earlier request must not overwrite a newer one's results.
+  if (seq === searchSeq) showSearchHits(hits);
+}
+
+function showSearchHits(hits) {
   const box = $('#searchResults');
-  if (!query.trim()) { closeSearch(); return; }
-  const hits = globalSearch(query);
   box.innerHTML = hits.length === 0
     ? '<div class="search-empty">Nothing matches that.</div>'
     : hits.map((h, i) => `<button type="button" class="search-hit" data-hit="${i}">
@@ -2307,18 +2314,14 @@ async function bootApp() {
 
 async function loadVms() {
   bootStatus('Loading fleet\u2026');
-  vms = await api('/vms');
-  bootStatus(`Loading ${vms.length} VM${vms.length === 1 ? '' : 's'}\u2026`);
-  const pairs = await Promise.all(vms.map(async vm => {
-    const [containers, services, logSources, alerts] = await Promise.all([
-      api('/vms/' + vm.id + '/containers').catch(() => []),
-      api('/vms/' + vm.id + '/services').catch(() => []),
-      api('/vms/' + vm.id + '/log-sources').catch(() => []),
-      api('/vms/' + vm.id + '/alerts').catch(() => []),
-    ]);
-    return [vm.id, { containers, services, logSources, alerts }];
-  }));
-  vmDetails = Object.fromEntries(pairs);
+  // Two requests. This used to be one per VM plus four more each -- 145 of
+  // them at 36 VMs, every one of which had to finish before anything was
+  // drawn, and all of it repeated on every alert acknowledgement.
+  const [fleet, alerts] = await Promise.all([api('/vms'), api('/alerts')]);
+  vms = fleet;
+  alertsByVm = {};
+  alerts.forEach(a => { (alertsByVm[a.vm_id] = alertsByVm[a.vm_id] || []).push(a); });
+  resolvedAlerts = null;
 
   // Never leave the detail pane empty: honour a deep link if it still
   // resolves, otherwise open whatever most needs looking at.
@@ -2334,7 +2337,26 @@ async function loadVms() {
 
   $('#detailEmpty').style.display = selectedVmId ? 'none' : 'block';
   $('#detailContent').style.display = selectedVmId ? 'block' : 'none';
-  if (selectedVmId) renderDetail(selectedVmId);
+  if (selectedVmId) await openVmDetail(selectedVmId);
+}
+
+/* What one VM is running, fetched when that VM is opened. The per-VM alert
+   call stays because the detail tab shows resolved ones too, which the
+   fleet-wide call deliberately leaves out. */
+async function openVmDetail(id) {
+  if (!vmDetails[id]) {
+    vmDetails[id] = { containers: [], services: [], logSources: [], alerts: [], loading: true };
+    if (selectedVmId === id) renderDetail(id);
+  }
+  const [containers, services, logSources, alerts] = await Promise.all([
+    api('/vms/' + id + '/containers').catch(() => []),
+    api('/vms/' + id + '/services').catch(() => []),
+    api('/vms/' + id + '/log-sources').catch(() => []),
+    api('/vms/' + id + '/alerts').catch(() => []),
+  ]);
+  vmDetails[id] = { containers, services, logSources, alerts };
+  // Guard against a slow fetch landing after the operator moved on.
+  if (selectedVmId === id) renderDetail(id);
 }
 
 function leastHealthyVmId() {
@@ -2469,7 +2491,10 @@ function selectVm(id) {
   // Selection is deep-linkable: reload or share the URL and the same VM opens.
   history.replaceState(null, '', '#vm=' + encodeURIComponent(id));
   renderVmList();
+  // Draw from cache at once, then refresh behind it, so switching VMs never
+  // leaves the pane blank waiting on the network.
   renderDetail(id);
+  openVmDetail(id);
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelector('.tab[data-tab="overview"]').classList.add('active');
@@ -2770,7 +2795,7 @@ function renderDetail(id) {
     });
   }
 
-  const data = vmDetails[id] || { containers: [], services: [], logSources: [] };
+  const data = vmDetails[id] || { containers: [], services: [], logSources: [], loading: true };
 
   // One list for both kinds of unit -- what an operator cares about is "what
   // is this box running", not which subsystem happens to supervise it.
@@ -2808,6 +2833,7 @@ function renderDetail(id) {
     ${units.length === 0
       ? `<div class="note">${(data.containers.length || data.services.length)
           ? 'Nothing on this VM is being monitored yet — switch Monitor on for a container or unit.'
+          : data.loading ? 'Loading…'
           : 'No agent connected yet — run the install command on this VM (see “+ Add VM”) to start seeing Docker and systemd data here.'}</div>`
       : `<div class="table-scroll"><table>
           <thead><tr><th><span class="visually-hidden">Kind</span></th><th>Name</th><th>Status</th><th>CPU</th><th>Up since</th><th><span class="visually-hidden">Logs</span></th></tr></thead>
@@ -4790,13 +4816,19 @@ document.querySelectorAll('#alertScopeFilter [data-alert-scope]').forEach(btn =>
   });
 });
 
-function renderFleetAlerts() {
-  const rows = [];
-  vms.forEach(vm => {
-    const d = vmDetails[vm.id];
-    if (!d) return;
-    (d.alerts || []).filter(a => a.status === alertScope).forEach(a => rows.push({ ...a, vmName: vm.name }));
-  });
+async function renderFleetAlerts() {
+  // Resolved alerts are history. They are fetched the first time someone
+  // asks for them rather than carried through every sign-in.
+  if (alertScope === 'resolved' && resolvedAlerts === null) {
+    try { resolvedAlerts = await api('/alerts?status=resolved'); } catch (e) { resolvedAlerts = []; }
+  }
+  const names = Object.fromEntries(vms.map(v => [v.id, v.name]));
+  const source = alertScope === 'active'
+    ? Object.values(alertsByVm).flat()
+    : (resolvedAlerts || []);
+  const rows = source
+    .filter(a => names[a.vm_id])
+    .map(a => ({ ...a, vmName: names[a.vm_id] }));
   rows.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1));
   $('#fleetAlertsEmpty').textContent = alertScope === 'active'
     ? 'No active alerts across your fleet.' : 'No resolved alerts yet.';

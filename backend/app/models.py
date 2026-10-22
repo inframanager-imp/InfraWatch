@@ -70,7 +70,7 @@ class Container(Base):
     __tablename__ = "containers"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False)
+    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     image = Column(String, nullable=True)
     status = Column(String, nullable=False)  # docker's own status text, e.g. "Up 2 hours"
@@ -91,7 +91,7 @@ class Service(Base):
     __tablename__ = "services"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False)
+    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     status = Column(String, nullable=False)  # systemd "active" column: active | inactive | failed
     sub_state = Column(String, nullable=True)  # systemd "sub" column: running | dead | exited ...
@@ -112,7 +112,7 @@ class LogSource(Base):
     __tablename__ = "log_sources"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False)
+    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     path = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

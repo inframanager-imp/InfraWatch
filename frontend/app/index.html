@@ -1017,6 +1017,15 @@
   .time-pair{ display:flex; align-items:center; gap:5px; }
   .time-pair select{ flex:1; min-width:0; text-align:center; font-family:var(--mono); }
   .time-pair > span{ color:var(--muted); font-weight:600; }
+  .crumbs{ display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:14px; font-size:12.5px; }
+  .crumbs button{
+    border:0; background:none; padding:0; font:inherit; color:var(--accent-ink);
+    cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+  }
+  .crumbs button:hover{ filter:brightness(1.15); }
+  .crumbs .sep{ color:var(--muted); }
+  .crumbs .here{ color:var(--text); font-weight:600; font-family:var(--mono); }
+  .obj-icon{ width:22px; color:var(--muted); text-align:center; }
   .code-block{
     position:relative; margin:0; background:var(--term-bg); border:1px solid var(--term-edge);
     border-radius:var(--r-md); padding:13px 14px; font-family:var(--mono); font-size:11px;
@@ -3852,6 +3861,7 @@ function s3Fail(message) {
 
 function renderS3(data) {
   s3Data = data;
+  s3Browse = null;
   // Unsorted, the server's order already puts findings first; a chosen sort
   // replaces that rather than fighting it.
   const buckets = sortList(data.buckets || [], s3Sort, s3Accessors);
@@ -3888,7 +3898,7 @@ function renderS3(data) {
     </tr></thead>
     <tbody>${buckets.map(b => `
       <tr>
-        <td class="cell-name">${escapeHtml(b.name)}${b.issues.length
+        <td class="cell-name"><button class="link" data-s3-prefix="" data-s3-bucket="${escapeHtml(b.name)}">${escapeHtml(b.name)}</button>${b.issues.length
           ? `<div class="cell-sub">${b.issues.map(escapeHtml).join(' \u00b7 ')}</div>` : ''}</td>
         <td class="cell-sub mono">${escapeHtml(b.region)}</td>
         <td class="mono">${formatBytes(b.size_bytes)}</td>
@@ -3905,7 +3915,108 @@ $('#s3AccountSelect').addEventListener('change', e => {
   s3SelectedAccount = e.target.value;
   loadS3();
 });
-$('#s3RefreshBtn').addEventListener('click', () => loadS3(true));
+// Refresh re-reads whatever is on screen: the folder when browsing, the
+// bucket list otherwise.
+$('#s3RefreshBtn').addEventListener('click', () => {
+  if (s3Browse) return openS3Prefix(s3Browse.bucket, s3Browse.prefix);
+  loadS3(true);
+});
+/* ---------- S3 prefix browser ----------
+   One level at a time, with a delimiter, so the cost of a page does not
+   depend on how big the bucket is. There is deliberately no "list
+   everything": the largest bucket here holds well over a hundred million
+   objects, pagination through it is strictly sequential, and the result
+   would be an hour of API calls producing more rows than a browser can
+   hold. S3 Inventory is the answer to that question, not this page. */
+let s3Browse = null;
+
+function s3BrowseCrumbs() {
+  const parts = s3Browse.prefix ? s3Browse.prefix.replace(/\/$/, '').split('/') : [];
+  const crumbs = [`<button data-s3-home>All buckets</button>`,
+                  '<span class="sep">/</span>',
+                  `<button data-s3-prefix="">${escapeHtml(s3Browse.bucket)}</button>`];
+  let walked = '';
+  parts.forEach((part, i) => {
+    walked += part + '/';
+    crumbs.push('<span class="sep">/</span>');
+    crumbs.push(i === parts.length - 1
+      ? `<span class="here">${escapeHtml(part)}</span>`
+      : `<button data-s3-prefix="${escapeHtml(walked)}">${escapeHtml(part)}</button>`);
+  });
+  return `<div class="crumbs">${crumbs.join('')}</div>`;
+}
+
+function renderS3Browse() {
+  const b = s3Browse;
+  const rows = [
+    ...b.folders.map(f => `
+      <tr>
+        <td class="obj-icon">\u25B8</td>
+        <td class="cell-name"><button class="link" data-s3-prefix="${escapeHtml(f.prefix)}">${escapeHtml(f.name)}/</button></td>
+        <td class="cell-sub">&mdash;</td><td class="cell-sub">&mdash;</td><td class="cell-sub">&mdash;</td>
+      </tr>`),
+    ...b.objects.map(o => `
+      <tr>
+        <td class="obj-icon">\u25AB</td>
+        <td class="cell-name mono">${escapeHtml(o.name)}</td>
+        <td class="mono">${formatBytes(o.size)}</td>
+        <td class="cell-sub">${o.modified ? shortAgo(o.modified) + ' ago' : '\u2014'}</td>
+        <td class="cell-sub">${escapeHtml(o.storage_class || '\u2014')}</td>
+      </tr>`),
+  ];
+
+  const counts = [];
+  if (b.folders.length) counts.push(`${b.folders.length} folder${b.folders.length === 1 ? '' : 's'}`);
+  counts.push(`${b.objects.length} object${b.objects.length === 1 ? '' : 's'}`);
+  if (b.truncated) counts.push('more to load');
+  $('#s3Sub').textContent = `${b.bucket} \u00b7 ${b.region} \u00b7 ${counts.join(' \u00b7 ')}`;
+
+  $('#s3Body').innerHTML = s3BrowseCrumbs() + (rows.length === 0
+    ? '<div class="note">Nothing here.</div>'
+    : `<div class="table-scroll"><table>
+        <thead><tr>
+          <th><span class="visually-hidden">Kind</span></th><th>Name</th>
+          <th>Size</th><th>Modified</th><th>Storage class</th>
+        </tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table></div>`)
+    + (b.truncated
+        ? `<div style="margin-top:12px"><button class="btn small" id="s3MoreBtn">Load the next 1,000</button></div>`
+        : '');
+
+  const more = $('#s3MoreBtn');
+  if (more) more.addEventListener('click', () => openS3Prefix(b.bucket, b.prefix, b.next_token));
+}
+
+async function openS3Prefix(bucket, prefix = '', token = null) {
+  $('#s3Error').classList.remove('show');
+  if (!token) {
+    $('#s3Sub').textContent = 'Loading\u2026';
+    $('#s3Body').innerHTML = '<div class="note">Reading\u2026</div>';
+  }
+  const params = new URLSearchParams({ prefix });
+  if (token) params.set('token', token);
+  try {
+    const page = await api(`/s3/accounts/${s3SelectedAccount}/buckets/${encodeURIComponent(bucket)}/objects?${params}`);
+    // "Load more" continues the same folder, so the new page is appended
+    // rather than replacing what the operator is already looking at.
+    s3Browse = token
+      ? { ...page, folders: s3Browse.folders.concat(page.folders), objects: s3Browse.objects.concat(page.objects) }
+      : page;
+    renderS3Browse();
+  } catch (e) {
+    s3Fail(e.message);
+    if (!token) { $('#s3Sub').textContent = '\u2014'; $('#s3Body').innerHTML = ''; }
+  }
+}
+
+$('#s3Body').addEventListener('click', e => {
+  if (e.target.closest('[data-s3-home]')) { s3Browse = null; return renderS3(s3Data); }
+  const open = e.target.closest('[data-s3-prefix]');
+  if (!open) return;
+  openS3Prefix(s3Browse ? s3Browse.bucket : open.dataset.s3Bucket, open.dataset.s3Prefix);
+});
+
 
 /* ---------- AWS logs ----------
    Fargate tasks have no host to put an agent on, so these come from

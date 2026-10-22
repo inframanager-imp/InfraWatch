@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import User
-from ..s3 import S3Error, list_buckets
+from ..s3 import S3Error, list_buckets, list_objects
 from ..security import get_current_user
 # Imported rather than re-implemented: one definition of who may see an
 # account, so a change to the grant rules cannot miss this page.
@@ -48,3 +48,20 @@ async def s3_buckets(
         "total_objects": sum(b["object_count"] or 0 for b in buckets),
         "flagged": sum(1 for b in buckets if b["issues"]),
     }
+
+
+@router.get("/s3/accounts/{account_id}/buckets/{bucket}/objects")
+async def s3_objects(
+    account_id: str,
+    bucket: str,
+    prefix: str = Query(""),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """One level of the bucket, for the prefix browser."""
+    account = _readable_account_or_403(db, user, account_id)
+    try:
+        return await asyncio.to_thread(list_objects, account, bucket, prefix, token)
+    except S3Error as e:
+        raise HTTPException(status_code=502, detail=str(e))

@@ -272,3 +272,72 @@ def _issues(bucket: dict) -> list[str]:
     if bucket.get("versioning") == "Disabled":
         found.append("Versioning off — an overwrite or delete cannot be undone")
     return found
+
+
+def _bucket_region(connection, bucket: str) -> str:
+    """Prefer the region already learned by the listing over asking again."""
+    with _lock:
+        cached = _cache.get(str(connection.id))
+    if cached:
+        for entry in cached[1]:
+            if entry["name"] == bucket:
+                return entry["region"]
+    return _region(_client(connection, "s3"), bucket)
+
+
+def list_objects(connection, bucket: str, prefix: str = "",
+                 token: str | None = None, limit: int = 1000) -> dict:
+    """The folders and objects directly under one prefix.
+
+    The delimiter is what makes this affordable: S3 collapses everything
+    below the current level into a prefix entry, so a page of a bucket
+    holding a hundred million objects costs exactly what a page of a bucket
+    holding ten does. Walking the whole tree would not, which is why there
+    is no call here that does.
+
+    Deliberately uncached. Objects change under you, and a listing is cheap
+    enough that serving a stale one would be the worse trade.
+    """
+    region = _bucket_region(connection, bucket)
+    s3 = _client(connection, "s3", region)
+    kwargs = {"Bucket": bucket, "Delimiter": "/", "MaxKeys": max(1, min(limit, 1000))}
+    if prefix:
+        kwargs["Prefix"] = prefix
+    if token:
+        kwargs["ContinuationToken"] = token
+
+    try:
+        page = s3.list_objects_v2(**kwargs)
+    except (ClientError, BotoCoreError) as e:
+        raise S3Error(_friendly(e)) from e
+
+    objects = []
+    for item in page.get("Contents", []):
+        key = item["Key"]
+        # A zero-byte key ending in "/" is how the console represents a
+        # folder. It already appears as a prefix, so listing it again as a
+        # file would show the same folder twice.
+        if key == prefix or (key.endswith("/") and item.get("Size") == 0):
+            continue
+        objects.append({
+            "key": key,
+            "name": key[len(prefix):],
+            "size": item.get("Size"),
+            "modified": _iso(item.get("LastModified")),
+            "storage_class": item.get("StorageClass") or "STANDARD",
+        })
+
+    folders = []
+    for entry in page.get("CommonPrefixes", []):
+        full = entry["Prefix"]
+        folders.append({"prefix": full, "name": full[len(prefix):].rstrip("/")})
+
+    return {
+        "bucket": bucket,
+        "prefix": prefix,
+        "region": region,
+        "folders": folders,
+        "objects": objects,
+        "next_token": page.get("NextContinuationToken"),
+        "truncated": bool(page.get("IsTruncated")),
+    }

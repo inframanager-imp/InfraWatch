@@ -465,6 +465,17 @@
   .login-assure{ display:flex; align-items:center; justify-content:center; gap:8px; font-size:11.5px; color:var(--muted); margin-bottom:7px; }
   .login-assure svg{ width:14px; height:14px; color:var(--accent); }
   .login-copyright{ font-size:11.5px; color:var(--muted); text-align:center; }
+  .spinner{
+    width:16px; height:16px; flex:none; border-radius:50%;
+    border:2px solid color-mix(in oklab, currentColor 30%, transparent);
+    border-top-color:currentColor; animation:spin .6s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  /* A spinner that cannot spin should still read as busy, so it holds the
+     partial ring rather than becoming a plain circle. */
+  @media (prefers-reduced-motion:reduce){ .spinner{ animation:none; } }
+  .btn:disabled{ opacity:.72; cursor:default; }
+  .btn:disabled:hover{ filter:none; }
 
   /* ============================================================ SHELL */
   #appShell,#loginScreen{ display:none; }
@@ -1233,9 +1244,10 @@
         <div class="remember-row">
           <label for="rememberMe"><input type="checkbox" id="rememberMe" /> Remember me</label>
         </div>
-        <button type="submit" class="btn primary block login-submit">
-          Sign in
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        <button type="submit" class="btn primary block login-submit" id="loginSubmit">
+          <span id="loginSubmitLabel">Sign in</span>
+          <svg id="loginSubmitArrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+          <span class="spinner" id="loginSpinner" style="display:none"></span>
         </button>
       </form>
     </div>
@@ -2241,10 +2253,26 @@ function logout() {
   startDashSim();
 }
 
+/* Checking a password is deliberately slow -- that is what makes it hard to
+   brute-force -- and loading the fleet follows it. Without something moving,
+   the button reads as though the click never landed, and people click it
+   again. */
+let loggingIn = false;
+
+function setLoginBusy(busy) {
+  loggingIn = busy;
+  $('#loginSubmit').disabled = busy;
+  $('#loginSubmitLabel').textContent = busy ? 'Signing in\u2026' : 'Sign in';
+  $('#loginSubmitArrow').style.display = busy ? 'none' : '';
+  $('#loginSpinner').style.display = busy ? '' : 'none';
+}
+
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault();
+  if (loggingIn) return;   // a second press must not start a second sign-in
   const errBox = $('#loginError');
   errBox.classList.remove('show');
+  setLoginBusy(true);
   try {
     const form = new URLSearchParams();
     form.set('username', $('#loginEmail').value.trim());
@@ -2258,10 +2286,20 @@ $('#loginForm').addEventListener('submit', async e => {
     if (!res.ok) throw new Error(body.detail || 'Login failed');
     token = body.access_token;
     storeToken(token, $('#rememberMe').checked);
+    // Hand over to the boot screen now rather than when bootApp finishes:
+    // it names the stage it is on, which the login card cannot.
+    $('#loginScreen').style.display = 'none';
+    $('#bootLoading').style.display = 'flex';
+    bootStatus('Signed in\u2026');
     await bootApp();
   } catch (err) {
+    // Back to the card so the message is next to the fields it concerns.
+    $('#bootLoading').style.display = 'none';
+    $('#loginScreen').style.display = 'grid';
     errBox.textContent = err.message;
     errBox.classList.add('show');
+  } finally {
+    setLoginBusy(false);
   }
 });
 

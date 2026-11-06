@@ -163,6 +163,49 @@ def fetch_backlog(connection, log_group: str, limit: int = 3000, minutes: int = 
         raise CloudWatchError(_friendly(e)) from e
 
 
+
+EXPORT_MAX_LINES = 200_000
+
+
+def export_range(connection, log_group: str, start_ms: int, end_ms: int,
+                 max_lines: int = EXPORT_MAX_LINES):
+    """Yield formatted lines for a time range, for a file download.
+
+    A generator rather than a list: a week of a busy group is far more than
+    belongs in memory, and the response streams straight to disk anyway.
+
+    Ordering is per page. FilterLogEvents interleaves streams, so a global
+    sort would mean buffering the whole range to order it -- which is the one
+    thing this is written to avoid. Every line carries its own timestamp, so
+    the handful that arrive out of order are still sortable afterwards.
+    """
+    try:
+        client = session_for(connection).client("logs", config=_CLIENT_CONFIG)
+        sent, token = 0, None
+        while sent < max_lines:
+            kwargs = {
+                "logGroupName": log_group,
+                "startTime": start_ms,
+                "endTime": end_ms,
+                "limit": min(10000, max_lines - sent),
+            }
+            if token:
+                kwargs["nextToken"] = token
+            page = client.filter_log_events(**kwargs)
+            events = page.get("events", [])
+            events.sort(key=lambda e: e["timestamp"])
+            for event in events:
+                yield _format(event)
+                sent += 1
+            token = page.get("nextToken")
+            # No token means the range is exhausted. An empty page with a
+            # token does not: CloudWatch returns those while it searches
+            # streams that hold nothing in this window.
+            if not token:
+                return
+    except (ClientError, BotoCoreError) as e:
+        raise CloudWatchError(_friendly(e)) from e
+
 def tail(connection, log_group: str, stop: threading.Event, on_line, poll_seconds: int = 3) -> None:
     """Follow a log group until `stop` is set, calling on_line for each line.
 

@@ -1,14 +1,16 @@
 import asyncio
 import threading
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from .. import schemas
 from ..audit import log_action
 from ..cloudwatch import (
-    CloudWatchError, check_connection, discover_ecs_services, fetch_backlog, forget,
-    list_log_groups, tail,
+    EXPORT_MAX_LINES, CloudWatchError, check_connection, discover_ecs_services,
+    export_range, fetch_backlog, forget, list_log_groups, tail,
 )
 from ..s3 import forget as forget_s3
 from ..database import SessionLocal, get_db
@@ -18,6 +20,12 @@ from ..security import get_current_user, get_user_from_token, require_admin
 router = APIRouter(tags=["aws-logs"])
 
 BACKLOG_LINES = 3000
+
+
+def _epoch_ms(value: str) -> int:
+    """ISO with a trailing Z into the epoch milliseconds CloudWatch wants."""
+    return int(datetime.strptime(value.strip().replace("Z", ""), "%Y-%m-%dT%H:%M:%S")
+               .replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
 def _get_account(db: Session, account_id: str) -> AwsLogAccount:
@@ -131,6 +139,54 @@ async def check_account(account_id: str, db: Session = Depends(get_db), admin: U
     db.commit()
     db.refresh(account)
     return account
+
+
+@router.get("/aws-log-accounts/{account_id}/logs/export")
+def export_account_logs(
+    account_id: str,
+    group: str = Query(...),
+    since: str = Query(...),
+    until: str = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Download a date range of one log group as a file.
+
+    Not rendered, for the same reason the VM-side export is not: a week of a
+    busy service is millions of lines and no browser will draw them.
+    """
+    account = _readable_account_or_403(db, user, account_id)
+    try:
+        start = _epoch_ms(since)
+        end = _epoch_ms(until)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="since and until must be ISO timestamps")
+    if start >= end:
+        raise HTTPException(status_code=400, detail="The start has to come before the end")
+
+    def body():
+        yield f"# InfraWatch export \u2014 {account.name} \u2014 {group}\n"
+        yield f"# range: {since} to {until}\n"
+        # Said up front because the reader will notice and wonder.
+        yield "# lines are ordered within each page; CloudWatch interleaves streams\n#\n"
+        sent = 0
+        try:
+            for line in export_range(account, group, start, end):
+                sent += 1
+                yield line + "\n"
+        except CloudWatchError as e:
+            yield f"\n# export stopped: {e}\n"
+            return
+        if sent >= EXPORT_MAX_LINES:
+            yield f"\n# truncated at {EXPORT_MAX_LINES} lines \u2014 narrow the range for the rest\n"
+
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M")
+    safe = "".join(c if c.isalnum() or c in "-._" else "_" for c in group.strip("/"))[:60]
+    return StreamingResponse(
+        body(),
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="{safe}-{stamp}.log"'},
+    )
 
 
 @router.get("/aws-log-accounts/{account_id}/log-groups", response_model=list[schemas.LogGroupOut])

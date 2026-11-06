@@ -1611,7 +1611,7 @@
                 <label class="autoscroll-label"><input type="checkbox" id="awsAutoscroll" checked /> Auto-scroll</label>
                 <button class="btn small" id="awsReloadBtn">&#8635; Reload</button>
                 <button class="btn small" id="awsClearBtn">Clear</button>
-                <button class="btn small" id="awsExportBtn">Export logs</button>
+                <button class="btn small" id="awsExportBtn" title="Download a date range from CloudWatch">&#8681; Export</button>
                 <button class="btn small" id="awsExpandBtn" aria-pressed="false">&#9713; Full screen</button>
               </div>
               <div class="terminal" id="awsLogContent"></div>
@@ -3522,13 +3522,44 @@ function markLogExportPreset(days) {
   }
 }
 
-function openLogExport() {
+/* The dialog is the same for both sources -- calendar, presets, clocks and
+   validation do not care where the lines come from -- so the caller supplies
+   only what differs: the label, the warning, the URL and the filename. */
+let logExportSource = null;
+
+function vmLogExportSource() {
   const { type, name } = logExportTarget();
-  if (!type || !name) return;
-  $('#logExportSource').textContent = `${type}: ${name}`;
-  $('#logExportNote').textContent = type === 'file'
-    ? 'A plain file has no notion of a time range, so the whole current file is exported \u2014 anything already rotated away is gone.'
-    : 'A long range takes a while: the VM reads it off disk and the file arrives as it goes.';
+  if (!selectedVmId || !type || !name) return null;
+  return {
+    label: `${type}: ${name}`,
+    note: type === 'file'
+      ? 'A plain file has no notion of a time range, so the whole current file is exported \u2014 anything already rotated away is gone.'
+      : 'A long range takes a while: the VM reads it off disk and the file arrives as it goes.',
+    url: (since, until) => `${API_BASE}/vms/${selectedVmId}/logs/export?`
+      + new URLSearchParams({ type, name, since, until }),
+    filename: name,
+    buffer: exportVisibleLogs,
+  };
+}
+
+function awsLogExportSource() {
+  if (!awsSelectedAccount || !awsSelectedGroup) return null;
+  return {
+    label: awsSelectedGroup,
+    note: 'Read straight from CloudWatch. Lines are ordered within each page; '
+        + 'CloudWatch interleaves streams, so a few may arrive out of order.',
+    url: (since, until) => `${API_BASE}/aws-log-accounts/${awsSelectedAccount}/logs/export?`
+      + new URLSearchParams({ group: awsSelectedGroup, since, until }),
+    filename: awsSelectedGroup,
+    buffer: exportVisibleAwsLogs,
+  };
+}
+
+function openLogExport(source) {
+  if (!source) return;
+  logExportSource = source;
+  $('#logExportSource').textContent = source.label;
+  $('#logExportNote').textContent = source.note;
   $('#logExportError').classList.remove('show');
   applyLogExportPreset(7);
   markLogExportPreset('7');
@@ -3544,24 +3575,19 @@ function logExportFail(message) {
 }
 
 async function runLogExport() {
-  if (logExportBusy) return;
-  const { type, name } = logExportTarget();
-  if (!selectedVmId || !type || !name) return;
+  if (logExportBusy || !logExportSource) return;
   $('#logExportError').classList.remove('show');
 
   const bounds = logExportBounds();
   if (!bounds) return logExportFail('Pick a day on the calendar.');
   if (bounds.from >= bounds.to) return logExportFail('The start has to come before the end.');
 
-  const params = new URLSearchParams({
-    type, name, since: utcWire(bounds.from), until: utcWire(bounds.to),
-  });
   const btn = $('#logExportRunBtn');
   logExportBusy = true;
   btn.disabled = true;
   btn.textContent = 'Collecting\u2026';
   try {
-    const res = await fetch(`${API_BASE}/vms/${selectedVmId}/logs/export?${params}`, {
+    const res = await fetch(logExportSource.url(utcWire(bounds.from), utcWire(bounds.to)), {
       headers: token ? { Authorization: 'Bearer ' + token } : {},
     });
     if (res.status === 401) { logout(); return; }
@@ -3570,7 +3596,7 @@ async function runLogExport() {
       try { const body = await res.json(); if (body && body.detail) detail = body.detail; } catch (e) { /* no body */ }
       throw new Error(detail);
     }
-    const safe = name.replace(/[^a-z0-9_.-]/gi, '_').slice(0, 60);
+    const safe = logExportSource.filename.replace(/[^a-z0-9_.-]/gi, '_').slice(0, 60);
     downloadBlob(await res.blob(), `${safe}-${isoDay(bounds.from)}_${isoDay(bounds.to)}.log`);
     closeLogExport();
   } catch (e) {
@@ -3598,7 +3624,10 @@ for (const id of ['#logExportStartHour', '#logExportStartMin',
 
 $('#logExportClose').addEventListener('click', closeLogExport);
 $('#logExportRunBtn').addEventListener('click', runLogExport);
-$('#logExportBufferBtn').addEventListener('click', () => { exportVisibleLogs(); closeLogExport(); });
+$('#logExportBufferBtn').addEventListener('click', () => {
+  if (logExportSource) logExportSource.buffer();
+  closeLogExport();
+});
 $('#logExportOverlay').addEventListener('click', e => {
   if (e.target === $('#logExportOverlay')) closeLogExport();
 });
@@ -3632,7 +3661,7 @@ $('#liveLogsClearBtn').addEventListener('click', () => {
   $('#liveLogsContent').innerHTML = '';
   updateLogFootCount();
 });
-$('#liveLogsExportBtn').addEventListener('click', openLogExport);
+$('#liveLogsExportBtn').addEventListener('click', () => openLogExport(vmLogExportSource()));
 
 function logsExpanded() { return $('#liveLogsBody').classList.contains('logs-expanded'); }
 
@@ -4396,17 +4425,14 @@ $('#awsClearBtn').addEventListener('click', () => { $('#awsLogContent').innerHTM
 $('#awsReloadBtn').addEventListener('click', () => { if (awsSelectedGroup) openAwsGroup(awsSelectedGroup); });
 $('#awsExpandBtn').addEventListener('click', () =>
   setAwsExpanded(!$('#awsViewerBody').classList.contains('logs-expanded')));
-$('#awsExportBtn').addEventListener('click', () => {
+function exportVisibleAwsLogs() {
   const lines = [...document.querySelectorAll('#awsLogContent .log-line')].map(el => el.textContent.trim());
   if (lines.length === 0) return;
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${(awsSelectedGroup || 'aws').replace(/[^a-z0-9_.-]/gi, '_')}-${Date.now()}.log`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-});
+  const safe = (awsSelectedGroup || 'aws').replace(/[^a-z0-9_.-]/gi, '_');
+  downloadBlob(new Blob([lines.join('\n')], { type: 'text/plain' }), `${safe}-${Date.now()}.log`);
+}
+
+$('#awsExportBtn').addEventListener('click', () => openLogExport(awsLogExportSource()));
 
 /* ---------- accounts: add, edit, verify ---------- */
 function openAwsForm(account) {

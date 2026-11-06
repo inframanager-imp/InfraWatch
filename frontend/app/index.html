@@ -910,7 +910,7 @@
     border:1px solid var(--border); background:var(--surface); color:var(--text);
     border-radius:var(--r-md); padding:7px 9px; font-family:var(--mono); font-size:11.5px; max-width:230px;
   }
-  .log-search{ flex:1; min-width:150px; }
+  .log-search{ flex:1 1 160px; min-width:120px; max-width:280px; }
 
   /* ------------------------------------------------- laptop screens ----
      A 14" laptop at its recommended scaling reports 1280 CSS px. Every
@@ -983,6 +983,17 @@
   }
   .logs-expanded .log-toolbar{ margin-bottom:0; }
   .logs-expanded .terminal{ max-height:none; flex:1; min-height:0; }
+  /* Only in full screen: everything that said which log this is -- the page
+     heading, the account list, the group list -- is behind the panel. */
+  .logs-fs-head{ display:none; }
+  .logs-expanded .logs-fs-head{
+    display:flex; align-items:center; gap:12px; flex:none;
+    padding-bottom:10px; border-bottom:1px solid var(--divider);
+  }
+  .logs-fs-title{
+    font-family:var(--mono); font-size:12.5px; color:var(--text);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+  }
   .log-foot{ display:flex; align-items:center; gap:8px; margin-top:9px; font-family:var(--mono); font-size:10.5px; color:var(--muted); flex-wrap:wrap; }
   .log-foot .sep{ opacity:.5; }
   .log-status{
@@ -1478,7 +1489,11 @@
             <div class="tab-panel" data-panel="logs">
               <div id="liveLogsEmpty" class="note" style="display:none">No log sources enabled yet — turn on Logs for a container or unit, or add a custom log path.</div>
               <div id="liveLogsBody" style="display:none">
-                <div class="log-toolbar">
+                  <div class="logs-fs-head">
+                    <button type="button" class="btn small" data-exit-fullscreen>&#8592; Back</button>
+                    <span class="logs-fs-title" id="liveLogsFsTitle">&mdash;</span>
+                  </div>
+                  <div class="log-toolbar">
                   <label class="visually-hidden" for="liveLogsSelect">Log source</label>
                   <select class="log-select" id="liveLogsSelect"></select>
                   <div class="level-toggle" id="liveLogsLevelToggle">
@@ -1607,6 +1622,10 @@
           <div style="padding:16px">
             <div id="awsViewerEmpty" class="help">Pick an account, then a log group, to stream it here.</div>
             <div id="awsViewerBody" style="display:none">
+              <div class="logs-fs-head">
+                <button type="button" class="btn small" data-exit-fullscreen>&#8592; Back</button>
+                <span class="logs-fs-title" id="awsFsTitle">&mdash;</span>
+              </div>
               <div class="log-toolbar">
                 <div class="level-toggle" id="awsLevelToggle">
                   <button class="lvl-chip info"  data-lvl="INFO"  aria-pressed="true">INFO</button>
@@ -3344,8 +3363,10 @@ function connectLiveLogsStream(resume = false) {
   // every line -- this viewer streams one target at a time -- so the source
   // belongs here, named once, rather than repeated down the gutter.
   const streamVm = vms.find(v => v.id === vmId);
-  $('#liveLogsFootSource').textContent =
-    `streaming ${name} from ${streamVm ? streamVm.name : 'this VM'}`;
+  // One caption, shown in two places, so full screen cannot go stale.
+  const caption = `${name} \u00b7 ${streamVm ? streamVm.name : 'this VM'}`;
+  $('#liveLogsFootSource').textContent = `streaming ${caption}`;
+  $('#liveLogsFsTitle').textContent = caption;
 
   const url = wsBase() + `/vms/${vmId}/logs/ws?token=${encodeURIComponent(token)}&type=${encodeURIComponent(type)}&name=${encodeURIComponent(name)}`;
   const socket = new WebSocket(url);
@@ -4440,7 +4461,10 @@ function openAwsGroup(group) {
   document.querySelectorAll('#awsLevelToggle .lvl-chip').forEach(c => c.setAttribute('aria-pressed', 'true'));
 
   const account = awsAccounts.find(a => a.id === awsSelectedAccount);
-  $('#awsFootSource').textContent = `streaming ${group} from ${account ? account.name : 'AWS'}`;
+  // One caption, shown in two places, so full screen cannot go stale.
+  const caption = `${group} \u00b7 ${account ? account.name : 'AWS'}`;
+  $('#awsFootSource').textContent = `streaming ${caption}`;
+  $('#awsFsTitle').textContent = caption;
   $('#awsViewerTitle').title = group;
   setAwsStatus('', 'Connecting…');
 
@@ -4484,6 +4508,14 @@ $('#awsClearBtn').addEventListener('click', () => { $('#awsLogContent').innerHTM
 $('#awsReloadBtn').addEventListener('click', () => { if (awsSelectedGroup) openAwsGroup(awsSelectedGroup); });
 $('#awsExpandBtn').addEventListener('click', () =>
   setAwsExpanded(!$('#awsViewerBody').classList.contains('logs-expanded')));
+// Both viewers put a Back button in their full-screen header; each knows
+// which panel it sits inside, so one listener serves both.
+document.addEventListener('click', e => {
+  if (!e.target.closest('[data-exit-fullscreen]')) return;
+  if ($('#liveLogsBody').classList.contains('logs-expanded')) setLogsExpanded(false);
+  if ($('#awsViewerBody').classList.contains('logs-expanded')) setAwsExpanded(false);
+});
+
 function exportVisibleAwsLogs() {
   const lines = [...document.querySelectorAll('#awsLogContent .log-line')].map(el => el.textContent.trim());
   if (lines.length === 0) return;

@@ -996,9 +996,12 @@
   .log-status.err i{ background:var(--crit); }
 
   /* ============================================================ MODALS */
+  /* Above everything, the full-screen log panel (60) included -- a dialog
+     opened from inside it was rendering behind it, which read as a dead
+     Export button. Nothing in this file may sit higher. */
   .modal-overlay{
     position:fixed; inset:0; background:color-mix(in oklab, oklch(0.2 0.01 250) 55%, transparent);
-    display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;
+    display:flex; align-items:center; justify-content:center; padding:20px; z-index:80;
   }
   .modal{
     width:100%; max-width:420px; background:var(--surface); border:1px solid var(--border);

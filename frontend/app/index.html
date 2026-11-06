@@ -1013,7 +1013,13 @@
   .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
   .modal-grid2{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
   @media (max-width:420px){ .modal-grid2{ grid-template-columns:minmax(0,1fr); } }
-  .range-presets{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+  .range-presets{ display:flex; flex-wrap:wrap; gap:6px; }
+  .preset-row{ display:flex; align-items:baseline; gap:10px; margin-bottom:8px; }
+  .preset-row:last-child{ margin-bottom:14px; }
+  .preset-label{
+    flex:none; width:40px; font-size:10px; font-weight:600; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--muted);
+  }
   .range-chip{
     font-size:11.5px; font-weight:500; padding:6px 10px; border-radius:var(--r-sm);
     border:1px solid var(--border); background:var(--surface); color:var(--muted); cursor:pointer;
@@ -1897,12 +1903,34 @@
       <p class="modal-hint" id="logExportHint"></p>
       <div class="error-box" id="logExportError" role="alert"></div>
       <div class="field"><label>Source</label><div class="export-source" id="logExportSource">&mdash;</div></div>
-      <div class="range-presets" id="logExportPresets">
-        <button type="button" class="range-chip" data-days="1" aria-pressed="false">Last 24 hours</button>
-        <button type="button" class="range-chip" data-days="3" aria-pressed="false">Last 3 days</button>
-        <button type="button" class="range-chip" data-days="7" aria-pressed="true">Last 7 days</button>
-        <button type="button" class="range-chip" data-days="30" aria-pressed="false">Last 30 days</button>
-        <button type="button" class="range-chip" data-days="" aria-pressed="false">Custom</button>
+      <div id="logExportPresets">
+        <div class="preset-row">
+          <span class="preset-label">Hours</span>
+          <div class="range-presets">
+        <button type="button" class="range-chip" data-hours="1" aria-pressed="false">1h</button>
+        <button type="button" class="range-chip" data-hours="2" aria-pressed="false">2h</button>
+        <button type="button" class="range-chip" data-hours="3" aria-pressed="false">3h</button>
+        <button type="button" class="range-chip" data-hours="4" aria-pressed="false">4h</button>
+        <button type="button" class="range-chip" data-hours="5" aria-pressed="false">5h</button>
+        <button type="button" class="range-chip" data-hours="6" aria-pressed="false">6h</button>
+        <button type="button" class="range-chip" data-hours="7" aria-pressed="false">7h</button>
+        <button type="button" class="range-chip" data-hours="8" aria-pressed="false">8h</button>
+        <button type="button" class="range-chip" data-hours="9" aria-pressed="false">9h</button>
+        <button type="button" class="range-chip" data-hours="10" aria-pressed="false">10h</button>
+        <button type="button" class="range-chip" data-hours="11" aria-pressed="false">11h</button>
+        <button type="button" class="range-chip" data-hours="12" aria-pressed="false">12h</button>
+          </div>
+        </div>
+        <div class="preset-row">
+          <span class="preset-label">Days</span>
+          <div class="range-presets">
+            <button type="button" class="range-chip" data-hours="24" aria-pressed="false">1 day</button>
+            <button type="button" class="range-chip" data-hours="72" aria-pressed="false">3 days</button>
+            <button type="button" class="range-chip" data-hours="168" aria-pressed="true">7 days</button>
+            <button type="button" class="range-chip" data-hours="720" aria-pressed="false">30 days</button>
+            <button type="button" class="range-chip" data-hours="" aria-pressed="false">Custom</button>
+          </div>
+        </div>
       </div>
       <div class="cal">
         <div class="cal-head">
@@ -3468,9 +3496,9 @@ function renderCalendar() {
 
 // A preset is a rolling window ending now, not a run of whole days, so the
 // clocks carry the odd hours and the calendar shows the days it spans.
-function applyLogExportPreset(days) {
+function applyLogExportPreset(hours) {
   const now = new Date();
-  const from = new Date(now.getTime() - days * 86400000);
+  const from = new Date(now.getTime() - hours * 3600000);
   calStart = midnight(from);
   calEnd = midnight(now);
   calCursor = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -3516,9 +3544,9 @@ $('#logExportNextMonth').addEventListener('click', () => {
   renderCalendar();
 });
 
-function markLogExportPreset(days) {
+function markLogExportPreset(hours) {
   for (const chip of document.querySelectorAll('#logExportPresets .range-chip')) {
-    chip.setAttribute('aria-pressed', String(chip.dataset.days === days));
+    chip.setAttribute('aria-pressed', String(chip.dataset.hours === hours));
   }
 }
 
@@ -3566,8 +3594,8 @@ function openLogExport(source) {
   $('#logExportSource').textContent = source.label;
   $('#logExportNote').textContent = source.note;
   $('#logExportError').classList.remove('show');
-  applyLogExportPreset(7);
-  markLogExportPreset('7');
+  applyLogExportPreset(168);
+  markLogExportPreset('168');
   $('#logExportOverlay').style.display = 'flex';
 }
 
@@ -3639,8 +3667,8 @@ async function runLogExport() {
 $('#logExportPresets').addEventListener('click', e => {
   const chip = e.target.closest('.range-chip');
   if (!chip) return;
-  markLogExportPreset(chip.dataset.days);
-  if (chip.dataset.days) applyLogExportPreset(Number(chip.dataset.days));
+  markLogExportPreset(chip.dataset.hours);
+  if (chip.dataset.hours) applyLogExportPreset(Number(chip.dataset.hours));
 });
 
 // Typing a boundary by hand is a custom range by definition, so the preset

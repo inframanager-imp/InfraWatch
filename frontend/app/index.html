@@ -1682,6 +1682,7 @@
             <button data-url-scope="all" aria-pressed="true">All</button>
             <button data-url-scope="problem" aria-pressed="false">Needs attention</button>
           </div>
+          <button class="btn primary" id="addUrlBtn" style="display:none">+ Add URL</button>
         </div>
       </div>
       <section class="panel">
@@ -1984,6 +1985,33 @@
         <button type="button" class="btn" id="logExportBufferBtn">Save what&rsquo;s on screen</button>
         <button type="button" class="btn primary" id="logExportRunBtn">Download</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addUrlOverlay" style="display:none">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addUrlTitle">
+    <div class="modal-head"><h3 id="addUrlTitle">Add a URL</h3><button class="modal-close" id="addUrlClose" aria-label="Close">&#10005;</button></div>
+    <div class="modal-body">
+      <p class="modal-hint">For an endpoint that does not run on a VM in this fleet &mdash; a partner API, a managed service, anything InfraWatch has no agent on. Checked from this server.</p>
+      <div class="error-box" id="addUrlError" role="alert"></div>
+      <form id="addUrlForm">
+        <div class="field"><label for="addUrlName">Name</label><input id="addUrlName" required placeholder="Partner API" /></div>
+        <div class="field"><label for="addUrlUrl">URL</label><input id="addUrlUrl" class="mono" required placeholder="https://partner.example.com/health" /></div>
+        <div class="modal-grid2">
+          <div class="field"><label for="addUrlStatus">Expected status</label><input id="addUrlStatus" class="mono" value="200-399" /></div>
+          <div class="field"><label for="addUrlInterval">Check every (seconds)</label><input id="addUrlInterval" class="mono" type="number" min="30" value="60" /></div>
+        </div>
+        <div class="field">
+          <label for="addUrlVm">Attach to a VM</label>
+          <select id="addUrlVm"></select>
+          <div class="help">Attaching one lets the URL inherit that VM&rsquo;s alert groups. Left unattached, failures email the admins.</div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" id="addUrlCancel">Cancel</button>
+          <button type="submit" class="btn primary" id="addUrlSubmit">Add monitor</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -2404,6 +2432,7 @@ async function bootApp() {
   $('#userAvatar').textContent = (me.name || me.email || '?').trim().charAt(0).toUpperCase();
   $('#addVmBtn').style.display = me.role === 'admin' ? 'inline-flex' : 'none';
   $('#navUsers').style.display = me.role === 'admin' ? 'flex' : 'none';
+  $('#addUrlBtn').style.display = me.role === 'admin' ? 'inline-flex' : 'none';
   $('#navSettings').style.display = me.role === 'admin' ? 'flex' : 'none';
 
   bootStatus('Loading environments\u2026');
@@ -3927,6 +3956,63 @@ $('#navUsers').addEventListener('click', () => showView('users'));
 $('#navAwsLogs').addEventListener('click', () => showView('awsLogs'));
 $('#navS3').addEventListener('click', () => showView('s3'));
 $('#navUrls').addEventListener('click', () => showView('urls'));
+$('#addUrlBtn').addEventListener('click', openAddUrl);
+
+/* ---------- adding a URL from the fleet page ----------
+   A monitor does not need a VM. Some endpoints worth watching run where
+   InfraWatch has no agent at all, and before this the only way in was a
+   VM's URLs tab -- which meant pretending the endpoint lived on a box it
+   has nothing to do with. */
+function openAddUrl() {
+  $('#addUrlError').classList.remove('show');
+  $('#addUrlForm').reset();
+  $('#addUrlStatus').value = '200-399';
+  $('#addUrlInterval').value = '60';
+  $('#addUrlVm').innerHTML = '<option value="">None — it runs elsewhere</option>'
+    + vms.map(v => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
+  $('#addUrlOverlay').style.display = 'flex';
+}
+
+function closeAddUrl() { $('#addUrlOverlay').style.display = 'none'; }
+
+$('#addUrlForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('#addUrlSubmit');
+  const box = $('#addUrlError');
+  box.classList.remove('show');
+  const vmId = $('#addUrlVm').value;
+  const body = {
+    name: $('#addUrlName').value.trim(),
+    url: $('#addUrlUrl').value.trim(),
+    expected_status: $('#addUrlStatus').value.trim() || null,
+    interval_seconds: Number($('#addUrlInterval').value) || 60,
+  };
+  btn.disabled = true;
+  btn.textContent = 'Adding\u2026';
+  try {
+    // Same payload either way; only the endpoint differs, because a VM-bound
+    // monitor is created under that VM.
+    await api(vmId ? `/vms/${vmId}/url-monitors` : '/url-monitors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    closeAddUrl();
+    await loadAllUrlMonitors();
+  } catch (err) {
+    box.textContent = err.message;
+    box.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Add monitor';
+  }
+});
+
+$('#addUrlClose').addEventListener('click', closeAddUrl);
+$('#addUrlCancel').addEventListener('click', closeAddUrl);
+$('#addUrlOverlay').addEventListener('click', e => {
+  if (e.target === $('#addUrlOverlay')) closeAddUrl();
+});
 
 /* ---------- S3 ----------
    The same accounts and the same assumed role as the AWS logs page. Sizes
@@ -4616,7 +4702,7 @@ function renderAllUrlMonitors() {
   const list = urlScope === 'problem' ? allMonitors.filter(monitorNeedsAttention) : allMonitors;
   if (list.length === 0) {
     $('#allUrlsBody').innerHTML = `<div class="empty-state">${allMonitors.length === 0
-      ? 'No URL monitors yet — add one from a VM\'s URLs tab.'
+      ? 'No URL monitors yet — add one here, or from a VM\'s URLs tab.'
       : 'Nothing needs attention.'}</div>`;
     return;
   }
@@ -4633,7 +4719,9 @@ function renderAllUrlMonitors() {
             <div class="cell-name">${escapeHtml(mon.name)}</div>
             <div class="mon-url">${escapeHtml(mon.url)}</div>
           </td>
-          <td><button class="link" data-open-vm="${mon.vm_id}">${escapeHtml(mon.vm_name || '—')}</button></td>
+          <td>${mon.vm_id
+            ? `<button class="link" data-open-vm="${mon.vm_id}">${escapeHtml(mon.vm_name || '—')}</button>`
+            : '<span class="cell-sub">not on a VM</span>'}</td>
           <td><span class="pill ${mon.check_from === 'agent' ? 'pending' : 'neutral'}">${mon.check_from}</span></td>
           <td>${mon.enabled
             ? `<span class="pill ${MON_STATUS[mon.last_status] || 'neutral'}">${mon.last_status || 'pending'}</span>`
@@ -5010,8 +5098,8 @@ async function renderFleetAlerts() {
     ? Object.values(alertsByVm).flat()
     : (resolvedAlerts || []);
   const rows = source
-    .filter(a => names[a.vm_id])
-    .map(a => ({ ...a, vmName: names[a.vm_id] }));
+    .filter(a => a.vm_id == null || names[a.vm_id])
+    .map(a => ({ ...a, vmName: a.vm_id == null ? 'not on a VM' : names[a.vm_id] }));
   rows.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1));
   $('#fleetAlertsEmpty').textContent = alertScope === 'active'
     ? 'No active alerts across your fleet.' : 'No resolved alerts yet.';

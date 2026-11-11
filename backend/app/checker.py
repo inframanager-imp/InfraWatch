@@ -92,8 +92,9 @@ def prune_url_samples(db: Session) -> int:
 def run_due_checks(db: Session) -> list[tuple[object, list, list]]:
     """Checks every server-side monitor that is due.
 
-    Returns (vm, opened, resolved) per monitor that changed alert state, so the
-    caller can mail while its session is still open.
+    Returns (monitor, opened, resolved) per monitor that changed alert state,
+    so the caller can mail while its session is still open. The monitor rather
+    than its VM, because it may not have one.
     """
     changes = []
     for monitor in due_monitors(db):
@@ -101,6 +102,6 @@ def run_due_checks(db: Session) -> list[tuple[object, list, list]]:
         apply_result(db, monitor, result)
         opened, resolved = evaluate_url_alerts(db, monitor)
         if opened or resolved:
-            changes.append((monitor.vm, opened, resolved))
+            changes.append((monitor, opened, resolved))
     db.commit()
     return changes

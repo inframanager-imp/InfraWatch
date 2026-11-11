@@ -182,7 +182,7 @@ class ResourceSettingUpdate(BaseModel):
 
 class AlertOut(BaseModel):
     id: str
-    vm_id: str
+    vm_id: Optional[str] = None   # null for an alert not tied to a VM
     resource_type: str
     resource_name: str
     rule: str
@@ -285,7 +285,7 @@ class UrlMonitorIn(BaseModel):
 
 class UrlMonitorOut(BaseModel):
     id: str
-    vm_id: str
+    vm_id: Optional[str] = None   # null for a standalone monitor
     name: str
     url: str
     check_from: str

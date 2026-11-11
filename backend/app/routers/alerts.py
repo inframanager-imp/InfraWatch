@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from .. import schemas
@@ -42,8 +43,11 @@ def list_all_alerts(
         raise HTTPException(status_code=400, detail="status must be active or resolved")
     query = db.query(Alert).filter(Alert.status == status)
     if user.role != "admin":
+        # Alerts with no VM belong to a standalone monitor, which no VM grant
+        # can cover. Withholding them would mean a read-only user watching a
+        # page that never reports anything wrong.
         allowed_ids = {a.vm_id for a in user.vm_access}
-        query = query.filter(Alert.vm_id.in_(allowed_ids))
+        query = query.filter(or_(Alert.vm_id.in_(allowed_ids), Alert.vm_id.is_(None)))
     return query.order_by(Alert.severity.desc(), Alert.last_seen.desc()).all()
 
 

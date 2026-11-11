@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Index, Integer,
+                        String, Text, UniqueConstraint, text)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -145,10 +146,19 @@ class Alert(Base):
     time it's seen, and marks resolved once the condition clears. See
     app/alerts.py for the rules and evaluation logic."""
     __tablename__ = "alerts"
-    __table_args__ = (UniqueConstraint("vm_id", "resource_type", "resource_name", "rule", name="uq_alert_identity"),)
+    # The unique constraint does not cover rows with no VM: SQL treats
+    # NULLs as distinct, so identity for those is enforced separately.
+    __table_args__ = (
+        UniqueConstraint("vm_id", "resource_type", "resource_name", "rule", name="uq_alert_identity"),
+        Index("uq_alert_identity_global", "resource_type", "resource_name", "rule",
+              unique=True, postgresql_where=text("vm_id IS NULL"),
+              sqlite_where=text("vm_id IS NULL")),
+    )
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False)
+    # Null for an alert about something not tied to a VM -- today that
+    # means a URL monitored on its own.
+    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=True)
     resource_type = Column(String, nullable=False)  # "vm" | "container" | "service"
     resource_name = Column(String, nullable=False)  # the VM's own name for resource_type == "vm"
     rule = Column(String, nullable=False)  # e.g. "vm_offline", "service_failed"
@@ -258,17 +268,23 @@ class VMAlertGroup(Base):
 
 
 class UrlMonitor(Base):
-    """An HTTP(S) endpoint watched on behalf of one VM.
+    """An HTTP(S) endpoint watched on behalf of one VM, or on its own.
 
     The last result lives on the row rather than being derived from the sample
     table: every read of this list wants the current state, and samples exist
     only to draw recent history.
     """
     __tablename__ = "url_monitors"
-    __table_args__ = (UniqueConstraint("vm_id", "name", name="uq_vm_monitor_name"),)
+    __table_args__ = (
+        UniqueConstraint("vm_id", "name", name="uq_vm_monitor_name"),
+        Index("uq_monitor_name_global", "name", unique=True,
+              postgresql_where=text("vm_id IS NULL"), sqlite_where=text("vm_id IS NULL")),
+    )
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False, index=True)
+    # Null for an endpoint that runs somewhere InfraWatch has no agent --
+    # a partner API, a managed service, anything not on a VM in this fleet.
+    vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=True, index=True)
     name = Column(String, nullable=False)
     url = Column(String, nullable=False)
     check_from = Column(String, nullable=False, default="server")  # "server" | "agent"

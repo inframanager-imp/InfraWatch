@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 from .models import User, VM
 
 
-def recipients_for_vm(db: Session, vm: VM) -> list[str]:
+def recipients_for_vm(db: Session, vm: VM | None) -> list[str]:
+    # Nothing to read groups from when the alert belongs to no VM, so it
+    # takes the same fallback as a VM with no group assigned.
+    if vm is None:
+        return sorted({u.email for u in db.query(User).filter(User.role == "admin").all()})
     emails = {
         member.email.strip()
         for link in vm.alert_groups

@@ -96,10 +96,14 @@ async def _url_check_loop():
             changes = await asyncio.to_thread(run_due_checks, db)
             if changes:
                 smtp_cfg = smtp_config(db)
-                for vm, opened, resolved in changes:
-                    recipients = recipients_for_vm(db, vm)
+                for monitor, opened, resolved in changes:
+                    # A standalone monitor has no VM to name or to route by,
+                    # so the subject carries the monitor itself and the mail
+                    # falls back to the admins.
+                    recipients = recipients_for_vm(db, monitor.vm)
                     await asyncio.to_thread(
-                        send_alert_notification, vm.name,
+                        send_alert_notification,
+                        monitor.vm.name if monitor.vm else monitor.name,
                         [alert_summary(a) for a in opened],
                         recipients, smtp_cfg,
                         [alert_summary(a) for a in resolved],

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from .. import schemas
@@ -79,18 +80,38 @@ def _apply(monitor: UrlMonitor, payload: schemas.UrlMonitorIn) -> None:
 @router.get("/url-monitors", response_model=list[schemas.UrlMonitorOut])
 def list_all_monitors(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Every monitor the caller may see, across the fleet."""
-    query = db.query(UrlMonitor).join(VM, UrlMonitor.vm_id == VM.id)
+    # Outer join: a standalone monitor has no VM row to match.
+    query = db.query(UrlMonitor).outerjoin(VM, UrlMonitor.vm_id == VM.id)
     if user.role != "admin":
         allowed = {a.vm_id for a in user.vm_access}
-        if not allowed:
-            return []
-        query = query.filter(UrlMonitor.vm_id.in_(allowed))
+        query = query.filter(or_(UrlMonitor.vm_id.in_(allowed), UrlMonitor.vm_id.is_(None)))
     out = []
     for monitor in query.order_by(VM.name, UrlMonitor.name).all():
         item = _serialize(db, monitor)
-        item.vm_name = monitor.vm.name
+        item.vm_name = monitor.vm.name if monitor.vm else None
         out.append(item)
     return out
+
+
+@router.post("/url-monitors", response_model=schemas.UrlMonitorOut)
+def create_standalone_monitor(payload: schemas.UrlMonitorIn,
+                              db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """A monitor for an endpoint that runs nowhere InfraWatch can reach.
+
+    Checked from the server like any other, but attached to no VM, so it
+    cannot inherit a VM's alert groups and mails the admins instead.
+    """
+    name = payload.name.strip()
+    if db.query(UrlMonitor).filter(UrlMonitor.vm_id.is_(None), UrlMonitor.name == name).first():
+        raise HTTPException(status_code=400, detail="A standalone monitor with that name already exists")
+
+    monitor = UrlMonitor(vm_id=None)
+    _apply(monitor, payload)
+    db.add(monitor)
+    db.commit()
+    db.refresh(monitor)
+    log_action(db, admin.email, "url_monitor.create", target=f"(no VM):{monitor.name}", detail=monitor.url)
+    return _serialize(db, monitor)
 
 
 @router.get("/vms/{vm_id}/url-monitors", response_model=list[schemas.UrlMonitorOut])

@@ -152,7 +152,9 @@ def update_monitor(monitor_id: str, payload: schemas.UrlMonitorIn,
         .first()
     )
     if clash:
-        raise HTTPException(status_code=400, detail="This VM already has a monitor with that name")
+        raise HTTPException(status_code=400, detail=(
+            "This VM already has a monitor with that name" if monitor.vm_id
+            else "A standalone monitor with that name already exists"))
 
     _apply(monitor, payload)
     db.commit()

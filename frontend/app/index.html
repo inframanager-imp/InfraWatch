@@ -2005,7 +2005,7 @@
         <div class="field">
           <label for="addUrlVm">Attach to a VM</label>
           <select id="addUrlVm"></select>
-          <div class="help">Attaching one lets the URL inherit that VM&rsquo;s alert groups. Left unattached, failures email the admins.</div>
+          <div class="help" id="addUrlVmHelp"></div>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn" id="addUrlCancel">Cancel</button>
@@ -3963,13 +3963,28 @@ $('#addUrlBtn').addEventListener('click', openAddUrl);
    InfraWatch has no agent at all, and before this the only way in was a
    VM's URLs tab -- which meant pretending the endpoint lived on a box it
    has nothing to do with. */
-function openAddUrl() {
+let editingUrlId = null;
+
+function openAddUrl(monitor) {
+  editingUrlId = monitor ? monitor.id : null;
   $('#addUrlError').classList.remove('show');
   $('#addUrlForm').reset();
-  $('#addUrlStatus').value = '200-399';
-  $('#addUrlInterval').value = '60';
+  $('#addUrlName').value = monitor ? monitor.name : '';
+  $('#addUrlUrl').value = monitor ? monitor.url : '';
+  $('#addUrlStatus').value = monitor ? (monitor.expected_status || '') : '200-399';
+  $('#addUrlInterval').value = monitor ? monitor.interval_seconds : 60;
   $('#addUrlVm').innerHTML = '<option value="">None — it runs elsewhere</option>'
     + vms.map(v => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
+  $('#addUrlVm').value = monitor && monitor.vm_id ? monitor.vm_id : '';
+  // What a monitor is attached to decides which alert groups it inherits and
+  // which name it must be unique against, so moving one is a delete and a
+  // re-add rather than an edit.
+  $('#addUrlVm').disabled = !!monitor;
+  $('#addUrlVmHelp').textContent = monitor
+    ? 'Set when the monitor was created. To move it, delete it and add it again.'
+    : 'Attaching one lets the URL inherit that VM’s alert groups. Left unattached, failures email the admins.';
+  $('#addUrlTitle').textContent = monitor ? 'Edit monitor' : 'Add a URL';
+  $('#addUrlSubmit').textContent = monitor ? 'Save monitor' : 'Add monitor';
   $('#addUrlOverlay').style.display = 'flex';
 }
 
@@ -3981,19 +3996,34 @@ $('#addUrlForm').addEventListener('submit', async e => {
   const box = $('#addUrlError');
   box.classList.remove('show');
   const vmId = $('#addUrlVm').value;
+  // PATCH replaces the whole monitor, so everything this form does not show --
+  // method, timeouts, TLS verification, header checks set from a VM's tab --
+  // is carried forward, or editing a name would quietly reset it.
+  const base = editingUrlId ? (allMonitors.find(m => m.id === editingUrlId) || {}) : {};
+  const keep = (value, fallback) => (value != null ? value : fallback);
   const body = {
+    check_from: keep(base.check_from, 'server'),
+    method: keep(base.method, 'GET'),
+    body_contains: keep(base.body_contains, null),
+    headers: keep(base.headers, null),
+    timeout_seconds: keep(base.timeout_seconds, 10),
+    failure_threshold: keep(base.failure_threshold, 2),
+    slow_ms: keep(base.slow_ms, null),
+    verify_tls: keep(base.verify_tls, true),
+    cert_warn_days: keep(base.cert_warn_days, '30,14,7,1'),
+    enabled: keep(base.enabled, true),
     name: $('#addUrlName').value.trim(),
     url: $('#addUrlUrl').value.trim(),
     expected_status: $('#addUrlStatus').value.trim() || null,
     interval_seconds: Number($('#addUrlInterval').value) || 60,
   };
   btn.disabled = true;
-  btn.textContent = 'Adding\u2026';
+  btn.textContent = editingUrlId ? 'Saving' + '\u2026' : 'Adding' + '\u2026';
   try {
-    // Same payload either way; only the endpoint differs, because a VM-bound
-    // monitor is created under that VM.
-    await api(vmId ? `/vms/${vmId}/url-monitors` : '/url-monitors', {
-      method: 'POST',
+    // Creating goes under the VM when one is chosen; editing never moves it.
+    await api(editingUrlId ? `/url-monitors/${editingUrlId}`
+              : vmId ? `/vms/${vmId}/url-monitors` : '/url-monitors', {
+      method: editingUrlId ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
@@ -4004,7 +4034,7 @@ $('#addUrlForm').addEventListener('submit', async e => {
     box.classList.add('show');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Add monitor';
+    btn.textContent = editingUrlId ? 'Save monitor' : 'Add monitor';
   }
 });
 
@@ -4712,6 +4742,7 @@ function renderAllUrlMonitors() {
       <thead><tr>
         <th>Name · URL</th><th>VM</th><th>From</th><th>Status</th><th>Code</th>
         <th>Response</th><th>Certificate</th><th>7-day uptime</th><th>Last check</th>
+        <th><span class="visually-hidden">Actions</span></th>
       </tr></thead>
       <tbody>${list.map(mon => `
         <tr class="${mon.enabled ? '' : 'row-dimmed'}">
@@ -4732,9 +4763,28 @@ function renderAllUrlMonitors() {
           <td>${certCell(mon)}</td>
           <td>${sparkCell(mon.daily)}<div class="mon-sub">${mon.uptime_7d != null ? mon.uptime_7d + '%' : 'no data'}</div></td>
           <td class="cell-sub">${mon.last_checked_at ? shortAgo(mon.last_checked_at) + ' ago' : 'never'}</td>
+          <td class="detail-actions">${me.role === 'admin' ? `
+            <button class="btn small" data-edit-url="${mon.id}">Edit</button>
+            <button class="btn small" data-delete-url="${mon.id}">Delete</button>` : ''}</td>
         </tr>`).join('')}</tbody>
     </table></div>`;
 
+  $('#allUrlsBody').querySelectorAll('[data-edit-url]').forEach(btn => {
+    btn.addEventListener('click', () =>
+      openAddUrl(allMonitors.find(m => m.id === btn.dataset.editUrl)));
+  });
+  $('#allUrlsBody').querySelectorAll('[data-delete-url]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const mon = allMonitors.find(m => m.id === btn.dataset.deleteUrl);
+      if (!mon || !confirm(`Delete the monitor "${mon.name}"? Its history goes with it.`)) return;
+      try {
+        await api('/url-monitors/' + mon.id, { method: 'DELETE' });
+        await loadAllUrlMonitors();
+      } catch (e) {
+        alert(e.message);
+      }
+    });
+  });
   $('#allUrlsBody').querySelectorAll('[data-open-vm]').forEach(btn => {
     btn.addEventListener('click', () => {
       showView('vms');

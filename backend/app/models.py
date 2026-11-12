@@ -107,15 +107,21 @@ class Service(Base):
 
 
 class LogSource(Base):
-    """An admin-registered file path to tail on a VM, for apps that write
-    their own log file instead of stdout (docker logs) or the journal
-    (systemd) — e.g. a logback/log4j2 file appender."""
+    """An admin-registered file path to tail, for apps that write their own
+    log file instead of stdout (docker logs) or the journal (systemd) --
+    e.g. a logback/log4j2 file appender.
+
+    On the VM by default. With a container named, the path is read inside
+    that container instead, which is the only way to reach a file an app
+    writes to its own filesystem rather than to a mounted volume."""
     __tablename__ = "log_sources"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     vm_id = Column(UUID(as_uuid=False), ForeignKey("vms.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     path = Column(String, nullable=False)
+    # Null means the path is on the VM itself.
+    container = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     vm = relationship("VM", back_populates="log_sources")

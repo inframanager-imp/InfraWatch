@@ -152,6 +152,7 @@ class LogSourceOut(BaseModel):
     id: str
     name: str
     path: str
+    container: Optional[str] = None   # null when the path is on the VM
     created_at: datetime
 
     class Config:
@@ -161,6 +162,7 @@ class LogSourceOut(BaseModel):
 class LogSourceCreate(BaseModel):
     name: str
     path: str
+    container: Optional[str] = None
 
 
 class ResourceSettingOut(BaseModel):

@@ -234,7 +234,8 @@ def create_log_source(vm_id: str, payload: schemas.LogSourceCreate, db: Session 
     vm = db.query(VM).filter(VM.id == vm_id).first()
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
-    source = LogSource(vm_id=vm.id, name=payload.name, path=payload.path)
+    source = LogSource(vm_id=vm.id, name=payload.name, path=payload.path,
+                       container=(payload.container or "").strip() or None)
     db.add(source)
     db.commit()
     db.refresh(source)
@@ -261,6 +262,7 @@ async def export_logs(
     vm_id: str,
     type: str = Query(...),
     name: str = Query(...),
+    container: str | None = Query(None),
     since: str | None = Query(None),
     until: str | None = Query(None),
     db: Session = Depends(get_db),
@@ -284,7 +286,8 @@ async def export_logs(
     try:
         await agent_ws.send_json({
             "action": "export_logs", "stream_id": stream_id,
-            "type": type, "name": name, "since": since, "until": until,
+            "type": type, "name": name, "container": container,
+            "since": since, "until": until,
             "max_lines": EXPORT_MAX_LINES,
         })
     except Exception:
@@ -324,7 +327,8 @@ async def export_logs(
 
 
 @router.websocket("/{vm_id}/logs/ws")
-async def logs_ws(websocket: WebSocket, vm_id: str, token: str, type: str, name: str):
+async def logs_ws(websocket: WebSocket, vm_id: str, token: str, type: str, name: str,
+                  container: str | None = None):
     await websocket.accept()
 
     db = SessionLocal()
@@ -356,7 +360,7 @@ async def logs_ws(websocket: WebSocket, vm_id: str, token: str, type: str, name:
     browser_sockets[stream_id] = websocket
     stream_vms[stream_id] = vm_name
     try:
-        await agent_ws.send_json({"action": "start_stream", "stream_id": stream_id, "type": type, "name": name})
+        await agent_ws.send_json({"action": "start_stream", "stream_id": stream_id, "type": type, "name": name, "container": container})
     except Exception:
         browser_sockets.pop(stream_id, None)
         stream_vms.pop(stream_id, None)

@@ -359,7 +359,18 @@ def docker_follow_cmd(name, tail):
     return ["docker", "logs", "-f", "--tail", str(tail), name]
 
 
-def stream_worker(ws, stream_id, cmd, kind=None, target=None):
+def file_follow_cmd(path, tail, container=None):
+    """-F rather than -f: reopens the file when it is rotated or recreated,
+    which plain -f silently stops following after.
+
+    Through docker exec when the file is inside a container -- the VM's own
+    tail cannot see a container's filesystem. This needs tail to exist in
+    that image, which rules out distroless and scratch bases."""
+    cmd = ["tail", "-F", "-n", str(tail), path]
+    return ["docker", "exec", container] + cmd if container else cmd
+
+
+def stream_worker(ws, stream_id, cmd, target=None, rebuild=None):
     """Follows a log source and pushes each line over the shared websocket.
 
     Containers are followed by name across replacements. `docker logs -f` is
@@ -367,8 +378,10 @@ def stream_worker(ws, stream_id, cmd, kind=None, target=None):
     and without this the viewer sits on the old container's last line still
     claiming to be live.
 
-    Only containers are reattached. journalctl -f already survives a unit
-    restarting, and tail -F reopens a rotated file on its own.
+    `target` is the container to follow across replacements, and `rebuild`
+    builds the follow command for a given backlog -- docker logs for a
+    container, a tail through docker exec for a file inside one. Both are
+    absent for sources with no container behind them.
     """
     def send(line):
         """False means the socket is gone, which no amount of retrying fixes."""
@@ -379,7 +392,7 @@ def stream_worker(ws, stream_id, cmd, kind=None, target=None):
         except Exception:
             return False
 
-    last_id = container_id(target) if kind == "container" else None
+    last_id = container_id(target) if target else None
     attempt = cmd
     delay = 1
     waiting_since = None
@@ -407,7 +420,10 @@ def stream_worker(ws, stream_id, cmd, kind=None, target=None):
                         pass
 
             # Stopped from the browser, or nothing worth reattaching to.
-            if stream_id not in _active_streams or kind != "container":
+            # Only container-backed sources reattach: journalctl -f already
+            # survives a unit restart, and a tail -F on the VM reopens its
+            # own file.
+            if stream_id not in _active_streams or not target:
                 return
 
             time.sleep(delay)
@@ -430,14 +446,14 @@ def stream_worker(ws, stream_id, cmd, kind=None, target=None):
                 # A new container: replay its history, which is short, and
                 # say so, because the jump in content is otherwise baffling.
                 last_id = current
-                attempt = docker_follow_cmd(target, STREAM_BACKLOG)
+                attempt = rebuild(STREAM_BACKLOG)
                 if not send("[infrawatch] container was replaced \u2014 following the new one"):
                     return
                 delay = 1
             else:
                 # Same container, so its history is already on screen and
                 # replaying it would duplicate everything.
-                attempt = docker_follow_cmd(target, 0)
+                attempt = rebuild(0)
     finally:
         _active_streams.pop(stream_id, None)
 
@@ -505,18 +521,22 @@ def handle_ws_message(ws, msg):
         # DOM node in the browser, so this trades first-load cost for context.
         backlog = str(STREAM_BACKLOG)
         target_type, target_name = data.get("type"), data.get("name")
+        container = (data.get("container") or "").strip() or None
+        follow, rebuild = None, None
         if target_type == "container":
-            cmd = docker_follow_cmd(target_name, backlog)
+            follow = container = target_name
+            rebuild = lambda tail: docker_follow_cmd(target_name, tail)
         elif target_type == "service":
             cmd = ["journalctl", "-u", target_name, "-f", "-n", backlog, "--no-pager"]
         elif target_type == "file":
-            # -F (not -f): re-opens the file if it's rotated/recreated,
-            # which plain -f would silently stop following after.
-            cmd = ["tail", "-F", "-n", backlog, target_name]
+            follow = container
+            rebuild = lambda tail: file_follow_cmd(target_name, tail, container)
         else:
             return
+        if rebuild is not None:
+            cmd = rebuild(backlog)
         threading.Thread(target=stream_worker,
-                         args=(ws, stream_id, cmd, target_type, target_name),
+                         args=(ws, stream_id, cmd, follow, rebuild),
                          daemon=True).start()
     elif action == "export_logs":
         # since/until are ISO timestamps; journalctl and docker both accept
@@ -540,7 +560,9 @@ def handle_ws_message(ws, msg):
             # A plain file has no notion of a time range, and anything already
             # rotated away is simply gone, so the whole current file is sent
             # and the server notes the range could not be applied.
-            cmd = ["cat", target_name]
+            container = (data.get("container") or "").strip() or None
+            cmd = ["docker", "exec", container, "cat", target_name] if container \
+                else ["cat", target_name]
         else:
             return
         threading.Thread(target=export_worker, args=(ws, stream_id, cmd, max_lines), daemon=True).start()

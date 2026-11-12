@@ -3004,15 +3004,18 @@ function renderDetail(id) {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <input type="text" class="input" id="logSourceName" placeholder="Name (e.g. App Log)" style="flex:1;min-width:130px" />
         <input type="text" class="input mono" id="logSourcePath" placeholder="/opt/app/logs/application.log" style="flex:2;min-width:210px" />
+        <select class="log-select" id="logSourceContainer" style="min-width:150px"></select>
         <button class="btn primary" id="saveLogSourceBtn">Save</button>
       </div>
+      <div class="help" style="margin-top:8px">Leave this <b>On the VM</b> unless the file exists only inside a container. A path on a mounted volume is readable from the VM, and stays readable when the container is replaced.</div>
       <div class="error-box" id="logSourceError" role="alert" style="margin-top:10px"></div>
     </div>
     ${data.logSources.length === 0
       ? '<div class="help">No custom log paths registered — for apps that write to their own log file instead of stdout or the systemd journal.</div>'
       : data.logSources.map(s => `
           <div class="log-path-row">
-            <span style="flex:1;min-width:0"><b>${escapeHtml(s.name)}</b> <span class="p">${escapeHtml(s.path)}</span></span>
+            <span style="flex:1;min-width:0"><b>${escapeHtml(s.name)}</b> <span class="p">${escapeHtml(s.path)}</span>${
+              s.container ? ` <span class="pill neutral">in ${escapeHtml(s.container)}</span>` : ''}</span>
             <button class="link" data-path-logs="${escapeHtml(s.path)}">Logs</button>
             ${me.role === 'admin' ? `<button class="btn small" data-delete-source="${s.id}">Remove</button>` : ''}
           </div>`).join('')}`;
@@ -3039,6 +3042,13 @@ function renderDetail(id) {
     $('#addLogSourceBtn').addEventListener('click', () => {
       $('#logSourceForm').style.display = 'block';
       $('#logSourceError').classList.remove('show');
+      // Only a running container can be exec'd into, which is also the only
+      // set worth offering.
+      $('#logSourceContainer').innerHTML = '<option value="">On the VM</option>'
+        + data.containers
+            .filter(c => /up/i.test(c.status || ''))
+            .map(c => `<option value="${escapeHtml(c.name)}">In ${escapeHtml(c.name)}</option>`)
+            .join('');
     });
     $('#saveLogSourceBtn').addEventListener('click', async () => {
       const errBox = $('#logSourceError');
@@ -3046,11 +3056,12 @@ function renderDetail(id) {
       try {
         const name = $('#logSourceName').value.trim();
         const path = $('#logSourcePath').value.trim();
+        const container = $('#logSourceContainer').value || null;
         if (!name || !path) throw new Error('Name and path are both required.');
         await api('/vms/' + id + '/log-sources', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, path }),
+          body: JSON.stringify({ name, path, container }),
         });
         await loadVms();
       } catch (err) {
@@ -3337,7 +3348,8 @@ function startLiveLogsPolling() {
   const targets = [
     ...data.containers.filter(c => c.logs_enabled).map(c => ({ type: 'container', name: c.name })),
     ...data.services.filter(s => s.logs_enabled).map(s => ({ type: 'service', name: s.name })),
-    ...data.logSources.map(s => ({ type: 'file', name: s.path, label: s.name })),
+    ...data.logSources.map(s => ({ type: 'file', name: s.path, label: s.name,
+                                   container: s.container })),
   ];
   if (targets.length === 0) {
     $('#liveLogsEmpty').style.display = 'block';
@@ -3347,7 +3359,9 @@ function startLiveLogsPolling() {
   $('#liveLogsEmpty').style.display = 'none';
   $('#liveLogsBody').style.display = logsExpanded() ? 'flex' : 'block';
   $('#liveLogsSelect').innerHTML = targets
-    .map(t => `<option value="${t.type}::${t.name}">${t.type === 'service' ? '⚙' : t.type === 'file' ? '📄' : '▣'} ${t.label || t.name}</option>`).join('');
+    // The container is an attribute, not part of the value: the value is
+    // split on '::' and a path may contain anything.
+    .map(t => `<option value="${t.type}::${t.name}" data-container="${escapeHtml(t.container || '')}">${t.type === 'service' ? '⚙' : t.type === 'file' ? '📄' : '▣'} ${t.label || t.name}</option>`).join('');
   connectLiveLogsStream();
 }
 
@@ -3380,7 +3394,9 @@ function connectLiveLogsStream(resume = false) {
     document.querySelectorAll('#liveLogsLevelToggle .lvl-chip').forEach(c => c.setAttribute('aria-pressed', 'true'));
   }
 
-  const [type, name] = $('#liveLogsSelect').value.split('::');
+  // One reader for the target, so the stream and the export cannot
+  // disagree about which container a path lives in.
+  const { type, name, container } = logExportTarget();
   const vmId = selectedVmId;
   if (!resume) {
     $('#liveLogsContent').innerHTML = '';
@@ -3397,7 +3413,9 @@ function connectLiveLogsStream(resume = false) {
   $('#liveLogsFootSource').textContent = `streaming ${caption}`;
   $('#liveLogsFsTitle').textContent = caption;
 
-  const url = wsBase() + `/vms/${vmId}/logs/ws?token=${encodeURIComponent(token)}&type=${encodeURIComponent(type)}&name=${encodeURIComponent(name)}`;
+  const url = wsBase() + `/vms/${vmId}/logs/ws?token=${encodeURIComponent(token)}`
+    + `&type=${encodeURIComponent(type)}&name=${encodeURIComponent(name)}`
+    + (container ? `&container=${encodeURIComponent(container)}` : '');
   const socket = new WebSocket(url);
   liveLogsSocket = socket;
 
@@ -3462,8 +3480,10 @@ function downloadBlob(blob, filename) {
 let logExportBusy = false;
 
 function logExportTarget() {
-  const [type, name] = ($('#liveLogsSelect').value || '').split('::');
-  return { type, name };
+  const select = $('#liveLogsSelect');
+  const [type, name] = (select.value || '').split('::');
+  const chosen = select.selectedOptions && select.selectedOptions[0];
+  return { type, name, container: (chosen && chosen.dataset.container) || '' };
 }
 
 // What the agent wants: UTC with an explicit Z, so the range means the same
@@ -3619,7 +3639,9 @@ function vmLogExportSource() {
       ? 'A plain file has no notion of a time range, so the whole current file is exported \u2014 anything already rotated away is gone.'
       : 'A long range takes a while: the VM reads it off disk and the file arrives as it goes.',
     url: (since, until) => `${API_BASE}/vms/${selectedVmId}/logs/export?`
-      + new URLSearchParams({ type, name, since, until }),
+      + new URLSearchParams(container
+          ? { type, name, container, since, until }
+          : { type, name, since, until }),
     filename: name,
     buffer: exportVisibleLogs,
   };

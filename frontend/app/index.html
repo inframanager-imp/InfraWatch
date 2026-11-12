@@ -3017,7 +3017,9 @@ function renderDetail(id) {
             <span style="flex:1;min-width:0"><b>${escapeHtml(s.name)}</b> <span class="p">${escapeHtml(s.path)}</span>${
               s.container ? ` <span class="pill neutral">in ${escapeHtml(s.container)}</span>` : ''}</span>
             <button class="link" data-path-logs="${escapeHtml(s.path)}">Logs</button>
-            ${me.role === 'admin' ? `<button class="btn small" data-delete-source="${s.id}">Remove</button>` : ''}
+            ${me.role === 'admin' ? `
+              <button class="btn small" data-edit-source="${s.id}">Edit</button>
+              <button class="btn small" data-delete-source="${s.id}">Remove</button>` : ''}
           </div>`).join('')}`;
 
   $('#panelLogPaths').querySelectorAll('[data-path-logs]').forEach(btn => {
@@ -3039,16 +3041,27 @@ function renderDetail(id) {
   loadUrlMonitors(id);
 
   if (me.role === 'admin') {
-    $('#addLogSourceBtn').addEventListener('click', () => {
+    const openLogSourceForm = source => {
+      editingLogSourceId = source ? source.id : null;
       $('#logSourceForm').style.display = 'block';
       $('#logSourceError').classList.remove('show');
       // Only a running container can be exec'd into, which is also the only
-      // set worth offering.
+      // set worth offering. The one already chosen is kept even if it is
+      // currently down, so editing a name cannot silently detach the path.
+      const running = data.containers.filter(c => /up/i.test(c.status || '')).map(c => c.name);
+      const names = source && source.container && !running.includes(source.container)
+        ? running.concat(source.container) : running;
       $('#logSourceContainer').innerHTML = '<option value="">On the VM</option>'
-        + data.containers
-            .filter(c => /up/i.test(c.status || ''))
-            .map(c => `<option value="${escapeHtml(c.name)}">In ${escapeHtml(c.name)}</option>`)
-            .join('');
+        + names.map(n => `<option value="${escapeHtml(n)}">In ${escapeHtml(n)}</option>`).join('');
+      $('#logSourceName').value = source ? source.name : '';
+      $('#logSourcePath').value = source ? source.path : '';
+      $('#logSourceContainer').value = (source && source.container) || '';
+      $('#saveLogSourceBtn').textContent = source ? 'Save changes' : 'Save';
+    };
+    $('#addLogSourceBtn').addEventListener('click', () => openLogSourceForm(null));
+    $('#panelLogPaths').querySelectorAll('[data-edit-source]').forEach(btn => {
+      btn.addEventListener('click', () =>
+        openLogSourceForm(data.logSources.find(s => s.id === btn.dataset.editSource)));
     });
     $('#saveLogSourceBtn').addEventListener('click', async () => {
       const errBox = $('#logSourceError');
@@ -3058,11 +3071,14 @@ function renderDetail(id) {
         const path = $('#logSourcePath').value.trim();
         const container = $('#logSourceContainer').value || null;
         if (!name || !path) throw new Error('Name and path are both required.');
-        await api('/vms/' + id + '/log-sources', {
-          method: 'POST',
+        await api(editingLogSourceId
+          ? `/vms/${id}/log-sources/${editingLogSourceId}`
+          : `/vms/${id}/log-sources`, {
+          method: editingLogSourceId ? 'PATCH' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, path, container }),
         });
+        editingLogSourceId = null;
         await loadVms();
       } catch (err) {
         errBox.textContent = err.message;
@@ -3327,6 +3343,9 @@ function wireResourceToggles(bodySelector) {
     });
   });
 }
+
+// Which path the form is editing, or null when adding a new one.
+let editingLogSourceId = null;
 
 function jumpToLiveLogs(type, name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));

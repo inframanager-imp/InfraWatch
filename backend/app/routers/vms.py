@@ -243,6 +243,25 @@ def create_log_source(vm_id: str, payload: schemas.LogSourceCreate, db: Session 
     return source
 
 
+@router.patch("/{vm_id}/log-sources/{source_id}", response_model=schemas.LogSourceOut)
+def update_log_source(vm_id: str, source_id: str, payload: schemas.LogSourceCreate,
+                      db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    source = db.query(LogSource).filter(LogSource.id == source_id, LogSource.vm_id == vm_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Log source not found")
+    if not payload.name.strip() or not payload.path.strip():
+        raise HTTPException(status_code=400, detail="A name and a path are both required")
+
+    source.name = payload.name.strip()
+    source.path = payload.path.strip()
+    # Cleared back to null means the path is on the VM again.
+    source.container = (payload.container or "").strip() or None
+    db.commit()
+    db.refresh(source)
+    log_action(db, admin.email, "log_source.update", target=f"{vm_id}:{source.path}")
+    return source
+
+
 @router.delete("/{vm_id}/log-sources/{source_id}", status_code=204)
 def delete_log_source(vm_id: str, source_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     source = db.query(LogSource).filter(LogSource.id == source_id, LogSource.vm_id == vm_id).first()

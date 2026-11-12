@@ -343,32 +343,103 @@ def collect_services():
     return services
 
 
-def stream_worker(ws, stream_id, cmd):
-    """Runs a follow-mode subprocess (docker logs -f / journalctl -f) and
-    pushes each new line to the server over the shared websocket, until
-    told to stop or the process/connection ends."""
-    proc = None
+STREAM_BACKLOG = 3000
+REATTACH_MAX_DELAY = 15
+# Long enough for any deploy, short enough that an abandoned viewer
+# does not leave a thread waiting indefinitely.
+REATTACH_GIVE_UP = 600
+
+
+def container_id(name):
+    """The container currently answering to this name, or None if none is."""
+    return run(["docker", "inspect", "-f", "{{.Id}}", name], timeout=5).strip() or None
+
+
+def docker_follow_cmd(name, tail):
+    return ["docker", "logs", "-f", "--tail", str(tail), name]
+
+
+def stream_worker(ws, stream_id, cmd, kind=None, target=None):
+    """Follows a log source and pushes each line over the shared websocket.
+
+    Containers are followed by name across replacements. `docker logs -f` is
+    bound to one container: a deploy replaces it, the process exits cleanly,
+    and without this the viewer sits on the old container's last line still
+    claiming to be live.
+
+    Only containers are reattached. journalctl -f already survives a unit
+    restarting, and tail -F reopens a rotated file on its own.
+    """
+    def send(line):
+        """False means the socket is gone, which no amount of retrying fixes."""
+        try:
+            with _ws_send_lock:
+                ws.send(json.dumps({"stream_id": stream_id, "line": line}))
+            return True
+        except Exception:
+            return False
+
+    last_id = container_id(target) if kind == "container" else None
+    attempt = cmd
+    delay = 1
+    waiting_since = None
+
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-        _active_streams[stream_id] = proc
-        for line in proc.stdout:
-            if stream_id not in _active_streams:
-                break
+        while True:
+            proc = None
             try:
-                with _ws_send_lock:
-                    ws.send(json.dumps({"stream_id": stream_id, "line": line.rstrip("\n")}))
+                proc = subprocess.Popen(attempt, stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT, text=True, bufsize=1)
+                _active_streams[stream_id] = proc
+                for line in proc.stdout:
+                    if stream_id not in _active_streams:
+                        return
+                    if not send(line.rstrip(chr(10))):
+                        return
+                    delay = 1  # output means healthy; forget any earlier backoff
             except Exception:
-                break
-    except Exception:
-        pass
+                pass  # the backoff below covers a command that would not start
+            finally:
+                if proc is not None:
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+
+            # Stopped from the browser, or nothing worth reattaching to.
+            if stream_id not in _active_streams or kind != "container":
+                return
+
+            time.sleep(delay)
+            delay = min(delay * 2, REATTACH_MAX_DELAY)
+
+            current = container_id(target)
+            if not current:
+                # Bounded deliberately. A browser that goes away without
+                # sending stop_stream would otherwise leave this thread
+                # waiting on a container that is never coming back, and
+                # those accumulate one per abandoned viewer.
+                waiting_since = waiting_since or time.time()
+                if time.time() - waiting_since > REATTACH_GIVE_UP:
+                    send("[infrawatch] container has not come back \u2014 stopped following")
+                    return
+                continue
+
+            waiting_since = None
+            if current != last_id:
+                # A new container: replay its history, which is short, and
+                # say so, because the jump in content is otherwise baffling.
+                last_id = current
+                attempt = docker_follow_cmd(target, STREAM_BACKLOG)
+                if not send("[infrawatch] container was replaced \u2014 following the new one"):
+                    return
+                delay = 1
+            else:
+                # Same container, so its history is already on screen and
+                # replaying it would duplicate everything.
+                attempt = docker_follow_cmd(target, 0)
     finally:
         _active_streams.pop(stream_id, None)
-        if proc is not None:
-            try:
-                proc.terminate()
-            except Exception:
-                pass
-
 
 def _journal_time(value):
     """Translate the wire format (UTC ISO, trailing Z) into journald's.
@@ -432,10 +503,10 @@ def handle_ws_message(ws, msg):
     if action == "start_stream":
         # Lines of history replayed when a viewer attaches. Every one becomes a
         # DOM node in the browser, so this trades first-load cost for context.
-        backlog = "3000"
+        backlog = str(STREAM_BACKLOG)
         target_type, target_name = data.get("type"), data.get("name")
         if target_type == "container":
-            cmd = ["docker", "logs", "-f", "--tail", backlog, target_name]
+            cmd = docker_follow_cmd(target_name, backlog)
         elif target_type == "service":
             cmd = ["journalctl", "-u", target_name, "-f", "-n", backlog, "--no-pager"]
         elif target_type == "file":
@@ -444,7 +515,9 @@ def handle_ws_message(ws, msg):
             cmd = ["tail", "-F", "-n", backlog, target_name]
         else:
             return
-        threading.Thread(target=stream_worker, args=(ws, stream_id, cmd), daemon=True).start()
+        threading.Thread(target=stream_worker,
+                         args=(ws, stream_id, cmd, target_type, target_name),
+                         daemon=True).start()
     elif action == "export_logs":
         # since/until are ISO timestamps; journalctl and docker both accept
         # that form directly, so no translation is needed.

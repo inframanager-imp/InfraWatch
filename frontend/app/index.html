@@ -3016,7 +3016,7 @@ function renderDetail(id) {
           <div class="log-path-row">
             <span style="flex:1;min-width:0"><b>${escapeHtml(s.name)}</b> <span class="p">${escapeHtml(s.path)}</span>${
               s.container ? ` <span class="pill neutral">in ${escapeHtml(s.container)}</span>` : ''}</span>
-            <button class="link" data-path-logs="${escapeHtml(s.path)}">Logs</button>
+            <button class="link" data-path-logs="${s.id}">Logs</button>
             ${me.role === 'admin' ? `
               <button class="btn small" data-edit-source="${s.id}">Edit</button>
               <button class="btn small" data-delete-source="${s.id}">Remove</button>` : ''}
@@ -3347,13 +3347,15 @@ function wireResourceToggles(bodySelector) {
 // Which path the form is editing, or null when adding a new one.
 let editingLogSourceId = null;
 
-function jumpToLiveLogs(type, name) {
+// `key` is the option's identity: the resource name for a container or a
+// unit, the log source's id for a file.
+function jumpToLiveLogs(type, key) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelector('.tab[data-tab="logs"]').classList.add('active');
   document.querySelector('.tab-panel[data-panel="logs"]').classList.add('active');
   startLiveLogsPolling();
-  const value = `${type}::${name}`;
+  const value = `${type}::${key}`;
   const select = $('#liveLogsSelect');
   if ([...select.options].some(o => o.value === value)) {
     select.value = value;
@@ -3364,11 +3366,17 @@ function jumpToLiveLogs(type, name) {
 function startLiveLogsPolling() {
   stopLiveLogsPolling();
   const data = vmDetails[selectedVmId] || { containers: [], services: [], logSources: [] };
+  // `key` only has to be unique within this select; `name` is what the
+  // agent is asked for. They differ for files because two sources may watch
+  // the same path in different containers, which a path alone cannot tell
+  // apart -- and a select with two identical values always picks the first.
   const targets = [
-    ...data.containers.filter(c => c.logs_enabled).map(c => ({ type: 'container', name: c.name })),
-    ...data.services.filter(s => s.logs_enabled).map(s => ({ type: 'service', name: s.name })),
-    ...data.logSources.map(s => ({ type: 'file', name: s.path, label: s.name,
-                                   container: s.container })),
+    ...data.containers.filter(c => c.logs_enabled)
+        .map(c => ({ key: `container::${c.name}`, type: 'container', name: c.name })),
+    ...data.services.filter(s => s.logs_enabled)
+        .map(s => ({ key: `service::${s.name}`, type: 'service', name: s.name })),
+    ...data.logSources.map(s => ({ key: `file::${s.id}`, type: 'file', name: s.path,
+                                   label: s.name, container: s.container })),
   ];
   if (targets.length === 0) {
     $('#liveLogsEmpty').style.display = 'block';
@@ -3380,7 +3388,7 @@ function startLiveLogsPolling() {
   $('#liveLogsSelect').innerHTML = targets
     // The container is an attribute, not part of the value: the value is
     // split on '::' and a path may contain anything.
-    .map(t => `<option value="${t.type}::${t.name}" data-container="${escapeHtml(t.container || '')}">${t.type === 'service' ? '⚙' : t.type === 'file' ? '📄' : '▣'} ${t.label || t.name}</option>`).join('');
+    .map(t => `<option value="${t.key}" data-type="${t.type}" data-name="${escapeHtml(t.name)}" data-container="${escapeHtml(t.container || '')}">${t.type === 'service' ? '⚙' : t.type === 'file' ? '📄' : '▣'} ${t.label || t.name}</option>`).join('');
   connectLiveLogsStream();
 }
 
@@ -3499,10 +3507,16 @@ function downloadBlob(blob, filename) {
 let logExportBusy = false;
 
 function logExportTarget() {
+  // Read the option, not its value: a path may contain anything, including
+  // the separator, and for files the value is an id rather than a name.
   const select = $('#liveLogsSelect');
-  const [type, name] = (select.value || '').split('::');
   const chosen = select.selectedOptions && select.selectedOptions[0];
-  return { type, name, container: (chosen && chosen.dataset.container) || '' };
+  if (!chosen) return { type: '', name: '', container: '' };
+  return {
+    type: chosen.dataset.type || '',
+    name: chosen.dataset.name || '',
+    container: chosen.dataset.container || '',
+  };
 }
 
 // What the agent wants: UTC with an explicit Z, so the range means the same

@@ -3648,7 +3648,7 @@ function markLogExportPreset(hours) {
 let logExportSource = null;
 
 function vmLogExportSource() {
-  const { type, name } = logExportTarget();
+  const { type, name, container } = logExportTarget();
   if (!selectedVmId || !type || !name) return null;
   return {
     label: `${type}: ${name}`,

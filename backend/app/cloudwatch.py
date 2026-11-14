@@ -164,7 +164,12 @@ def fetch_backlog(connection, log_group: str, limit: int = 3000, minutes: int = 
 
 
 
-EXPORT_MAX_LINES = 200_000
+# Ten times the agent ceiling, on purpose. Nothing is shared on this path:
+# CloudWatch is read directly rather than through one VM's single agent
+# socket, so a big export costs the person who asked for it some patience
+# and costs nobody else anything. Retrieval is not billed either -- only
+# the bytes leaving AWS, which is cents even at this size.
+EXPORT_MAX_LINES = 10_000_000
 
 
 def export_range(connection, log_group: str, start_ms: int, end_ms: int,
@@ -211,8 +216,12 @@ def tail(connection, log_group: str, stop: threading.Event, on_line, poll_second
 
     Polls FilterLogEvents rather than using StartLiveTail: live tail bills per
     minute of an open session and is capped at a few concurrent sessions per
-    account, which several people watching logs at once would exhaust. Polling
-    costs only what it scans and has no such ceiling.
+    account, which several people watching logs at once would exhaust.
+
+    FilterLogEvents is not billed at all. It is throttled though, per account
+    per region -- 25/sec in us-east-1, 10 or 5 elsewhere, and AWS marks the
+    quota non-adjustable -- so what bounds this is the other callers in the
+    same account, not money.
     """
     seen: set[str] = set()
     since = int((time.time() - 30) * 1000)

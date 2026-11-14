@@ -272,7 +272,13 @@ def delete_log_source(vm_id: str, source_id: str, db: Session = Depends(get_db),
     log_action(db, admin.email, "log_source.delete", target=f"{vm_id}:{source.path}")
 
 
-EXPORT_MAX_LINES = 200_000
+# A tenth of the CloudWatch ceiling, deliberately. The agent sends one
+# WebSocket message per line over the same socket that carries its
+# heartbeats and every live log viewer on this VM, so an oversized export
+# here degrades the VM for everyone else -- a blast radius the CloudWatch
+# path does not have, because that one talks to AWS directly. Batching
+# lines into frames is what would let these two limits match.
+AGENT_EXPORT_MAX_LINES = 1_000_000
 EXPORT_IDLE_TIMEOUT = 120  # seconds of silence from the agent before giving up
 
 
@@ -307,7 +313,7 @@ async def export_logs(
             "action": "export_logs", "stream_id": stream_id,
             "type": type, "name": name, "container": container,
             "since": since, "until": until,
-            "max_lines": EXPORT_MAX_LINES,
+            "max_lines": AGENT_EXPORT_MAX_LINES,
         })
     except Exception:
         export_queues.pop(stream_id, None)
@@ -330,7 +336,7 @@ async def export_logs(
                     return
                 if item.get("done"):
                     if item.get("truncated"):
-                        yield f"\n# truncated at {EXPORT_MAX_LINES} lines — narrow the range for the rest\n"
+                        yield f"\n# truncated at {AGENT_EXPORT_MAX_LINES} lines — narrow the range for the rest\n"
                     return
                 yield item["line"] + "\n"
         finally:

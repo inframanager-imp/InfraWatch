@@ -3715,7 +3715,54 @@ function openLogExport(source) {
 
 function closeLogExport() { $('#logExportOverlay').style.display = 'none'; }
 
-/* Shows the file growing instead of a frozen button. A week of a busy log
+/* Picked before anything is fetched, because the file picker needs the
+   click that is still in hand and an awaited fetch would have spent it.
+
+   Returns a writable stream to stream into, EXPORT_CANCELLED if the person
+   closed the picker, or null where the browser has no picker and the
+   export has to be collected in memory instead. */
+const EXPORT_CANCELLED = 'cancelled';
+
+async function openExportSink(name) {
+  if (!window.showSaveFilePicker) return null;
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: name,
+      types: [{ description: 'Log file', accept: { 'text/plain': ['.log'] } }],
+    });
+    return await handle.createWritable();
+  } catch (e) {
+    // Closing the picker is a decision, not a failure, and must not be
+    // reported as one. Anything else means no picker is usable here.
+    if (e && e.name === 'AbortError') return EXPORT_CANCELLED;
+    return null;
+  }
+}
+
+/* The point of the whole exercise: one chunk is held at a time, so a ten
+   million line export costs the same memory as a ten line one. */
+async function streamToSink(res, sink, btn) {
+  const reader = res.body.getReader();
+  let received = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      await sink.write(value);
+      received += value.length;
+      btn.textContent = `Saving ${formatBytes(received)}\u2026`;
+    }
+    await sink.close();
+  } catch (e) {
+    // Leave no half-written file behind claiming to be a complete export.
+    try { await sink.abort(); } catch (ignored) { /* already gone */ }
+    throw e;
+  }
+  return received;
+}
+
+/* The fallback, for browsers with no file picker. Shows the file growing
+   instead of a frozen button. A week of a busy log
    group is minutes of paging, and without this it looks identical to a
    request that never left.
 
@@ -3751,10 +3798,17 @@ async function runLogExport() {
   if (!bounds) return logExportFail('Pick a day on the calendar.');
   if (bounds.from >= bounds.to) return logExportFail('The start has to come before the end.');
 
+  const safe = logExportSource.filename.replace(/[^a-z0-9_.-]/gi, '_').slice(0, 60);
+  const name = `${safe}-${isoDay(bounds.from)}_${isoDay(bounds.to)}.log`;
+
+  const sink = await openExportSink(name);
+  if (sink === EXPORT_CANCELLED) return;
+
   const btn = $('#logExportRunBtn');
   logExportBusy = true;
   btn.disabled = true;
-  btn.textContent = 'Collecting\u2026';
+  btn.textContent = sink ? 'Saving\u2026' : 'Collecting\u2026';
+  let finished = false;
   try {
     const res = await fetch(logExportSource.url(utcWire(bounds.from), utcWire(bounds.to)), {
       headers: token ? { Authorization: 'Bearer ' + token } : {},
@@ -3765,13 +3819,23 @@ async function runLogExport() {
       try { const body = await res.json(); if (body && body.detail) detail = body.detail; } catch (e) { /* no body */ }
       throw new Error(detail);
     }
-    const safe = logExportSource.filename.replace(/[^a-z0-9_.-]/gi, '_').slice(0, 60);
-    const name = `${safe}-${isoDay(bounds.from)}_${isoDay(bounds.to)}.log`;
-    downloadBlob(await readWithProgress(res, btn), name);
+    if (sink) {
+      // A body that cannot be streamed is small enough not to matter.
+      if (res.body && res.body.getReader) await streamToSink(res, sink, btn);
+      else { await sink.write(await res.blob()); await sink.close(); }
+    } else {
+      downloadBlob(await readWithProgress(res, btn), name);
+    }
+    finished = true;
     closeLogExport();
   } catch (e) {
     logExportFail(e.message);
   } finally {
+    // A sink opened but never written to would otherwise leave an empty
+    // file sitting where the person asked the export to go.
+    if (sink && !finished) {
+      try { await sink.abort(); } catch (ignored) { /* already gone */ }
+    }
     logExportBusy = false;
     btn.disabled = false;
     btn.textContent = 'Download';

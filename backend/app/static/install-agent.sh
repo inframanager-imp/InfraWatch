@@ -87,6 +87,8 @@ Outbound-only: this process only ever makes requests to the server; the
 server never connects into this VM.
 """
 import argparse
+import calendar
+import glob
 import hashlib
 import json
 import os
@@ -370,6 +372,237 @@ def file_follow_cmd(path, tail, container=None):
     return ["docker", "exec", container] + cmd if container else cmd
 
 
+# A wildcard in a registered path stands for every file that matches it, now
+# and in future. That is the only workable answer to a log directory that
+# gains a new dated file every day.
+GLOB_CHARS = "*?["
+# An export concatenates these into one argv, and a folder nobody prunes can
+# hold a year of them. The newest are the ones worth having.
+MAX_GLOB_FILES = 500
+GLOB_POLL_SECONDS = 10
+
+
+def is_glob(path):
+    return any(c in path for c in GLOB_CHARS)
+
+
+def _shell_safe(pattern):
+    """A pattern has to reach a shell to be expanded inside a container.
+
+    Only an admin can register one, and an admin already has docker exec on
+    this VM, so this is a guard against a typo turning into a command rather
+    than a security boundary. The allowed set is what a log path is made of.
+    """
+    return all(c.isalnum() or c in "/._-*?[]+:@" for c in pattern)
+
+
+def _epoch(value):
+    """Wire time (UTC ISO with a trailing Z) as a unix timestamp."""
+    if not value:
+        return None
+    try:
+        stamp = value.replace("Z", "").split(".")[0]
+        return calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%S"))
+    except Exception:
+        return None
+
+
+def glob_matches(pattern, container=None):
+    """Matching files as (mtime, path), oldest first.
+
+    Ordered by modification time rather than by name: a rotation scheme that
+    counts sorts app.log.10 before app.log.9 alphabetically, and this order
+    is what makes a concatenated export read in the right direction.
+
+    Inside a container the times would cost a stat per file, so ls supplies
+    the order and the times come back as None.
+    """
+    if container:
+        if not _shell_safe(pattern):
+            return []
+        out = run(["docker", "exec", container, "sh", "-c",
+                   "ls -1tr -d -- " + pattern + " 2>/dev/null"], timeout=20)
+        names = [line.strip() for line in out.splitlines() if line.strip()]
+        return [(None, n) for n in names][-MAX_GLOB_FILES:]
+
+    found = []
+    for path in glob.glob(pattern):
+        try:
+            if os.path.isfile(path):
+                found.append((os.path.getmtime(path), path))
+        except OSError:
+            continue  # rotated away between the listing and the stat
+    found.sort()
+    return found[-MAX_GLOB_FILES:]
+
+
+def newest_match(pattern, container=None):
+    files = glob_matches(pattern, container)
+    return files[-1][1] if files else None
+
+
+def glob_range(pattern, container, since, until):
+    """The matching files that could hold a line in the range, oldest first.
+
+    Picked by modification time, which for a file rotation has finished with
+    is when it was last written: one that stopped growing before the range
+    began cannot contain a line inside it. At the far end the first file
+    modified after the range closes is kept, because that is the one still
+    being written when it closed.
+
+    This over-includes rather than under-includes. A tail of extra lines is
+    a nuisance; a silently missing day is a bug.
+    """
+    start, end = _epoch(since), _epoch(until)
+    picked = []
+    for mtime, path in glob_matches(pattern, container):
+        if mtime is None:
+            picked.append(path)  # in a container: no times to filter on
+            continue
+        if start is not None and mtime < start:
+            continue
+        picked.append(path)
+        if end is not None and mtime > end:
+            break  # this one straddles the end, the rest are past it
+    return picked
+
+
+class _NullProc:
+    """Stands in for a process the worker has not started yet, so that
+    stop_stream has something to pop and the worker can see it was stopped."""
+
+    def terminate(self):
+        pass
+
+
+def _watch_for_newer(stream_id, proc, stop_watch, pattern, container, following):
+    """Ends the tail once a newer matching file exists.
+
+    A poll rather than inotify: the agent ships with nothing but the standard
+    library, and a file that appears once a day need not be noticed within
+    the second.
+    """
+    while not stop_watch.wait(GLOB_POLL_SECONDS):
+        if _active_streams.get(stream_id) is not proc:
+            return
+        try:
+            newest = newest_match(pattern, container)
+        except Exception:
+            continue
+        if newest and newest != following:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+            return
+
+
+def scan_worker(ws, stream_id, pattern, container):
+    """Answers a folder scan: every file matching the pattern, oldest first.
+
+    One reply, always sent even when nothing matched -- the server is
+    waiting on it, and silence is indistinguishable from an agent too old
+    to know the question.
+    """
+    try:
+        files = [path for _, path in glob_matches(pattern, container)]
+    except Exception:
+        files = []
+    try:
+        with _ws_send_lock:
+            ws.send(json.dumps({"stream_id": stream_id, "files": files}))
+    except Exception:
+        pass
+
+
+def glob_stream_worker(ws, stream_id, pattern, container, backlog):
+    """Follows the newest file matching a pattern, and moves when it moves.
+
+    tail -F reopens a path that gets replaced, which covers app.log being
+    renamed to app.log.1 under it. It does not cover a directory that gains
+    a new dated file every day: yesterday's file is never replaced, it just
+    stops growing, and following it forever looks exactly like an app that
+    went quiet.
+    """
+    def send(line):
+        try:
+            with _ws_send_lock:
+                ws.send(json.dumps({"stream_id": stream_id, "line": line}))
+            return True
+        except Exception:
+            return False
+
+    _active_streams[stream_id] = _NullProc()
+    current = None
+    tail = str(backlog)
+    waiting_since = None
+
+    try:
+        while True:
+            if stream_id not in _active_streams:
+                return
+
+            newest = newest_match(pattern, container)
+            if not newest:
+                # Bounded for the same reason the container reattach is: a
+                # browser that goes away without a stop would otherwise leave
+                # this thread polling a pattern forever, one per viewer.
+                if waiting_since is None:
+                    waiting_since = time.time()
+                    if not send("[infrawatch] nothing matches " + pattern + " yet -- waiting"):
+                        return
+                if time.time() - waiting_since > REATTACH_GIVE_UP:
+                    send("[infrawatch] still nothing matches -- stopped looking")
+                    return
+                time.sleep(GLOB_POLL_SECONDS)
+                continue
+            waiting_since = None
+
+            if current is not None and newest != current:
+                # Said out loud: the jump from one file's last line to
+                # another's first is otherwise baffling.
+                if not send("[infrawatch] rotated -- now following " + newest):
+                    return
+                tail = "+1"  # a file this new is worth reading from its first line
+            current = newest
+
+            proc = None
+            stop_watch = threading.Event()
+            try:
+                proc = subprocess.Popen(file_follow_cmd(current, tail, container),
+                                        stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT, text=True, bufsize=1)
+                _active_streams[stream_id] = proc
+                threading.Thread(target=_watch_for_newer,
+                                 args=(stream_id, proc, stop_watch, pattern,
+                                       container, current),
+                                 daemon=True).start()
+                for line in proc.stdout:
+                    if stream_id not in _active_streams:
+                        return
+                    if not send(line.rstrip(chr(10))):
+                        return
+            except Exception:
+                pass  # the next pass re-resolves the pattern and tries again
+            finally:
+                stop_watch.set()
+                if proc is not None:
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+
+            if stream_id not in _active_streams:
+                return
+            # Backlog only on the first attach and on a genuinely new file;
+            # re-tailing the same one would duplicate what is already on
+            # screen.
+            tail = "0"
+            time.sleep(1)
+    finally:
+        _active_streams.pop(stream_id, None)
+
+
 def stream_worker(ws, stream_id, cmd, target=None, rebuild=None):
     """Follows a log source and pushes each line over the shared websocket.
 
@@ -552,6 +785,13 @@ def handle_ws_message(ws, msg):
         elif target_type == "service":
             cmd = ["journalctl", "-u", target_name, "-f", "-n", backlog, "--no-pager"]
         elif target_type == "file":
+            if is_glob(target_name):
+                # A pattern has no one file to tail: its own worker resolves
+                # the newest match and moves on when rotation makes another.
+                threading.Thread(target=glob_stream_worker,
+                                 args=(ws, stream_id, target_name, container, backlog),
+                                 daemon=True).start()
+                return
             follow = container
             rebuild = lambda tail: file_follow_cmd(target_name, tail, container)
         else:
@@ -580,15 +820,35 @@ def handle_ws_message(ws, msg):
             if until:
                 cmd += ["--until", _journal_time(until)]
         elif target_type == "file":
-            # A plain file has no notion of a time range, and anything already
+            # One file has no notion of a time range, and anything already
             # rotated away is simply gone, so the whole current file is sent
             # and the server notes the range could not be applied.
+            #
+            # A pattern is the opposite case: rotation left those files right
+            # there, and when each was last written says which of them the
+            # range can possibly touch.
             container = (data.get("container") or "").strip() or None
-            cmd = ["docker", "exec", container, "cat", target_name] if container \
-                else ["cat", target_name]
+            if is_glob(target_name):
+                paths = glob_range(target_name, container, since, until)
+                if paths:
+                    base = ["docker", "exec", container] if container else []
+                    cmd = base + ["cat", "--"] + paths
+                else:
+                    # An empty file would read as "no logs in that range" with
+                    # no way to tell it from a pattern that matches nothing.
+                    cmd = ["echo", "[agent] no file matched " + target_name]
+            elif container:
+                cmd = ["docker", "exec", container, "cat", target_name]
+            else:
+                cmd = ["cat", target_name]
         else:
             return
         threading.Thread(target=export_worker, args=(ws, stream_id, cmd, max_lines), daemon=True).start()
+    elif action == "list_files":
+        threading.Thread(target=scan_worker,
+                         args=(ws, stream_id, data.get("pattern") or "",
+                               (data.get("container") or "").strip() or None),
+                         daemon=True).start()
     elif action == "stop_stream":
         proc = _active_streams.pop(stream_id, None)
         if proc is not None:

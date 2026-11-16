@@ -15,6 +15,11 @@ stream_vms: dict[str, str] = {}             # stream_id -> vm name serving it
 # stream does not: the queue receives a sentinel when the agent is done.
 export_queues: dict[str, object] = {}
 
+# stream_id -> asyncio.Queue, for a folder scan. One question and one
+# answer rather than a stream, but it travels the same socket and so needs
+# the same routing by id.
+scan_queues: dict[str, object] = {}
+
 # Sent to a browser on an idle stream so the connection keeps showing traffic.
 # Proxies (nginx defaults to a 60s read timeout) drop a socket that has gone
 # quiet, and a log file with nothing to say is quiet indefinitely. The client

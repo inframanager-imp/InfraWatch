@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session
 from .. import schemas
 from ..audit import log_action
 from ..database import SessionLocal, get_db
+from ..logfolders import ScanUnavailable, apply_scan, is_pattern, scan_folder
 from ..models import AlertGroup, Container, LogSource, ResourceSetting, Service, User, VM, VMAlertGroup
 from ..security import get_current_user, get_user_from_token, hash_password, require_admin, get_download_user
 from ..streams import (
-    KEEPALIVE_SECONDS, STREAM_PING, agent_sockets, browser_sockets, export_queues, stream_vms,
+    KEEPALIVE_SECONDS, STREAM_PING, agent_sockets, browser_sockets, export_queues,
+    stream_vms,
 )
 
 router = APIRouter(prefix="/vms", tags=["vms"])
@@ -262,6 +264,54 @@ def update_log_source(vm_id: str, source_id: str, payload: schemas.LogSourceCrea
     return source
 
 
+@router.post("/{vm_id}/log-sources/{source_id}/sync", response_model=schemas.LogSourceSyncOut)
+async def sync_log_source(vm_id: str, source_id: str, db: Session = Depends(get_db),
+                          admin: User = Depends(require_admin)):
+    """Ask the VM what files are in this folder, and register each one.
+
+    The whole point is that nobody types a path again. An app that rolls its
+    log over every day leaves a new file every morning, and that new file is
+    invariably the one somebody wants.
+    """
+    source = db.query(LogSource).filter(LogSource.id == source_id,
+                                        LogSource.vm_id == vm_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Log source not found")
+    if source.parent_id:
+        raise HTTPException(status_code=400,
+                            detail="That is a file inside a folder, not a folder")
+    if not is_pattern(source.path):
+        raise HTTPException(
+            status_code=400,
+            detail="Only a folder can be synced. Give the path a wildcard, "
+                   "e.g. /var/log/app/archived/*.log",
+        )
+
+    vm = db.query(VM).filter(VM.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    agent_ws = agent_sockets.get(vm.name)
+    if agent_ws is None:
+        raise HTTPException(status_code=409, detail="The agent on this VM is not connected")
+
+    try:
+        files = await scan_folder(agent_ws, source.path, source.container)
+    except ScanUnavailable as e:
+        # 504 rather than 502: the request reached the agent's VM, and the
+        # likeliest cause is an agent that has not self-updated yet, which
+        # fixes itself.
+        raise HTTPException(status_code=504, detail=str(e))
+
+    added, removed, total, truncated = apply_scan(db, source, files)
+    if added or removed:
+        log_action(db, admin.email, "log_source.sync",
+                   target=f"{vm.name}:{source.path}:+{added}/-{removed}")
+
+    rows = db.query(LogSource).filter(LogSource.vm_id == vm_id).order_by(LogSource.name).all()
+    return {"added": added, "removed": removed, "total": total,
+            "truncated": truncated, "sources": rows}
+
+
 @router.delete("/{vm_id}/log-sources/{source_id}", status_code=204)
 def delete_log_source(vm_id: str, source_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     source = db.query(LogSource).filter(LogSource.id == source_id, LogSource.vm_id == vm_id).first()
@@ -327,8 +377,15 @@ async def export_logs(
         if since or until:
             header += f"# range: {since or 'beginning'} to {until or 'now'}\n"
         if type == "file":
-            # tail/cat cannot select by time, and rotated files are gone.
-            header += "# note: file sources export whole, the date range does not apply\n"
+            if any(c in name for c in "*?["):
+                # Whole files, chosen by when each was last written: one that
+                # stopped growing before the range began cannot hold a line
+                # inside it.
+                header += ("# note: every matching file that overlaps the range,"
+                           " oldest first\n")
+            else:
+                # cat cannot select by time, and rotated files are gone.
+                header += "# note: file sources export whole, the date range does not apply\n"
         yield header + "#\n"
         try:
             while True:

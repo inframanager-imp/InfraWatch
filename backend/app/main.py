@@ -7,6 +7,8 @@ from .alerts import sweep_vm_offline_alerts
 from .checker import prune_url_samples, run_due_checks
 from .config import settings
 from .database import SessionLocal
+from .logfolders import ScanUnavailable, apply_scan, folders_for_sync, scan_folder
+from .streams import agent_sockets
 from .metrics import prune_old_metric_samples
 from .notifications import alert_summary, send_alert_notification
 from .recipients import recipients_for_vm
@@ -49,6 +51,10 @@ app.include_router(s3_router.router)
 app.include_router(search_router.router)
 
 OFFLINE_SWEEP_INTERVAL_SECONDS = 60
+# A log that rolls over at midnight means the file anyone wants in the
+# morning is one nobody has registered. Ten minutes is far more often than
+# that, and a scan is one readdir on a VM that is already connected.
+FOLDER_SYNC_INTERVAL_SECONDS = 600
 # Monitors carry their own interval; this is just how often the loop looks for
 # ones that are due, so the shortest interval it can honour is this long.
 URL_CHECK_TICK_SECONDS = 15
@@ -114,6 +120,37 @@ async def _url_check_loop():
             db.close()
 
 
+async def _folder_sync_loop():
+    """Keeps each folder entry's file rows current without anyone pressing
+    anything.
+
+    A VM whose agent is not connected is skipped rather than emptied: its
+    files have not gone anywhere, we simply cannot see them, and deleting
+    the rows would lose the ability to read yesterday's log from a VM that
+    is merely offline.
+    """
+    while True:
+        await asyncio.sleep(FOLDER_SYNC_INTERVAL_SECONDS)
+        db = SessionLocal()
+        try:
+            folders = await asyncio.to_thread(folders_for_sync, db)
+            for source, vm_name in folders:
+                agent_ws = agent_sockets.get(vm_name)
+                if agent_ws is None:
+                    continue
+                try:
+                    files = await scan_folder(agent_ws, source.path, source.container)
+                except ScanUnavailable:
+                    # An agent too old to know the question, or one that
+                    # dropped mid-scan. Either way the next pass retries.
+                    continue
+                await asyncio.to_thread(apply_scan, db, source, files)
+        except Exception:
+            pass
+        finally:
+            db.close()
+
+
 @app.on_event("startup")
 async def on_startup():
     db = SessionLocal()
@@ -123,6 +160,7 @@ async def on_startup():
         db.close()
     asyncio.create_task(_offline_sweep_loop())
     asyncio.create_task(_url_check_loop())
+    asyncio.create_task(_folder_sync_loop())
 
 
 @app.get("/health")

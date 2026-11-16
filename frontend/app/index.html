@@ -907,6 +907,10 @@
   .log-path-row:first-of-type{ border-top:0; }
   .log-path-row b{ font-size:12.5px; font-weight:600; }
   .log-path-row .p{ font-family:var(--mono); font-size:11px; color:var(--muted); overflow-wrap:anywhere; }
+  /* Indented and lighter: these rows were discovered, not registered, and
+     the folder above them is what anyone acts on. */
+  .log-path-row.child{ padding:5px 0 5px 20px; border-top:1px dashed var(--divider); }
+  .log-path-kids[hidden]{ display:none; }
   .note{ background:var(--raised); border:1px solid var(--border); border-radius:var(--r-md); padding:12px 14px; font-size:12.5px; color:var(--muted); line-height:1.55; }
 
   /* ============================================================ LIVE LOGS */
@@ -3027,27 +3031,28 @@ function renderDetail(id) {
     <div id="logSourceForm" style="display:none;margin-bottom:12px">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <input type="text" class="input" id="logSourceName" placeholder="Name (e.g. App Log)" style="flex:1;min-width:130px" />
-        <input type="text" class="input mono" id="logSourcePath" placeholder="/opt/app/logs/application.log" style="flex:2;min-width:210px" />
+        <input type="text" class="input mono" id="logSourcePath" placeholder="/opt/app/logs/application.log  or  /var/log/app/*.log" style="flex:2;min-width:210px" />
         <select class="log-select" id="logSourceContainer" style="min-width:150px"></select>
         <button class="btn primary" id="saveLogSourceBtn">Save</button>
       </div>
-      <div class="help" style="margin-top:8px">Leave this <b>On the VM</b> unless the file exists only inside a container. A path on a mounted volume is readable from the VM, and stays readable when the container is replaced.</div>
+      <div class="help" style="margin-top:8px">A <b>wildcard registers the whole set at once</b> — <span class="mono">/var/log/app/archived/*.log</span> covers every file in that folder, including the ones written tomorrow. Live logs follow the newest match and move across when it rotates; an export sends every matching file that overlaps the dates you pick, oldest first.</div>
+      <div class="help" style="margin-top:6px">Leave this <b>On the VM</b> unless the file exists only inside a container. A path on a mounted volume is readable from the VM, and stays readable when the container is replaced.</div>
       <div class="error-box" id="logSourceError" role="alert" style="margin-top:10px"></div>
     </div>
-    ${data.logSources.length === 0
-      ? '<div class="help">No custom log paths registered — for apps that write to their own log file instead of stdout or the systemd journal.</div>'
-      : data.logSources.map(s => `
-          <div class="log-path-row">
-            <span style="flex:1;min-width:0"><b>${escapeHtml(s.name)}</b> <span class="p">${escapeHtml(s.path)}</span>${
-              s.container ? ` <span class="pill neutral">in ${escapeHtml(s.container)}</span>` : ''}</span>
-            <button class="link" data-path-logs="${s.id}">Logs</button>
-            ${me.role === 'admin' ? `
-              <button class="btn small" data-edit-source="${s.id}">Edit</button>
-              <button class="btn small" data-delete-source="${s.id}">Remove</button>` : ''}
-          </div>`).join('')}`;
+    <div class="help" id="logSyncNote" style="display:none;margin-bottom:10px"></div>
+    ${renderLogSourceRows(data.logSources, me.role === 'admin')}`;
 
   $('#panelLogPaths').querySelectorAll('[data-path-logs]').forEach(btn => {
     btn.addEventListener('click', () => jumpToLiveLogs('file', btn.dataset.pathLogs));
+  });
+
+  $('#panelLogPaths').querySelectorAll('[data-toggle-kids]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const box = $('#logKids-' + btn.dataset.toggleKids);
+      if (!box) return;
+      box.hidden = !box.hidden;
+      btn.textContent = (box.hidden ? 'show ' : 'hide ') + btn.dataset.kidCount + ' files';
+    });
   });
 
   $('#panelOverview').querySelectorAll('[data-unit-logs]').forEach(btn => {
@@ -3108,6 +3113,30 @@ function renderDetail(id) {
         errBox.textContent = err.message;
         errBox.classList.add('show');
       }
+    });
+    $('#panelLogPaths').querySelectorAll('[data-sync-source]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const note = $('#logSyncNote');
+        btn.disabled = true;
+        btn.textContent = 'Syncing\u2026';
+        note.style.display = 'block';
+        note.textContent = 'Asking the VM what is in that folder\u2026';
+        try {
+          const r = await api(`/vms/${id}/log-sources/${btn.dataset.syncSource}/sync`,
+                              { method: 'POST' });
+          // Said out loud, because a sync that found nothing new leaves a
+          // screen identical to one that never ran.
+          note.textContent = r.total === 0
+            ? 'Nothing in that folder matched \u2014 check the path and the wildcard.'
+            : `${r.total} file${r.total === 1 ? '' : 's'} \u2014 ${r.added} added, ${r.removed} removed.`
+              + (r.truncated ? ' Only the newest are listed; export the folder itself for older ones.' : '');
+          await openVmDetail(id);
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = 'Sync';
+          note.textContent = e.message || 'Could not sync that folder.';
+        }
+      });
     });
     document.querySelectorAll('[data-delete-source]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -3387,6 +3416,57 @@ function jumpToLiveLogs(type, key) {
   }
 }
 
+/* A folder and the files a sync found in it. The files are rows in their
+   own right -- each is what you click to read or export one day's log --
+   but they are drawn inside their folder and collapsed, because a folder
+   nobody prunes holds hundreds and a flat list of those is unreadable. */
+function isLogPattern(path) {
+  return path.includes('*') || path.includes('?') || path.includes('[');
+}
+
+function renderLogSourceRows(sources, isAdmin) {
+  const kids = {};
+  sources.filter(s => s.parent_id).forEach(s => {
+    (kids[s.parent_id] = kids[s.parent_id] || []).push(s);
+  });
+  // Newest first: these names carry their date, and the file anyone opens
+  // this list for is nearly always today's.
+  Object.keys(kids).forEach(k => kids[k].sort((a, b) => b.path.localeCompare(a.path)));
+
+  const tops = sources.filter(s => !s.parent_id);
+  if (tops.length === 0) {
+    return '<div class="help">No custom log paths registered — for apps that write to their own '
+         + 'log file instead of stdout or the systemd journal. A path with a wildcard in it is a '
+         + '<b>folder</b>: sync it and every file inside gets an entry of its own.</div>';
+  }
+
+  return tops.map(s => {
+    const folder = isLogPattern(s.path);
+    const found = kids[s.id] || [];
+    return `
+      <div class="log-path-row">
+        <span style="flex:1;min-width:0"><b>${escapeHtml(s.name)}</b> <span class="p">${escapeHtml(s.path)}</span>${
+          folder ? ' <span class="pill neutral">folder</span>' : ''}${
+          s.container ? ` <span class="pill neutral">in ${escapeHtml(s.container)}</span>` : ''}${
+          folder ? `<div class="help" style="margin-top:3px">${
+            found.length
+              ? `<button class="link" data-toggle-kids="${s.id}" data-kid-count="${found.length}">show ${found.length} files</button>`
+              : 'no files found yet'
+          } · ${s.synced_at ? 'synced ' + shortAgo(s.synced_at) + ' ago' : 'never synced'}</div>` : ''}</span>
+        ${folder && isAdmin ? `<button class="btn small" data-sync-source="${s.id}">Sync</button>` : ''}
+        <button class="link" data-path-logs="${s.id}">Logs</button>
+        ${isAdmin ? `
+          <button class="btn small" data-edit-source="${s.id}">Edit</button>
+          <button class="btn small" data-delete-source="${s.id}">Remove</button>` : ''}
+      </div>${found.length ? `
+      <div class="log-path-kids" id="logKids-${s.id}" hidden>${found.map(k => `
+        <div class="log-path-row child">
+          <span style="flex:1;min-width:0"><span class="p">${escapeHtml(k.path)}</span></span>
+          <button class="link" data-path-logs="${k.id}">Logs</button>
+        </div>`).join('')}</div>` : ''}`;
+  }).join('');
+}
+
 function startLiveLogsPolling() {
   stopLiveLogsPolling();
   const data = vmDetails[selectedVmId] || { containers: [], services: [], logSources: [] };
@@ -3399,8 +3479,13 @@ function startLiveLogsPolling() {
         .map(c => ({ key: `container::${c.name}`, type: 'container', name: c.name })),
     ...data.services.filter(s => s.logs_enabled)
         .map(s => ({ key: `service::${s.name}`, type: 'service', name: s.name })),
-    ...data.logSources.map(s => ({ key: `file::${s.id}`, type: 'file', name: s.path,
-                                   label: s.name, container: s.container })),
+    // A file a folder sync found is labelled under its folder, so a
+    // hundred dated filenames in this list are still attributable.
+    ...data.logSources.map(s => {
+      const parent = s.parent_id && data.logSources.find(p => p.id === s.parent_id);
+      return { key: `file::${s.id}`, type: 'file', name: s.path, container: s.container,
+               label: parent ? parent.name + ' / ' + s.name : s.name };
+    }),
   ];
   if (targets.length === 0) {
     $('#liveLogsEmpty').style.display = 'block';

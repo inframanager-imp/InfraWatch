@@ -13,7 +13,7 @@ from ..notifications import alert_summary, send_alert_notification
 from ..recipients import recipients_for_vm
 from ..security import verify_password
 from ..settings_store import smtp_config
-from ..streams import agent_sockets, browser_sockets, export_queues, stream_vms
+from ..streams import agent_sockets, browser_sockets, export_queues, scan_queues, stream_vms
 
 router = APIRouter(tags=["agent"])
 
@@ -123,6 +123,13 @@ async def agent_ws(websocket: WebSocket, name: str, token: str):
         while True:
             data = await websocket.receive_json()
             stream_id = data.get("stream_id")
+
+            # A folder scan is a single reply to a single question, so it
+            # is answered and done with before anything else is considered.
+            scan = scan_queues.get(stream_id)
+            if scan is not None:
+                await scan.put(data.get("files") or [])
+                continue
 
             # An export is being collected into a file rather than shown live,
             # so its lines go to a queue and its end is explicit.

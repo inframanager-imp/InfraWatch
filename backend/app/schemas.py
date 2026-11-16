@@ -153,10 +153,22 @@ class LogSourceOut(BaseModel):
     name: str
     path: str
     container: Optional[str] = None   # null when the path is on the VM
+    parent_id: Optional[str] = None   # set on a file some folder sync found
+    synced_at: Optional[datetime] = None  # folders only
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class LogSourceSyncOut(BaseModel):
+    """What a folder sync changed, so the UI can say so rather than leaving
+    a button that looks identical before and after it was pressed."""
+    added: int
+    removed: int
+    total: int
+    truncated: bool
+    sources: list[LogSourceOut]
 
 
 class LogSourceCreate(BaseModel):

@@ -122,9 +122,21 @@ class LogSource(Base):
     path = Column(String, nullable=False)
     # Null means the path is on the VM itself.
     container = Column(String, nullable=True)
+    # A folder entry -- a path with a wildcard in it -- owns the file rows a
+    # sync discovered under it. Null is a path someone typed in by hand,
+    # which is every row that existed before folders did.
+    parent_id = Column(UUID(as_uuid=False), ForeignKey("log_sources.id"), nullable=True, index=True)
+    # When this folder was last scanned. Null on a file row, and on a folder
+    # nobody has synced yet.
+    synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     vm = relationship("VM", back_populates="log_sources")
+    # Deleting the folder takes its files with it: on their own they are
+    # rows nothing maintains and nothing would ever remove.
+    children = relationship("LogSource", back_populates="parent",
+                            cascade="all, delete-orphan")
+    parent = relationship("LogSource", back_populates="children", remote_side=[id])
 
 
 class ResourceSetting(Base):

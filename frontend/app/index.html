@@ -3846,23 +3846,50 @@ async function runLogExport() {
     const res = await fetch(logExportSource.url(utcWire(bounds.from), utcWire(bounds.to)), {
       headers: token ? { Authorization: 'Bearer ' + token } : {},
     });
-    if (res.status === 401) { logout(); return; }
+    if (res.status === 401) {
+      // logout() swaps to the sign-in screen, so the message has to be set
+      // before that happens or there is nothing left to set it on.
+      logExportFail('Session expired \u2014 sign in again, then retry the export.');
+      logout();
+      return;
+    }
     if (!res.ok) {
       let detail = `Export failed (${res.status})`;
       try { const body = await res.json(); if (body && body.detail) detail = body.detail; } catch (e) { /* no body */ }
       throw new Error(detail);
     }
+    let written = 0;
     if (sink) {
       // A body that cannot be streamed is small enough not to matter.
-      if (res.body && res.body.getReader) await streamToSink(res, sink, btn);
-      else { await sink.write(await res.blob()); await sink.close(); }
+      if (res.body && res.body.getReader) {
+        written = await streamToSink(res, sink, btn);
+      } else {
+        const blob = await res.blob();
+        written = blob.size;
+        await sink.write(blob);
+        await sink.close();
+      }
     } else {
-      downloadBlob(await readWithProgress(res, btn), name);
+      const blob = await readWithProgress(res, btn);
+      written = blob.size;
+      downloadBlob(blob, name);
     }
     finished = true;
-    closeLogExport();
+    // An empty file is a result, not a success, and the range is the usual
+    // reason for it.
+    if (written === 0) {
+      logExportFail('Nothing came back for that range \u2014 the file may be empty, '
+                  + 'or already rotated away.');
+      return;
+    }
+    setExportProgress(`Saved ${formatBytes(written)} to ${name}`);
+    // Left up long enough to be read, rather than closing out from under it.
+    setTimeout(closeLogExport, 1800);
   } catch (e) {
-    logExportFail(e.message);
+    // The dialog gets the short version; the console keeps the stack, which
+    // is the difference between "it did nothing" and a reportable fault.
+    console.error('[InfraWatch] export failed', e);
+    logExportFail(e.message || 'The export stopped before it finished.');
   } finally {
     // A sink opened but never written to would otherwise leave an empty
     // file sitting where the person asked the export to go.

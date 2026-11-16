@@ -1029,6 +1029,20 @@
   .modal-close{ border:0; background:none; color:var(--muted); font-size:15px; cursor:pointer; line-height:1; padding:4px; }
   .modal-close:hover{ color:var(--text); }
   .modal-body{ padding:16px 22px 22px; }
+  /* An export can run for minutes with nothing on screen to show for it.
+     The bar is indeterminate because the total is genuinely unknown until
+     the last line arrives -- the byte count is what carries the progress. */
+  .export-progress{ display:none; flex-direction:column; gap:7px; margin:14px 0 2px; }
+  .export-progress.show{ display:flex; }
+  .export-progress-track{ height:4px; border-radius:99px; background:var(--divider); overflow:hidden; }
+  .export-progress-track i{
+    display:block; width:38%; height:100%; border-radius:99px;
+    background:var(--accent); animation:bootSlide 1.15s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion:reduce){
+    .export-progress-track i{ animation:none; width:100%; opacity:.45; }
+  }
+  .export-progress-text{ font-family:var(--mono); font-size:11px; color:var(--muted); }
   .modal-hint{ font-size:12px; color:var(--muted); margin:0 0 16px; line-height:1.55; }
   .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
   .modal-grid2{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
@@ -1987,6 +2001,10 @@
         </div>
       </div>
       <div class="help" id="logExportNote"></div>
+      <div class="export-progress" id="logExportProgress" role="status" aria-live="polite">
+        <div class="export-progress-track" aria-hidden="true"><i></i></div>
+        <div class="export-progress-text" id="logExportProgressText"></div>
+      </div>
       <div class="modal-actions">
         <button type="button" class="btn" id="logExportBufferBtn">Save what&rsquo;s on screen</button>
         <button type="button" class="btn primary" id="logExportRunBtn">Download</button>
@@ -3708,6 +3726,7 @@ function openLogExport(source) {
   $('#logExportSource').textContent = source.label;
   $('#logExportNote').textContent = source.note;
   $('#logExportError').classList.remove('show');
+  clearExportProgress();
   applyLogExportPreset(168);
   markLogExportPreset('168');
   $('#logExportOverlay').style.display = 'flex';
@@ -3750,7 +3769,7 @@ async function streamToSink(res, sink, btn) {
       if (done) break;
       await sink.write(value);
       received += value.length;
-      btn.textContent = `Saving ${formatBytes(received)}\u2026`;
+      setExportProgress(`Saved ${formatBytes(received)} so far\u2026`);
     }
     await sink.close();
   } catch (e) {
@@ -3779,9 +3798,19 @@ async function readWithProgress(res, btn) {
     if (done) break;
     chunks.push(value);
     received += value.length;
-    btn.textContent = `Collecting ${formatBytes(received)}\u2026`;
+    setExportProgress(`Collected ${formatBytes(received)} so far\u2026`);
   }
   return new Blob(chunks, { type: 'text/plain' });
+}
+
+function setExportProgress(text) {
+  $('#logExportProgressText').textContent = text;
+  $('#logExportProgress').classList.add('show');
+}
+
+function clearExportProgress() {
+  $('#logExportProgress').classList.remove('show');
+  $('#logExportProgressText').textContent = '';
 }
 
 function logExportFail(message) {
@@ -3808,6 +3837,10 @@ async function runLogExport() {
   logExportBusy = true;
   btn.disabled = true;
   btn.textContent = sink ? 'Saving\u2026' : 'Collecting\u2026';
+  $('#logExportBufferBtn').disabled = true;
+  // Said before the first byte arrives, because reaching the VM and opening
+  // the file is itself part of the wait.
+  setExportProgress('Asking the VM for the logs\u2026');
   let finished = false;
   try {
     const res = await fetch(logExportSource.url(utcWire(bounds.from), utcWire(bounds.to)), {
@@ -3838,7 +3871,9 @@ async function runLogExport() {
     }
     logExportBusy = false;
     btn.disabled = false;
+    $('#logExportBufferBtn').disabled = false;
     btn.textContent = 'Download';
+    clearExportProgress();
   }
 }
 

@@ -131,7 +131,12 @@ async def agent_ws(websocket: WebSocket, name: str, token: str):
                 if data.get("done"):
                     await queue.put({"done": True, "lines": data.get("lines"),
                                      "truncated": bool(data.get("truncated"))})
+                elif "batch" in data:
+                    await queue.put({"batch": data.get("batch") or []})
                 else:
+                    # An agent that has not picked up the new build yet still
+                    # sends one line at a time, and both kinds are connected
+                    # at once for as long as the rollout takes.
                     await queue.put({"line": data.get("line", "")})
                 continue
 

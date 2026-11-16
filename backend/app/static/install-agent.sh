@@ -470,6 +470,13 @@ def _journal_time(value):
     return value.replace("T", " ").replace("Z", " UTC")
 
 
+# A line per message meant a million messages for a million lines, all of
+# them queueing behind one lock on the socket that also carries heartbeats
+# and every live log viewer on this VM. Batched, the same export is a few
+# thousand messages and the socket is free again almost immediately.
+EXPORT_BATCH_LINES = 500
+
+
 def export_worker(ws, stream_id, cmd, max_lines):
     """Runs a bounded log dump and sends it, then marks the end explicitly.
 
@@ -480,27 +487,43 @@ def export_worker(ws, stream_id, cmd, max_lines):
     sent = 0
     truncated = False
     proc = None
+    batch = []
+
+    def flush():
+        """False means the socket is gone, which no amount of retrying fixes."""
+        if not batch:
+            return True
+        try:
+            with _ws_send_lock:
+                ws.send(json.dumps({"stream_id": stream_id, "batch": batch}))
+        except Exception:
+            return False
+        del batch[:]
+        return True
+
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         for line in proc.stdout:
             if sent >= max_lines:
                 truncated = True
                 break
-            with _ws_send_lock:
-                ws.send(json.dumps({"stream_id": stream_id, "line": line.rstrip(chr(10))}))
+            batch.append(line.rstrip(chr(10)))
             sent += 1
+            if len(batch) >= EXPORT_BATCH_LINES and not flush():
+                return
     except Exception as e:
-        try:
-            with _ws_send_lock:
-                ws.send(json.dumps({"stream_id": stream_id, "line": f"[agent] export failed: {e}"}))
-        except Exception:
-            pass
+        # Queued rather than sent here: whatever is already held back has to
+        # reach the file before the failure that ended it.
+        batch.append(f"[agent] export failed: {e}")
     finally:
         if proc is not None:
             try:
                 proc.terminate()
             except Exception:
                 pass
+        # Anything still held back must land before the end marker, or the
+        # file is short and claims to be complete.
+        flush()
         try:
             with _ws_send_lock:
                 ws.send(json.dumps({"stream_id": stream_id, "done": True,

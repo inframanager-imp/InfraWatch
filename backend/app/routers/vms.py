@@ -278,7 +278,7 @@ def delete_log_source(vm_id: str, source_id: str, db: Session = Depends(get_db),
 # here degrades the VM for everyone else -- a blast radius the CloudWatch
 # path does not have, because that one talks to AWS directly. Batching
 # lines into frames is what would let these two limits match.
-AGENT_EXPORT_MAX_LINES = 1_000_000
+AGENT_EXPORT_MAX_LINES = 5_000_000
 EXPORT_IDLE_TIMEOUT = 120  # seconds of silence from the agent before giving up
 
 
@@ -306,7 +306,10 @@ async def export_logs(
         raise HTTPException(status_code=409, detail="The agent on this VM is not connected")
 
     stream_id = str(uuid.uuid4())
-    queue: asyncio.Queue = asyncio.Queue(maxsize=10000)
+    # Counted in batches now, not lines. Ten thousand batches would be five
+    # million lines held in memory if the browser stopped reading, which is
+    # the thing this whole path exists to avoid.
+    queue: asyncio.Queue = asyncio.Queue(maxsize=256)
     export_queues[stream_id] = queue
     try:
         await agent_ws.send_json({
@@ -338,7 +341,13 @@ async def export_logs(
                     if item.get("truncated"):
                         yield f"\n# truncated at {AGENT_EXPORT_MAX_LINES} lines — narrow the range for the rest\n"
                     return
-                yield item["line"] + "\n"
+                if "batch" in item:
+                    # Joined rather than sent line by line: the batch is the
+                    # whole point, and re-splitting it here would undo it.
+                    if item["batch"]:
+                        yield "\n".join(item["batch"]) + "\n"
+                else:
+                    yield item["line"] + "\n"
         finally:
             export_queues.pop(stream_id, None)
 

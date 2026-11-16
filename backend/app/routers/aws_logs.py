@@ -15,7 +15,7 @@ from ..cloudwatch import (
 from ..s3 import forget as forget_s3
 from ..database import SessionLocal, get_db
 from ..models import AwsLogAccount, AwsLogLabel, User
-from ..security import get_current_user, get_user_from_token, require_admin
+from ..security import get_current_user, get_user_from_token, require_admin, get_download_user
 
 router = APIRouter(tags=["aws-logs"])
 
@@ -148,7 +148,7 @@ def export_account_logs(
     since: str = Query(...),
     until: str = Query(...),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_download_user),
 ):
     """Download a date range of one log group as a file.
 

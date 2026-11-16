@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from .. import schemas
 from ..database import get_db
 from ..models import User
-from ..security import create_access_token, get_current_user, verify_password
+from ..security import (create_access_token, create_download_ticket,
+                        get_current_user, verify_password)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -24,6 +25,12 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
 
     token = create_access_token(subject=user.email)
     return schemas.Token(access_token=token)
+
+
+@router.post("/download-ticket")
+def download_ticket(current_user: User = Depends(get_current_user)):
+    """A one-minute credential so a file download can authenticate itself."""
+    return {"ticket": create_download_ticket(subject=current_user.email)}
 
 
 @router.get("/me", response_model=schemas.UserOut)

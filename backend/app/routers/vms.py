@@ -11,7 +11,7 @@ from .. import schemas
 from ..audit import log_action
 from ..database import SessionLocal, get_db
 from ..models import AlertGroup, Container, LogSource, ResourceSetting, Service, User, VM, VMAlertGroup
-from ..security import get_current_user, get_user_from_token, hash_password, require_admin
+from ..security import get_current_user, get_user_from_token, hash_password, require_admin, get_download_user
 from ..streams import (
     KEEPALIVE_SECONDS, STREAM_PING, agent_sockets, browser_sockets, export_queues, stream_vms,
 )
@@ -291,7 +291,7 @@ async def export_logs(
     since: str | None = Query(None),
     until: str | None = Query(None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_download_user),
 ):
     """Download a date range of one log source as a file.
 

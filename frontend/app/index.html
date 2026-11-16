@@ -3734,75 +3734,6 @@ function openLogExport(source) {
 
 function closeLogExport() { $('#logExportOverlay').style.display = 'none'; }
 
-/* Picked before anything is fetched, because the file picker needs the
-   click that is still in hand and an awaited fetch would have spent it.
-
-   Returns a writable stream to stream into, EXPORT_CANCELLED if the person
-   closed the picker, or null where the browser has no picker and the
-   export has to be collected in memory instead. */
-const EXPORT_CANCELLED = 'cancelled';
-
-async function openExportSink(name) {
-  if (!window.showSaveFilePicker) return null;
-  try {
-    const handle = await window.showSaveFilePicker({
-      suggestedName: name,
-      types: [{ description: 'Log file', accept: { 'text/plain': ['.log'] } }],
-    });
-    return await handle.createWritable();
-  } catch (e) {
-    // Closing the picker is a decision, not a failure, and must not be
-    // reported as one. Anything else means no picker is usable here.
-    if (e && e.name === 'AbortError') return EXPORT_CANCELLED;
-    return null;
-  }
-}
-
-/* The point of the whole exercise: one chunk is held at a time, so a ten
-   million line export costs the same memory as a ten line one. */
-async function streamToSink(res, sink, btn) {
-  const reader = res.body.getReader();
-  let received = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      await sink.write(value);
-      received += value.length;
-      setExportProgress(`Saved ${formatBytes(received)} so far\u2026`);
-    }
-    await sink.close();
-  } catch (e) {
-    // Leave no half-written file behind claiming to be a complete export.
-    try { await sink.abort(); } catch (ignored) { /* already gone */ }
-    throw e;
-  }
-  return received;
-}
-
-/* The fallback, for browsers with no file picker. Shows the file growing
-   instead of a frozen button. A week of a busy log
-   group is minutes of paging, and without this it looks identical to a
-   request that never left.
-
-   Falls back to res.blob() where the body cannot be streamed -- and note a
-   proxy with response buffering on will hold everything until the end, in
-   which case this jumps straight to the total rather than counting up. */
-async function readWithProgress(res, btn) {
-  if (!res.body || !res.body.getReader) return res.blob();
-  const reader = res.body.getReader();
-  const chunks = [];
-  let received = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.length;
-    setExportProgress(`Collected ${formatBytes(received)} so far\u2026`);
-  }
-  return new Blob(chunks, { type: 'text/plain' });
-}
-
 function setExportProgress(text) {
   $('#logExportProgressText').textContent = text;
   $('#logExportProgress').classList.add('show');
@@ -3827,80 +3758,40 @@ async function runLogExport() {
   if (!bounds) return logExportFail('Pick a day on the calendar.');
   if (bounds.from >= bounds.to) return logExportFail('The start has to come before the end.');
 
-  const safe = logExportSource.filename.replace(/[^a-z0-9_.-]/gi, '_').slice(0, 60);
-  const name = `${safe}-${isoDay(bounds.from)}_${isoDay(bounds.to)}.log`;
-
-  const sink = await openExportSink(name);
-  if (sink === EXPORT_CANCELLED) return;
-
   const btn = $('#logExportRunBtn');
   logExportBusy = true;
   btn.disabled = true;
-  btn.textContent = sink ? 'Saving\u2026' : 'Collecting\u2026';
   $('#logExportBufferBtn').disabled = true;
-  // Said before the first byte arrives, because reaching the VM and opening
-  // the file is itself part of the wait.
+  btn.textContent = 'Starting\u2026';
   setExportProgress('Asking the VM for the logs\u2026');
-  let finished = false;
   try {
-    const res = await fetch(logExportSource.url(utcWire(bounds.from), utcWire(bounds.to)), {
-      headers: token ? { Authorization: 'Bearer ' + token } : {},
-    });
-    if (res.status === 401) {
-      // logout() swaps to the sign-in screen, so the message has to be set
-      // before that happens or there is nothing left to set it on.
-      logExportFail('Session expired \u2014 sign in again, then retry the export.');
-      logout();
-      return;
-    }
-    if (!res.ok) {
-      let detail = `Export failed (${res.status})`;
-      try { const body = await res.json(); if (body && body.detail) detail = body.detail; } catch (e) { /* no body */ }
-      throw new Error(detail);
-    }
-    let written = 0;
-    if (sink) {
-      // A body that cannot be streamed is small enough not to matter.
-      if (res.body && res.body.getReader) {
-        written = await streamToSink(res, sink, btn);
-      } else {
-        const blob = await res.blob();
-        written = blob.size;
-        await sink.write(blob);
-        await sink.close();
-      }
-    } else {
-      const blob = await readWithProgress(res, btn);
-      written = blob.size;
-      downloadBlob(blob, name);
-    }
-    finished = true;
-    // An empty file is a result, not a success, and the range is the usual
-    // reason for it.
-    if (written === 0) {
-      logExportFail('Nothing came back for that range \u2014 the file may be empty, '
-                  + 'or already rotated away.');
-      return;
-    }
-    setExportProgress(`Saved ${formatBytes(written)} to ${name}`);
-    // Left up long enough to be read, rather than closing out from under it.
-    setTimeout(closeLogExport, 1800);
+    // Handed to the browser rather than fetched: it streams the file to disk
+    // itself and shows its own progress, and nothing passes through this tab
+    // -- which is what a multi-gigabyte export cannot survive. The price is
+    // that a download cannot send an Authorization header, so it carries a
+    // one-minute, download-only ticket in the URL instead.
+    const granted = await api('/auth/download-ticket', { method: 'POST' });
+    const a = document.createElement('a');
+    a.href = logExportSource.url(utcWire(bounds.from), utcWire(bounds.to))
+           + '&ticket=' + encodeURIComponent(granted.ticket);
+    // Empty on purpose: the server names the file in Content-Disposition,
+    // and that name carries the range, which this side would have to repeat.
+    a.download = '';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setExportProgress('Download started \u2014 it will appear in your browser downloads.');
+    // Left up long enough to be read rather than closing out from under it.
+    setTimeout(closeLogExport, 2200);
   } catch (e) {
-    // The dialog gets the short version; the console keeps the stack, which
-    // is the difference between "it did nothing" and a reportable fault.
     console.error('[InfraWatch] export failed', e);
-    logExportFail(e.message || 'The export stopped before it finished.');
+    logExportFail(e.message || 'Could not start the download.');
   } finally {
-    // A sink opened but never written to would otherwise leave an empty
-    // file sitting where the person asked the export to go.
-    if (sink && !finished) {
-      try { await sink.abort(); } catch (ignored) { /* already gone */ }
-    }
     logExportBusy = false;
     btn.disabled = false;
     $('#logExportBufferBtn').disabled = false;
     btn.textContent = 'Download';
-    clearExportProgress();
   }
 }
 

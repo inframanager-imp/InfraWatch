@@ -3322,171 +3322,210 @@ function wsBase() {
   return API_BASE.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 }
 
-/* The controls as they stand right now. Read once and passed down, because
-   the callers below ask about thousands of lines in a row and the answer
-   cannot change between two of them. */
-function currentLogFilters() {
+
+
+/* What a source replays when a viewer attaches (STREAM_BACKLOG in the
+   installer, BACKLOG_LINES in the CloudWatch reader -- they agree). */
+const STREAM_BACKLOG_LINES = 3000;
+/* The replay arrives as a burst and a live log does not, so a gap this long
+   means the burst is over. This is what ends the wait for a source holding
+   fewer lines than the backlog, which never reaches the count above. */
+const BACKLOG_IDLE_MS = 700;
+/* And a source busy enough never to leave a gap still has to start reading
+   as live at some point. */
+const BACKLOG_MAX_MS = 6000;
+
+/* Both log viewers do the same thing: a socket opens, the source replays
+   its backlog, and only then does anything live arrive. They differ in
+   which elements they draw into -- so the behaviour lives here once and
+   each viewer is an instance of it, rather than two copies that have to be
+   kept in step by hand. The server side already assumes this: the AWS
+   socket was built to the shape the agent viewer reads.
+
+   cfg.prefix names the loading elements this instance owns, so two
+   viewers can be mid-replay at once without fighting over an id. */
+function createLogStreamView(cfg) {
+  let count = 0;       // lines on screen, counted rather than re-queried
+  let pending = [];    // arrived, not yet drawn
+  let seen = 0;        // lines since this socket opened
+  let replaying = false;
+  let frame = null, idleTimer = null, maxTimer = null;
+
+  const el = id => $('#' + id);
+  const pane = () => el(cfg.pane);
+
+  /* The controls as they stand right now, read once and passed down: the
+     callers below ask about thousands of lines in a row, and the answer
+     cannot change between two of them. */
+  function filters() {
+    return {
+      search: el(cfg.search).value.toLowerCase(),
+      levels: [...document.querySelectorAll('#' + cfg.levels + ' .lvl-chip')]
+        .filter(c => c.getAttribute('aria-pressed') === 'true').map(c => c.dataset.lvl),
+    };
+  }
+
+  function matches(line, f) {
+    const level = line.dataset.level;
+    if (level && !f.levels.includes(level)) return false;
+    if (!f.search) return true;
+    return line.textContent.toLowerCase().includes(f.search);
+  }
+
+  function footer() {
+    el(cfg.footCount).textContent =
+      count.toLocaleString() + (count === 1 ? ' line' : ' lines') + ' buffered';
+  }
+
+  /* One parse, one insert, one scroll for the whole batch. Appending three
+     thousand lines one at a time meant three thousand forced layouts, and
+     the old line counter walked every line already on screen each time --
+     which is most of why opening a busy log felt like the page had stopped
+     responding. */
+  function draw(raws) {
+    if (!raws.length) return;
+    const box = pane();
+    const tpl = document.createElement('template');
+    tpl.innerHTML = raws.map(logLineHtml).join('');
+    const added = tpl.content.children.length;
+    const f = filters();
+    for (const line of tpl.content.children) {
+      line.classList.toggle('hidden', !matches(line, f));
+    }
+    box.appendChild(tpl.content);
+    count += added;
+    footer();
+    if (el(cfg.autoscroll).checked) box.scrollTop = box.scrollHeight;
+  }
+
+  function flush() {
+    frame = null;
+    const batch = pending;
+    pending = [];
+    draw(batch);
+  }
+
+  function progress() {
+    const text = seen.toLocaleString();
+    const bar = el(cfg.prefix + 'LoadingBar');
+    if (bar) {
+      // Capped: a source can hold more than the backlog asks for, and a bar
+      // past its own end reads as a bug.
+      bar.style.width = Math.min(100, (seen / STREAM_BACKLOG_LINES) * 100).toFixed(1) + '%';
+    }
+    const counter = el(cfg.prefix + 'LoadingCount');
+    if (counter) {
+      counter.textContent = text + ' of ' + STREAM_BACKLOG_LINES.toLocaleString() + ' lines';
+    }
+    cfg.setStatus('loading', 'Loading history ' + text);
+  }
+
+  function clearTimers() {
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    if (maxTimer) { clearTimeout(maxTimer); maxTimer = null; }
+  }
+
   return {
-    search: $('#liveLogsSearch').value.toLowerCase(),
-    levels: [...document.querySelectorAll('#liveLogsLevelToggle .lvl-chip')]
-      .filter(c => c.getAttribute('aria-pressed') === 'true').map(c => c.dataset.lvl),
+    /* `inPane` is false on a reconnect, where the lines already on screen
+       stay put and there is no empty terminal to explain. */
+    begin(inPane, label) {
+      replaying = true;
+      seen = 0;
+      pending = [];
+      clearTimers();
+      if (inPane) {
+        const total = STREAM_BACKLOG_LINES.toLocaleString();
+        const source = label ? '<b>' + escapeHtml(label) + '</b>' : 'this source';
+        pane().innerHTML =
+          '<div class="log-loading" id="' + cfg.prefix + 'Loading">'
+          + '<span class="spinner"></span>'
+          + '<div class="log-loading-title">Loading recent history</div>'
+          + '<div class="log-loading-sub">Replaying the last ' + total + ' lines of '
+          + source + ' before live output begins.</div>'
+          + '<div class="log-loading-bar"><i id="' + cfg.prefix + 'LoadingBar"></i></div>'
+          + '<div class="log-loading-count" id="' + cfg.prefix + 'LoadingCount">0 of '
+          + total + ' lines</div>'
+          + '</div>';
+      }
+      cfg.setStatus('loading', 'Loading history…');
+      idleTimer = setTimeout(this.finish, BACKLOG_IDLE_MS);
+      maxTimer = setTimeout(this.finish, BACKLOG_MAX_MS);
+    },
+
+    push(raw) {
+      pending.push(raw);
+      if (!replaying) {
+        // Coalesced to a frame: a chatty source can outrun the display, and
+        // drawing faster than the screen refreshes buys nothing.
+        if (frame === null) frame = requestAnimationFrame(flush);
+        return;
+      }
+      seen += 1;
+      // Every twenty-five rather than every line: enough for the bar to
+      // move in thirty steps rather than ten.
+      if (seen % 25 === 0) progress();
+      if (seen >= STREAM_BACKLOG_LINES) { this.finish(); return; }
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(this.finish, BACKLOG_IDLE_MS);
+    },
+
+    /* Runs once per stream, from whichever signal arrives first: the
+       backlog size reached, a gap in it, or the ceiling. Bound rather than
+       loose, because it is also what the timers above call. */
+    finish: function finish() {
+      if (!replaying) return;
+      replaying = false;
+      clearTimers();
+      const loader = el(cfg.prefix + 'Loading');
+      if (loader) loader.remove();
+      flush();
+      if (cfg.isOpen()) cfg.setStatus('live', 'Live');
+    },
+
+    /* Drops a replay in progress without drawing it -- for a stream being
+       replaced, where the lines would arrive again anyway. */
+    cancel() {
+      replaying = false;
+      clearTimers();
+      if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
+      pending = [];
+    },
+
+    clear() {
+      pane().innerHTML = '';
+      count = 0;
+      footer();
+    },
+
+    applyFilters() {
+      const f = filters();
+      pane().querySelectorAll('.log-line').forEach(line => {
+        line.classList.toggle('hidden', !matches(line, f));
+      });
+    },
   };
 }
 
-function lineMatches(el, filters) {
-  const level = el.dataset.level;
-  if (level && !filters.levels.includes(level)) return false;
-  if (!filters.search) return true;
-  return el.textContent.toLowerCase().includes(filters.search);
-}
+const vmLogView = createLogStreamView({
+  prefix: 'liveLogs', pane: 'liveLogsContent', search: 'liveLogsSearch',
+  levels: 'liveLogsLevelToggle', autoscroll: 'liveLogsAutoscroll',
+  footCount: 'liveLogsFootCount', setStatus: (s, l) => setLogStatus(s, l),
+  isOpen: () => !!liveLogsSocket && liveLogsSocket.readyState === WebSocket.OPEN,
+});
 
-function lineMatchesFilters(el) {
-  return lineMatches(el, currentLogFilters());
-}
+const awsLogView = createLogStreamView({
+  prefix: 'aws', pane: 'awsLogContent', search: 'awsSearch',
+  levels: 'awsLevelToggle', autoscroll: 'awsAutoscroll',
+  footCount: 'awsFootCount', setStatus: (s, l) => setAwsStatus(s, l),
+  isOpen: () => !!awsSocket && awsSocket.readyState === WebSocket.OPEN,
+});
 
-function applyLiveLogFilters() {
-  const filters = currentLogFilters();
-  document.querySelectorAll('#liveLogsContent .log-line').forEach(el => {
-    el.classList.toggle('hidden', !lineMatches(el, filters));
-  });
-}
-
-/* What the agent replays when a viewer attaches (STREAM_BACKLOG in the
-   installer). Reaching it is the clearest sign the history is all here. */
-const STREAM_BACKLOG_LINES = 3000;
-/* The replay arrives as a burst and a live log does not, so a gap this long
-   means the burst is over. This is what ends the wait for a log holding
-   fewer lines than the backlog, which never reaches the count above. */
-const BACKLOG_IDLE_MS = 700;
-/* And a log busy enough never to leave a gap still has to start reading as
-   live at some point. */
-const BACKLOG_MAX_MS = 6000;
-
-let liveLogsCount = 0;        // lines on screen, counted rather than re-queried
-let liveLogsPending = [];     // arrived, not yet drawn
-let liveLogsSeen = 0;         // lines since this socket opened
-let liveLogsBacklog = false;  // still replaying history
-let liveLogsFlushFrame = null;
-let liveLogsIdleTimer = null;
-let liveLogsMaxTimer = null;
-
-/* One parse, one insert, one scroll for the whole batch. Three thousand
-   separate appends meant three thousand forced layouts, and the old line
-   counter walked every line already on screen each time -- which is most of
-   why opening a busy log felt like the page had stopped responding. */
-function renderLogLines(raws) {
-  if (!raws.length) return;
-  const container = $('#liveLogsContent');
-  const tpl = document.createElement('template');
-  tpl.innerHTML = raws.map(logLineHtml).join('');
-  const added = tpl.content.children.length;
-  const filters = currentLogFilters();
-  for (const el of tpl.content.children) {
-    el.classList.toggle('hidden', !lineMatches(el, filters));
-  }
-  container.appendChild(tpl.content);
-  liveLogsCount += added;
-  updateLogFootCount();
-  if ($('#liveLogsAutoscroll').checked) container.scrollTop = container.scrollHeight;
-}
-
-function flushLiveLogLines() {
-  liveLogsFlushFrame = null;
-  const batch = liveLogsPending;
-  liveLogsPending = [];
-  renderLogLines(batch);
-}
-
-function appendLiveLogLine(raw) {
-  liveLogsPending.push(raw);
-  if (!liveLogsBacklog) {
-    // Coalesced to a frame: a chatty service can outrun the display, and
-    // drawing faster than the screen refreshes buys nothing.
-    if (liveLogsFlushFrame === null) {
-      liveLogsFlushFrame = requestAnimationFrame(flushLiveLogLines);
-    }
-    return;
-  }
-
-  liveLogsSeen += 1;
-  // Every hundred rather than every line: the point is to show movement.
-  if (liveLogsSeen % 25 === 0) showBacklogProgress();
-  if (liveLogsSeen >= STREAM_BACKLOG_LINES) { finishBacklog(); return; }
-  if (liveLogsIdleTimer) clearTimeout(liveLogsIdleTimer);
-  liveLogsIdleTimer = setTimeout(finishBacklog, BACKLOG_IDLE_MS);
-}
-
-function showBacklogProgress() {
-  const seen = liveLogsSeen.toLocaleString();
-  const bar = $('#liveLogsLoadingBar');
-  if (bar) {
-    // Capped: a source can hold more than the backlog asks for, and a bar
-    // past its own end reads as a bug.
-    const pct = Math.min(100, (liveLogsSeen / STREAM_BACKLOG_LINES) * 100);
-    bar.style.width = pct.toFixed(1) + '%';
-  }
-  const count = $('#liveLogsLoadingCount');
-  if (count) {
-    count.textContent = seen + ' of ' + STREAM_BACKLOG_LINES.toLocaleString() + ' lines';
-  }
-  setLogStatus('loading', 'Loading history ' + seen);
-}
-
-/* Called once per stream, by whichever signal arrives first. */
-function finishBacklog() {
-  if (!liveLogsBacklog) return;
-  liveLogsBacklog = false;
-  if (liveLogsIdleTimer) { clearTimeout(liveLogsIdleTimer); liveLogsIdleTimer = null; }
-  if (liveLogsMaxTimer) { clearTimeout(liveLogsMaxTimer); liveLogsMaxTimer = null; }
-  const loader = $('#liveLogsLoading');
-  if (loader) loader.remove();
-  flushLiveLogLines();
-  if (liveLogsSocket && liveLogsSocket.readyState === WebSocket.OPEN) {
-    setLogStatus('live', 'Live');
-  }
-}
-
-/* `inPane` is false on a reconnect, where the lines already on screen stay
-   put and there is no empty terminal to explain. */
-function startBacklogWait(inPane, label) {
-  liveLogsBacklog = true;
-  liveLogsSeen = 0;
-  liveLogsPending = [];
-  if (liveLogsIdleTimer) clearTimeout(liveLogsIdleTimer);
-  if (liveLogsMaxTimer) clearTimeout(liveLogsMaxTimer);
-  if (inPane) {
-    const total = STREAM_BACKLOG_LINES.toLocaleString();
-    const source = label ? '<b>' + escapeHtml(label) + '</b>' : 'this source';
-    $('#liveLogsContent').innerHTML =
-      '<div class="log-loading" id="liveLogsLoading">'
-      + '<span class="spinner"></span>'
-      + '<div class="log-loading-title">Loading recent history</div>'
-      + '<div class="log-loading-sub">Replaying the last ' + total + ' lines of '
-      + source + ' before live output begins.</div>'
-      + '<div class="log-loading-bar"><i id="liveLogsLoadingBar"></i></div>'
-      + '<div class="log-loading-count" id="liveLogsLoadingCount">0 of ' + total + ' lines</div>'
-      + '</div>';
-  }
-  setLogStatus('loading', 'Loading history…');
-  liveLogsIdleTimer = setTimeout(finishBacklog, BACKLOG_IDLE_MS);
-  liveLogsMaxTimer = setTimeout(finishBacklog, BACKLOG_MAX_MS);
-}
-
-function cancelBacklogWait() {
-  liveLogsBacklog = false;
-  if (liveLogsIdleTimer) { clearTimeout(liveLogsIdleTimer); liveLogsIdleTimer = null; }
-  if (liveLogsMaxTimer) { clearTimeout(liveLogsMaxTimer); liveLogsMaxTimer = null; }
-  if (liveLogsFlushFrame !== null) {
-    cancelAnimationFrame(liveLogsFlushFrame);
-    liveLogsFlushFrame = null;
-  }
-  liveLogsPending = [];
-}
-
-function updateLogFootCount() {
-  const n = liveLogsCount;
-  $('#liveLogsFootCount').textContent = n.toLocaleString() + (n === 1 ? ' line' : ' lines') + ' buffered';
-}
+// Kept as names because the listeners and socket handlers below read better
+// for them than for a method call on an object two screens away.
+function appendLiveLogLine(raw) { vmLogView.push(raw); }
+function applyLiveLogFilters() { vmLogView.applyFilters(); }
+function startBacklogWait(inPane, label) { vmLogView.begin(inPane, label); }
+function cancelBacklogWait() { vmLogView.cancel(); }
 
 const dockerAccessors = {
   name: c => c.name,
@@ -3727,11 +3766,7 @@ function connectLiveLogsStream(resume = false) {
   const { type, name, container } = logExportTarget();
   const vmId = selectedVmId;
   cancelBacklogWait();
-  if (!resume) {
-    $('#liveLogsContent').innerHTML = '';
-    liveLogsCount = 0;
-    updateLogFootCount();
-  }
+  if (!resume) vmLogView.clear();
   setLogStatus('', resume ? 'Reconnecting…' : 'Connecting…');
 
   // The per-line source column the mockup shows would be the same value on
@@ -4126,11 +4161,7 @@ $('#liveLogsPauseBtn').addEventListener('click', () => {
 // backlog back after a Clear.
 $('#liveLogsReloadBtn').addEventListener('click', () => connectLiveLogsStream());
 
-$('#liveLogsClearBtn').addEventListener('click', () => {
-  $('#liveLogsContent').innerHTML = '';
-  liveLogsCount = 0;
-  updateLogFootCount();
-});
+$('#liveLogsClearBtn').addEventListener('click', () => vmLogView.clear());
 $('#liveLogsExportBtn').addEventListener('click', () => openLogExport(vmLogExportSource()));
 
 function logsExpanded() { return $('#liveLogsBody').classList.contains('logs-expanded'); }
@@ -4886,35 +4917,7 @@ Leave blank to use the ECS service name, or the log group itself.`,
 
 $('#awsGroupFilter').addEventListener('input', renderAwsGroups);
 
-function awsFootCount() {
-  const n = document.querySelectorAll('#awsLogContent .log-line').length;
-  $('#awsFootCount').textContent = n.toLocaleString() + (n === 1 ? ' line' : ' lines') + ' buffered';
-}
-
-function awsLineMatches(el) {
-  const search = $('#awsSearch').value.toLowerCase();
-  const levels = [...document.querySelectorAll('#awsLevelToggle .lvl-chip')]
-    .filter(c => c.getAttribute('aria-pressed') === 'true').map(c => c.dataset.lvl);
-  const level = el.dataset.level;
-  return (!level || levels.includes(level)) && (!search || el.textContent.toLowerCase().includes(search));
-}
-
-function awsApplyFilters() {
-  document.querySelectorAll('#awsLogContent .log-line').forEach(el => {
-    el.classList.toggle('hidden', !awsLineMatches(el));
-  });
-}
-
-function awsAppend(raw) {
-  const box = $('#awsLogContent');
-  const wrap = document.createElement('div');
-  wrap.innerHTML = logLineHtml(raw);
-  const line = wrap.firstElementChild;
-  line.classList.toggle('hidden', !awsLineMatches(line));
-  box.appendChild(line);
-  awsFootCount();
-  if ($('#awsAutoscroll').checked) box.scrollTop = box.scrollHeight;
-}
+function awsApplyFilters() { awsLogView.applyFilters(); }
 
 function stopAwsStream() {
   if (awsSocket) { awsSocket.close(); awsSocket = null; }
@@ -4932,8 +4935,7 @@ function openAwsGroup(group) {
   $('#awsViewerBody').style.display = 'block';
   const meta = awsGroups.find(g => g.name === group);
   $('#awsViewerTitle').textContent = meta ? displayName(meta) : group;
-  $('#awsLogContent').innerHTML = '';
-  awsFootCount();
+  awsLogView.clear();
   $('#awsSearch').value = '';
   document.querySelectorAll('#awsLevelToggle .lvl-chip').forEach(c => c.setAttribute('aria-pressed', 'true'));
 
@@ -4949,9 +4951,19 @@ function openAwsGroup(group) {
     + `?token=${encodeURIComponent(token)}&log_group=${encodeURIComponent(group)}`;
   const socket = new WebSocket(url);
   awsSocket = socket;
-  socket.onopen = () => setAwsStatus('live', 'Live');
-  socket.onmessage = ev => awsAppend(ev.data);
-  socket.onclose = () => { if (awsSocket === socket) { awsSocket = null; setAwsStatus('', 'Disconnected'); } };
+  // CloudWatch replays a backlog before the live tail starts, exactly as
+  // the agent does, so the viewer says so rather than claiming Live over a
+  // pane that is still filling.
+  socket.onopen = () => awsLogView.begin(true, $('#awsViewerTitle').textContent);
+  socket.onmessage = ev => awsLogView.push(ev.data);
+  socket.onclose = () => {
+    if (awsSocket !== socket) return;
+    awsSocket = null;
+    // finish rather than cancel: nothing is going to re-send these, so
+    // whatever arrived before the socket died belongs on screen.
+    awsLogView.finish();
+    setAwsStatus('', 'Disconnected');
+  };
   socket.onerror = () => setAwsStatus('err', 'Connection error');
 }
 
@@ -4981,7 +4993,7 @@ document.querySelectorAll('#awsLevelToggle .lvl-chip').forEach(chip => {
     awsApplyFilters();
   });
 });
-$('#awsClearBtn').addEventListener('click', () => { $('#awsLogContent').innerHTML = ''; awsFootCount(); });
+$('#awsClearBtn').addEventListener('click', () => awsLogView.clear());
 $('#awsReloadBtn').addEventListener('click', () => { if (awsSelectedGroup) openAwsGroup(awsSelectedGroup); });
 $('#awsExpandBtn').addEventListener('click', () =>
   setAwsExpanded(!$('#awsViewerBody').classList.contains('logs-expanded')));

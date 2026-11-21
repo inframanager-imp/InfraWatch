@@ -1015,6 +1015,19 @@
   .log-status.live i{ background:var(--ok); animation:pulseDot 1.4s ease-in-out infinite; }
   .log-status.err{ color:var(--crit-ink); }
   .log-status.err i{ background:var(--crit); }
+  /* Amber rather than green: the socket is open, but what is coming down it
+     is the past, not the present. */
+  .log-status.loading i{ background:var(--warn); animation:pulseDot 1.4s ease-in-out infinite; }
+
+  /* Held in the terminal while the agent replays its backlog, so an empty
+     pane reads as "still arriving" rather than "nothing to show". */
+  .log-loading{
+    display:flex; align-items:center; justify-content:center; gap:13px;
+    padding:40px 18px; font-family:var(--sans); color:var(--term-fg);
+  }
+  .log-loading .spinner{ opacity:.75; }
+  .log-loading b{ display:block; font-size:13px; font-weight:600; margin-bottom:3px; }
+  .log-loading .sub{ font-size:11.5px; color:var(--muted); }
 
   /* ============================================================ MODALS */
   /* Above everything, the full-screen log panel (60) included -- a dialog
@@ -3281,34 +3294,155 @@ function wsBase() {
   return API_BASE.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 }
 
-function lineMatchesFilters(el) {
-  const search = $('#liveLogsSearch').value.toLowerCase();
-  const activeLevels = [...document.querySelectorAll('#liveLogsLevelToggle .lvl-chip')]
-    .filter(c => c.getAttribute('aria-pressed') === 'true').map(c => c.dataset.lvl);
+/* The controls as they stand right now. Read once and passed down, because
+   the callers below ask about thousands of lines in a row and the answer
+   cannot change between two of them. */
+function currentLogFilters() {
+  return {
+    search: $('#liveLogsSearch').value.toLowerCase(),
+    levels: [...document.querySelectorAll('#liveLogsLevelToggle .lvl-chip')]
+      .filter(c => c.getAttribute('aria-pressed') === 'true').map(c => c.dataset.lvl),
+  };
+}
+
+function lineMatches(el, filters) {
   const level = el.dataset.level;
-  const text = el.textContent.toLowerCase();
-  return (!level || activeLevels.includes(level)) && (!search || text.includes(search));
+  if (level && !filters.levels.includes(level)) return false;
+  if (!filters.search) return true;
+  return el.textContent.toLowerCase().includes(filters.search);
+}
+
+function lineMatchesFilters(el) {
+  return lineMatches(el, currentLogFilters());
 }
 
 function applyLiveLogFilters() {
+  const filters = currentLogFilters();
   document.querySelectorAll('#liveLogsContent .log-line').forEach(el => {
-    el.classList.toggle('hidden', !lineMatchesFilters(el));
+    el.classList.toggle('hidden', !lineMatches(el, filters));
   });
 }
 
-function appendLiveLogLine(raw) {
+/* What the agent replays when a viewer attaches (STREAM_BACKLOG in the
+   installer). Reaching it is the clearest sign the history is all here. */
+const STREAM_BACKLOG_LINES = 3000;
+/* The replay arrives as a burst and a live log does not, so a gap this long
+   means the burst is over. This is what ends the wait for a log holding
+   fewer lines than the backlog, which never reaches the count above. */
+const BACKLOG_IDLE_MS = 700;
+/* And a log busy enough never to leave a gap still has to start reading as
+   live at some point. */
+const BACKLOG_MAX_MS = 6000;
+
+let liveLogsCount = 0;        // lines on screen, counted rather than re-queried
+let liveLogsPending = [];     // arrived, not yet drawn
+let liveLogsSeen = 0;         // lines since this socket opened
+let liveLogsBacklog = false;  // still replaying history
+let liveLogsFlushFrame = null;
+let liveLogsIdleTimer = null;
+let liveLogsMaxTimer = null;
+
+/* One parse, one insert, one scroll for the whole batch. Three thousand
+   separate appends meant three thousand forced layouts, and the old line
+   counter walked every line already on screen each time -- which is most of
+   why opening a busy log felt like the page had stopped responding. */
+function renderLogLines(raws) {
+  if (!raws.length) return;
   const container = $('#liveLogsContent');
-  const wrapper = document.createElement('div');
-  wrapper.innerHTML = logLineHtml(raw);
-  const lineEl = wrapper.firstElementChild;
-  lineEl.classList.toggle('hidden', !lineMatchesFilters(lineEl));
-  container.appendChild(lineEl);
+  const tpl = document.createElement('template');
+  tpl.innerHTML = raws.map(logLineHtml).join('');
+  const added = tpl.content.children.length;
+  const filters = currentLogFilters();
+  for (const el of tpl.content.children) {
+    el.classList.toggle('hidden', !lineMatches(el, filters));
+  }
+  container.appendChild(tpl.content);
+  liveLogsCount += added;
   updateLogFootCount();
   if ($('#liveLogsAutoscroll').checked) container.scrollTop = container.scrollHeight;
 }
 
+function flushLiveLogLines() {
+  liveLogsFlushFrame = null;
+  const batch = liveLogsPending;
+  liveLogsPending = [];
+  renderLogLines(batch);
+}
+
+function appendLiveLogLine(raw) {
+  liveLogsPending.push(raw);
+  if (!liveLogsBacklog) {
+    // Coalesced to a frame: a chatty service can outrun the display, and
+    // drawing faster than the screen refreshes buys nothing.
+    if (liveLogsFlushFrame === null) {
+      liveLogsFlushFrame = requestAnimationFrame(flushLiveLogLines);
+    }
+    return;
+  }
+
+  liveLogsSeen += 1;
+  // Every hundred rather than every line: the point is to show movement.
+  if (liveLogsSeen % 100 === 0) showBacklogProgress();
+  if (liveLogsSeen >= STREAM_BACKLOG_LINES) { finishBacklog(); return; }
+  if (liveLogsIdleTimer) clearTimeout(liveLogsIdleTimer);
+  liveLogsIdleTimer = setTimeout(finishBacklog, BACKLOG_IDLE_MS);
+}
+
+function showBacklogProgress() {
+  const sub = $('#liveLogsLoadingSub');
+  const seen = liveLogsSeen.toLocaleString();
+  if (sub) sub.textContent = seen + ' lines so far…';
+  setLogStatus('loading', 'Loading history ' + seen);
+}
+
+/* Called once per stream, by whichever signal arrives first. */
+function finishBacklog() {
+  if (!liveLogsBacklog) return;
+  liveLogsBacklog = false;
+  if (liveLogsIdleTimer) { clearTimeout(liveLogsIdleTimer); liveLogsIdleTimer = null; }
+  if (liveLogsMaxTimer) { clearTimeout(liveLogsMaxTimer); liveLogsMaxTimer = null; }
+  const loader = $('#liveLogsLoading');
+  if (loader) loader.remove();
+  flushLiveLogLines();
+  if (liveLogsSocket && liveLogsSocket.readyState === WebSocket.OPEN) {
+    setLogStatus('live', 'Live');
+  }
+}
+
+/* `inPane` is false on a reconnect, where the lines already on screen stay
+   put and there is no empty terminal to explain. */
+function startBacklogWait(inPane) {
+  liveLogsBacklog = true;
+  liveLogsSeen = 0;
+  liveLogsPending = [];
+  if (liveLogsIdleTimer) clearTimeout(liveLogsIdleTimer);
+  if (liveLogsMaxTimer) clearTimeout(liveLogsMaxTimer);
+  if (inPane) {
+    $('#liveLogsContent').innerHTML =
+      '<div class="log-loading" id="liveLogsLoading"><span class="spinner"></span>'
+      + '<div><b>Loading recent history</b>'
+      + '<div class="sub" id="liveLogsLoadingSub">Replaying the last '
+      + STREAM_BACKLOG_LINES.toLocaleString()
+      + ' lines from this source… live output follows.</div></div></div>';
+  }
+  setLogStatus('loading', 'Loading history…');
+  liveLogsIdleTimer = setTimeout(finishBacklog, BACKLOG_IDLE_MS);
+  liveLogsMaxTimer = setTimeout(finishBacklog, BACKLOG_MAX_MS);
+}
+
+function cancelBacklogWait() {
+  liveLogsBacklog = false;
+  if (liveLogsIdleTimer) { clearTimeout(liveLogsIdleTimer); liveLogsIdleTimer = null; }
+  if (liveLogsMaxTimer) { clearTimeout(liveLogsMaxTimer); liveLogsMaxTimer = null; }
+  if (liveLogsFlushFrame !== null) {
+    cancelAnimationFrame(liveLogsFlushFrame);
+    liveLogsFlushFrame = null;
+  }
+  liveLogsPending = [];
+}
+
 function updateLogFootCount() {
-  const n = document.querySelectorAll('#liveLogsContent .log-line').length;
+  const n = liveLogsCount;
   $('#liveLogsFootCount').textContent = n.toLocaleString() + (n === 1 ? ' line' : ' lines') + ' buffered';
 }
 
@@ -3550,8 +3684,10 @@ function connectLiveLogsStream(resume = false) {
   // disagree about which container a path lives in.
   const { type, name, container } = logExportTarget();
   const vmId = selectedVmId;
+  cancelBacklogWait();
   if (!resume) {
     $('#liveLogsContent').innerHTML = '';
+    liveLogsCount = 0;
     updateLogFootCount();
   }
   setLogStatus('', resume ? 'Reconnecting…' : 'Connecting…');
@@ -3571,7 +3707,9 @@ function connectLiveLogsStream(resume = false) {
   const socket = new WebSocket(url);
   liveLogsSocket = socket;
 
-  socket.onopen = () => { liveLogsRetry = 0; setLogStatus('live', 'Live'); };
+  // Not "Live" yet: what arrives first is the replayed history, and calling
+  // that live is what made an empty terminal look like a silent service.
+  socket.onopen = () => { liveLogsRetry = 0; startBacklogWait(!resume); };
   socket.onmessage = ev => {
     if (ev.data === STREAM_PING) return;   // keepalive, not output
     if (liveLogsPaused) { liveLogsBuffer.push(ev.data); return; }
@@ -3583,6 +3721,7 @@ function connectLiveLogsStream(resume = false) {
     // A stream can end for reasons the operator had no part in -- the agent's
     // channel dropped, a proxy timed the socket out. Sitting on "Disconnected"
     // until someone reloads the page is the behaviour this replaces.
+    cancelBacklogWait();
     if (!logsTabOpen()) { setLogStatus('', 'Disconnected'); return; }
     const wait = Math.min(30000, 2000 * Math.pow(2, liveLogsRetry));
     liveLogsRetry += 1;
@@ -3947,6 +4086,7 @@ $('#liveLogsReloadBtn').addEventListener('click', () => connectLiveLogsStream())
 
 $('#liveLogsClearBtn').addEventListener('click', () => {
   $('#liveLogsContent').innerHTML = '';
+  liveLogsCount = 0;
   updateLogFootCount();
 });
 $('#liveLogsExportBtn').addEventListener('click', () => openLogExport(vmLogExportSource()));

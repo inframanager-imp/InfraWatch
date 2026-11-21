@@ -1,4 +1,5 @@
 import os
+import sys
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
@@ -91,7 +92,19 @@ def heartbeat(payload: schemas.HeartbeatIn, background_tasks: BackgroundTasks, d
             known_names.add(s.name)
 
     db.flush()  # so alert evaluation's own queries see the ResourceSetting rows just added above
-    opened, resolved = evaluate_heartbeat_alerts(db, vm, payload.containers, payload.services)
+    try:
+        # In a savepoint: a fault in one rule rolls back the alert writes and
+        # leaves the inventory and the metric sample to commit. Losing those
+        # blinds the fleet for this VM, which is a worse failure by far than
+        # an alert that did not advance this tick -- and it is the failure
+        # that happens, because evaluation runs before the commit.
+        with db.begin_nested():
+            opened, resolved = evaluate_heartbeat_alerts(
+                db, vm, payload.containers, payload.services)
+    except Exception as e:
+        print(f"alert evaluation failed for {vm.name}: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        opened, resolved = [], []
 
     db.commit()
 

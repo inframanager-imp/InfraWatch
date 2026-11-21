@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, field_validator
@@ -124,6 +124,23 @@ class ServiceOut(BaseModel):
         from_attributes = True
 
 
+def _naive_utc(value: Optional[datetime]) -> Optional[datetime]:
+    """A stamp from the agent, as the rest of this app keeps time.
+
+    The agent ends every instant with a Z, so pydantic hands back a
+    timezone-aware datetime, while everything the backend produces --
+    datetime.utcnow(), every default on a column -- is naive UTC. The two
+    cannot be compared or subtracted, and the columns these land in are
+    `timestamp without time zone` anyway, so the offset is dropped on the
+    way into the database regardless. Dropping it here instead makes that
+    deliberate, and keeps a comparison from raising halfway through a
+    heartbeat.
+    """
+    if value is None or value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 class ContainerIn(BaseModel):
     name: str
     image: Optional[str] = None
@@ -135,12 +152,22 @@ class ContainerIn(BaseModel):
     ports: Optional[str] = None
     started_at: Optional[datetime] = None
 
+    @field_validator("started_at")
+    @classmethod
+    def _as_naive_utc(cls, value):
+        return _naive_utc(value)
+
 
 class ServiceIn(BaseModel):
     name: str
     status: str
     sub_state: Optional[str] = None
     started_at: Optional[datetime] = None
+
+    @field_validator("started_at")
+    @classmethod
+    def _as_naive_utc(cls, value):
+        return _naive_utc(value)
     custom: Optional[bool] = None  # True if the agent found a hand-written unit file at
     # /etc/systemd/system/<name> rather than one shipped by an OS package. Used only to pick
     # a sensible default the FIRST time this service is ever seen for a VM — never overrides

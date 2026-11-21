@@ -11,7 +11,8 @@ from .. import schemas
 from ..audit import log_action
 from ..database import SessionLocal, get_db
 from ..logfolders import ScanUnavailable, apply_scan, is_pattern, scan_folder
-from ..models import AlertGroup, Container, LogSource, ResourceSetting, Service, User, VM, VMAlertGroup
+from ..models import (AlertGroup, Container, Environment, LogSource, ResourceSetting,
+                      Service, User, VM, VMAlertGroup)
 from ..security import get_current_user, get_user_from_token, hash_password, require_admin, get_download_user
 from ..streams import (
     KEEPALIVE_SECONDS, STREAM_PING, agent_sockets, browser_sockets, export_queues,
@@ -76,8 +77,26 @@ def list_vms(db: Session = Depends(get_db), user: User = Depends(get_current_use
     return [_serialize_vm(vm) for vm in vms]
 
 
+def _known_environment(db: Session, environment_id: str) -> None:
+    """A VM must point at an environment that exists.
+
+    Left to the database this surfaced as a foreign key violation, which is
+    a 500 -- a server fault reported for a request that was simply wrong.
+    """
+    if not db.query(Environment.id).filter(Environment.id == environment_id).first():
+        raise HTTPException(status_code=400, detail="That environment does not exist")
+
+
 @router.post("", response_model=schemas.VMCreated)
 def create_vm(payload: schemas.VMCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    # Stripped and required, the same as renaming one: a VM with a blank
+    # name cannot be installed against, because the agent authenticates by
+    # exactly this string.
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="A name is required")
+    payload.name = name
+    _known_environment(db, payload.environment_id)
     if db.query(VM).filter(VM.name == payload.name).first():
         raise HTTPException(status_code=400, detail="A VM with this name already exists")
 
@@ -106,6 +125,12 @@ def update_vm(vm_id: str, payload: schemas.VMUpdate, db: Session = Depends(get_d
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
 
+    if payload.name is not None:
+        payload.name = payload.name.strip()
+        if not payload.name:
+            raise HTTPException(status_code=400, detail="A name is required")
+    if payload.environment_id is not None:
+        _known_environment(db, payload.environment_id)
     if payload.name is not None and payload.name != vm.name:
         if db.query(VM).filter(VM.name == payload.name, VM.id != vm.id).first():
             raise HTTPException(status_code=400, detail="A VM with this name already exists")
@@ -239,7 +264,11 @@ def create_log_source(vm_id: str, payload: schemas.LogSourceCreate, db: Session 
     vm = db.query(VM).filter(VM.id == vm_id).first()
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
-    source = LogSource(vm_id=vm.id, name=payload.name, path=payload.path,
+    # The same requirement editing one already had: a source with no path
+    # is a row nothing can ever read.
+    if not (payload.name or "").strip() or not (payload.path or "").strip():
+        raise HTTPException(status_code=400, detail="A name and a path are both required")
+    source = LogSource(vm_id=vm.id, name=payload.name.strip(), path=payload.path.strip(),
                        container=(payload.container or "").strip() or None)
     db.add(source)
     db.commit()
@@ -325,6 +354,61 @@ def delete_log_source(vm_id: str, source_id: str, db: Session = Depends(get_db),
     log_action(db, admin.email, "log_source.delete", target=f"{vm_id}:{source.path}")
 
 
+def _resolve_log_target(db: Session, vm: VM, target_type: str, name: str,
+                        container: str | None) -> tuple[str, str | None]:
+    """What the agent should be asked for, from the row rather than the caller.
+
+    The agent does as it is told and runs as root, so whatever reaches it is
+    read with no further check. That makes this function the whole boundary:
+    a path arrives as a claim about what to read, and leaves only if a row
+    says it is something this VM has registered.
+
+    Returns (name, container) taken from the stored row, so a caller cannot
+    smuggle a different path past a matching name.
+    """
+    if target_type == "file":
+        query = db.query(LogSource).filter(LogSource.vm_id == vm.id, LogSource.path == name)
+        # Two sources may watch the same path in different containers, so the
+        # container is part of the identity rather than a hint.
+        query = query.filter(LogSource.container == ((container or "").strip() or None))
+        source = query.first()
+        if source is None:
+            raise HTTPException(
+                status_code=404,
+                detail="That path is not a registered log source on this VM",
+            )
+        return source.path, source.container
+
+    if target_type == "container":
+        row = db.query(Container).filter(Container.vm_id == vm.id,
+                                         Container.name == name).first()
+    elif target_type == "service":
+        row = db.query(Service).filter(Service.vm_id == vm.id,
+                                       Service.name == name).first()
+    else:
+        raise HTTPException(status_code=400,
+                            detail="type must be container, service or file")
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"This VM is not reporting a {target_type} called {name!r}",
+        )
+
+    # The Logs toggle was only ever applied when building the dropdown, which
+    # means it decided what was offered and not what was allowed.
+    setting = db.query(ResourceSetting).filter(
+        ResourceSetting.vm_id == vm.id,
+        ResourceSetting.resource_type == target_type,
+        ResourceSetting.name == name,
+    ).first()
+    if setting is not None and not setting.logs_enabled:
+        raise HTTPException(status_code=403,
+                            detail=f"Logs are switched off for this {target_type}")
+
+    # A container is named by `name`; only a file is read from inside one.
+    return name, None
+
+
 # A tenth of the CloudWatch ceiling, deliberately. The agent sends one
 # WebSocket message per line over the same socket that carries its
 # heartbeats and every live log viewer on this VM, so an oversized export
@@ -354,6 +438,9 @@ async def export_logs(
     beyond the line in flight.
     """
     vm = _get_accessible_vm(db, user, vm_id)
+    # Resolved before the agent is even looked for: an unregistered path is
+    # refused whether or not anything is listening.
+    name, container = _resolve_log_target(db, vm, type, name, container)
     agent_ws = agent_sockets.get(vm.name)
     if agent_ws is None:
         raise HTTPException(status_code=409, detail="The agent on this VM is not connected")
@@ -441,6 +528,15 @@ async def logs_ws(websocket: WebSocket, vm_id: str, token: str, type: str, name:
                 await websocket.close(code=4403)
                 return
         vm_name = vm.name
+        # Same boundary as the export. A socket cannot carry a status code,
+        # so the reason is sent as a line before it closes -- the viewer
+        # prints it like any other.
+        try:
+            name, container = _resolve_log_target(db, vm, type, name, container)
+        except HTTPException as refusal:
+            await websocket.send_text("[infrawatch] " + str(refusal.detail))
+            await websocket.close(code=4403)
+            return
     finally:
         db.close()
 

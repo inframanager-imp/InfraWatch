@@ -32,9 +32,26 @@ _CLIENT_CONFIG = Config(retries={"max_attempts": 3, "mode": "standard"}, connect
 # Kept modest: this runs inside a request thread, and AWS throttles per account.
 _WORKERS = 8
 
-# GetMetricData takes up to 500 queries per call; two per bucket, left well
-# under the limit so a region with many buckets still batches cleanly.
-_METRIC_BATCH = 100
+# S3 publishes a separate size metric per storage class, and asking only
+# about Standard reported no size at all for a bucket that has been moved to
+# Glacier or Intelligent-Tiering -- while its object count, which is asked
+# for across all classes, still showed. These are every class AWS publishes
+# a size for; whichever answer comes back is summed.
+_SIZE_CLASSES = (
+    "StandardStorage",
+    "StandardIAStorage",
+    "OneZoneIAStorage",
+    "ReducedRedundancyStorage",
+    "IntelligentTieringFAStorage",
+    "IntelligentTieringIAStorage",
+    "GlacierInstantRetrievalStorage",
+    "GlacierStorage",
+    "DeepArchiveStorage",
+)
+
+# GetMetricData takes up to 500 queries per call. One per size class plus the
+# object count is ten per bucket, so the batch is sized to stay under it.
+_METRIC_BATCH = 45
 
 
 class S3Error(CloudWatchError):
@@ -164,10 +181,10 @@ def _storage_metrics(connection, region: str, names: list[str]) -> dict[str, dic
     for batch in [names[i:i + _METRIC_BATCH] for i in range(0, len(names), _METRIC_BATCH)]:
         queries = []
         for n, name in enumerate(batch):
-            for label, metric, storage in (
-                ("size", "BucketSizeBytes", "StandardStorage"),
-                ("count", "NumberOfObjects", "AllStorageTypes"),
-            ):
+            wanted = [("count", "NumberOfObjects", "AllStorageTypes")]
+            wanted += [("size%d" % i, "BucketSizeBytes", storage)
+                       for i, storage in enumerate(_SIZE_CLASSES)]
+            for label, metric, storage in wanted:
                 queries.append({
                     "Id": f"{label}_{n}",
                     "MetricStat": {
@@ -197,11 +214,17 @@ def _storage_metrics(connection, region: str, names: list[str]) -> dict[str, dic
             label, _, index = result["Id"].partition("_")
             values, stamps = result.get("Values") or [], result.get("Timestamps") or []
             if not values:
-                continue
+                continue  # that class holds nothing in this bucket
             name = batch[int(index)]
             entry = out.setdefault(name, {})
-            entry["size_bytes" if label == "size" else "object_count"] = int(values[0])
-            entry["measured_at"] = _iso(stamps[0]) if stamps else None
+            if label == "count":
+                entry["object_count"] = int(values[0])
+            else:
+                # Summed across classes: a bucket part-way through a lifecycle
+                # transition holds bytes in more than one at once.
+                entry["size_bytes"] = entry.get("size_bytes", 0) + int(values[0])
+            if stamps:
+                entry["measured_at"] = _iso(stamps[0])
     return out
 
 

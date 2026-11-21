@@ -32,9 +32,14 @@ def create_environment(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    if db.query(Environment).filter(Environment.name == payload.name).first():
+    # Stripped and required, the same as renaming one. A blank environment
+    # is selectable in the VM form and names nothing.
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="A name is required")
+    if db.query(Environment).filter(Environment.name == name).first():
         raise HTTPException(status_code=400, detail="Environment already exists")
-    env = Environment(name=payload.name)
+    env = Environment(name=name)
     db.add(env)
     db.commit()
     db.refresh(env)

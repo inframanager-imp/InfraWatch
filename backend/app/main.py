@@ -2,6 +2,8 @@ import asyncio
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DataError
 
 from .alerts import sweep_vm_offline_alerts
 from .checker import prune_url_samples, run_due_checks
@@ -161,6 +163,24 @@ async def on_startup():
     asyncio.create_task(_offline_sweep_loop())
     asyncio.create_task(_url_check_loop())
     asyncio.create_task(_folder_sync_loop())
+
+
+@app.exception_handler(DataError)
+async def unreadable_identifier(request, exc: DataError):
+    """An id that is not a UUID means no such row, not a server fault.
+
+    Every id in this API is a path parameter, and Postgres refuses one that
+    is not a UUID before any handler can check whether it exists -- so
+    /vms/banana used to answer 500 on every route that takes an id. Caught
+    here rather than in each of them, because the next route to be added
+    would otherwise have to remember.
+
+    Anything else that reaches this is a real fault and is left to behave
+    like one.
+    """
+    if "invalid input syntax for type uuid" in str(getattr(exc, "orig", exc)):
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    raise exc
 
 
 @app.get("/health")

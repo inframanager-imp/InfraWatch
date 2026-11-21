@@ -12,7 +12,11 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import User
-from ..s3 import S3Error, list_buckets, list_objects
+# CloudWatchError, not just S3Error: assuming the role happens in the
+# shared cloudwatch module and raises the parent, so catching only the
+# subclass turned an expired credential into a 500.
+from ..cloudwatch import CloudWatchError
+from ..s3 import list_buckets, list_objects
 from ..security import get_current_user
 # Imported rather than re-implemented: one definition of who may see an
 # account, so a change to the grant rules cannot miss this page.
@@ -39,7 +43,7 @@ async def s3_buckets(
         # Several AWS round trips per bucket; off the event loop so one slow
         # account cannot stall every other request on the server.
         buckets = await asyncio.to_thread(list_buckets, account, refresh)
-    except S3Error as e:
+    except CloudWatchError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
     return {
@@ -63,5 +67,5 @@ async def s3_objects(
     account = _readable_account_or_403(db, user, account_id)
     try:
         return await asyncio.to_thread(list_objects, account, bucket, prefix, token)
-    except S3Error as e:
+    except CloudWatchError as e:
         raise HTTPException(status_code=502, detail=str(e))

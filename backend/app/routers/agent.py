@@ -28,7 +28,17 @@ def install_script():
 
 @router.post("/agent/heartbeat")
 def heartbeat(payload: schemas.HeartbeatIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    vm = db.query(VM).filter(VM.name == payload.name).first()
+    # Locked for the length of this heartbeat, so two arriving together are
+    # applied one after the other rather than on top of each other. They do
+    # arrive together: an agent retrying after a timeout, or -- the common
+    # one -- a VM cloned from an image, leaving two agents reporting under
+    # the same name. Without this, both delete the inventory and both
+    # re-insert it (the VM shows every container twice), and both try to
+    # write the same first-sight ResourceSetting, which fails the unique
+    # constraint and loses the heartbeat to a 500.
+    #
+    # Only heartbeats for this one VM wait; every other VM is untouched.
+    vm = db.query(VM).filter(VM.name == payload.name).with_for_update().first()
     if not vm or not verify_password(payload.token, vm.agent_token_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid VM name or token")
 

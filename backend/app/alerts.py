@@ -27,6 +27,14 @@ CPU_HIGH_THRESHOLD = 90
 MEM_HIGH_THRESHOLD = 90
 DISK_HIGH_THRESHOLD = 90
 RESTART_LOOP_THRESHOLD = 3
+# Docker reports RestartCount for the whole life of the container, so the
+# count alone says "has ever restarted this often", not "is restarting now"
+# -- which left the alert true forever once it had been true once, with no
+# reading that could ever clear it. Pairing it with when the container last
+# started is what makes it a window: several restarts AND one of them just
+# now. A container that has been up longer than this has stopped looping,
+# whatever its lifetime count says.
+RESTART_LOOP_WINDOW = timedelta(minutes=15)
 
 # CPU and memory spike and settle on their own -- a build, a GC pause, a cron
 # job -- so one reading over the line is not an incident. They alert only once
@@ -229,10 +237,19 @@ def evaluate_heartbeat_alerts(db: Session, vm: VM, containers: list, services: l
             severity="warning", message=f"Container is not running (status: {c.status})",
             grace=RESTART_GRACE,
         )
-        restart_looping = (c.restart_count or 0) >= RESTART_LOOP_THRESHOLD
+        # An agent too old to report started_at cannot answer "recently", so
+        # the rule stays quiet rather than reporting a loop it cannot see.
+        restarted_recently = (
+            c.started_at is not None
+            and datetime.utcnow() - c.started_at <= RESTART_LOOP_WINDOW
+        )
+        restart_looping = (c.restart_count or 0) >= RESTART_LOOP_THRESHOLD and restarted_recently
+        minutes = int(RESTART_LOOP_WINDOW.total_seconds() // 60)
         upsert(
             vm.id, "container", c.name, "container_restart_loop", condition=restart_looping,
-            severity="warning", message=f"Container has restarted {c.restart_count} times",
+            severity="warning",
+            message=f"Container has restarted {c.restart_count} times, most recently "
+                    f"in the last {minutes} minutes",
         )
 
     unmonitored_services = {

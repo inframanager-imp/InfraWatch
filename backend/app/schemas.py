@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 
 
 class Token(BaseModel):
@@ -239,6 +239,21 @@ class HeartbeatIn(BaseModel):
     disk_percent: Optional[float] = None
     containers: list[ContainerIn] = []
     services: list[ServiceIn] = []
+
+    @field_validator("cpu_percent", "mem_percent", "disk_percent")
+    @classmethod
+    def _within_a_hundred_percent(cls, value):
+        """A percentage outside 0-100 is a fault in the reading, not a fact.
+
+        Clamped rather than refused: the rest of the heartbeat -- the whole
+        container and unit inventory -- is still worth having, and rejecting
+        it would lose that too. Clamping also turns the common real case, a
+        rounding artefact a hair over 100, into exactly 100 instead of a
+        chart that will not scale.
+        """
+        if value is None:
+            return None
+        return max(0.0, min(100.0, float(value)))
 
 
 class SmtpSettingsOut(BaseModel):

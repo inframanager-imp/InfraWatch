@@ -1020,14 +1020,42 @@
   .log-status.loading i{ background:var(--warn); animation:pulseDot 1.4s ease-in-out infinite; }
 
   /* Held in the terminal while the agent replays its backlog, so an empty
-     pane reads as "still arriving" rather than "nothing to show". */
+     pane reads as "still arriving" rather than "nothing to show".
+
+     It keeps roughly the height the terminal will have once the lines
+     land, so the panel does not jump when they do. Colours come off
+     --term-fg rather than the page's --muted, which is a dark grey chosen
+     for a light background and goes nearly invisible on this one. */
   .log-loading{
-    display:flex; align-items:center; justify-content:center; gap:13px;
-    padding:40px 18px; font-family:var(--sans); color:var(--term-fg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:15px; min-height:min(44vh,380px); padding:36px 24px;
+    font-family:var(--sans); color:var(--term-fg); text-align:center;
   }
-  .log-loading .spinner{ opacity:.75; }
-  .log-loading b{ display:block; font-size:13px; font-weight:600; margin-bottom:3px; }
-  .log-loading .sub{ font-size:11.5px; color:var(--muted); }
+  .log-loading .spinner{
+    width:30px; height:30px; border-width:2.5px; color:var(--warn); opacity:.9;
+  }
+  .log-loading-title{ font-size:16.5px; font-weight:600; letter-spacing:-0.01em; }
+  .log-loading-sub{
+    font-size:12.5px; line-height:1.55; max-width:44ch;
+    color:color-mix(in oklab, var(--term-fg) 60%, transparent);
+  }
+  .log-loading-sub b{ font-weight:600; color:color-mix(in oklab, var(--term-fg) 85%, transparent); }
+  /* Amber to green across its length: the status dot is amber while this
+     runs and green once it is Live, so a full bar is already that green. */
+  .log-loading-bar{
+    width:min(320px,78%); height:4px; border-radius:999px; overflow:hidden;
+    background:color-mix(in oklab, var(--term-fg) 13%, transparent);
+  }
+  .log-loading-bar i{
+    display:block; height:100%; width:0; border-radius:999px;
+    background:linear-gradient(90deg, var(--warn), var(--ok));
+    transition:width .3s cubic-bezier(.4,0,.2,1);
+  }
+  @media (prefers-reduced-motion:reduce){ .log-loading-bar i{ transition:none; } }
+  .log-loading-count{
+    font-family:var(--mono); font-size:11px; font-variant-numeric:tabular-nums;
+    color:color-mix(in oklab, var(--term-fg) 52%, transparent);
+  }
 
   /* ============================================================ MODALS */
   /* Above everything, the full-screen log panel (60) included -- a dialog
@@ -3382,16 +3410,25 @@ function appendLiveLogLine(raw) {
 
   liveLogsSeen += 1;
   // Every hundred rather than every line: the point is to show movement.
-  if (liveLogsSeen % 100 === 0) showBacklogProgress();
+  if (liveLogsSeen % 25 === 0) showBacklogProgress();
   if (liveLogsSeen >= STREAM_BACKLOG_LINES) { finishBacklog(); return; }
   if (liveLogsIdleTimer) clearTimeout(liveLogsIdleTimer);
   liveLogsIdleTimer = setTimeout(finishBacklog, BACKLOG_IDLE_MS);
 }
 
 function showBacklogProgress() {
-  const sub = $('#liveLogsLoadingSub');
   const seen = liveLogsSeen.toLocaleString();
-  if (sub) sub.textContent = seen + ' lines so far…';
+  const bar = $('#liveLogsLoadingBar');
+  if (bar) {
+    // Capped: a source can hold more than the backlog asks for, and a bar
+    // past its own end reads as a bug.
+    const pct = Math.min(100, (liveLogsSeen / STREAM_BACKLOG_LINES) * 100);
+    bar.style.width = pct.toFixed(1) + '%';
+  }
+  const count = $('#liveLogsLoadingCount');
+  if (count) {
+    count.textContent = seen + ' of ' + STREAM_BACKLOG_LINES.toLocaleString() + ' lines';
+  }
   setLogStatus('loading', 'Loading history ' + seen);
 }
 
@@ -3411,19 +3448,24 @@ function finishBacklog() {
 
 /* `inPane` is false on a reconnect, where the lines already on screen stay
    put and there is no empty terminal to explain. */
-function startBacklogWait(inPane) {
+function startBacklogWait(inPane, label) {
   liveLogsBacklog = true;
   liveLogsSeen = 0;
   liveLogsPending = [];
   if (liveLogsIdleTimer) clearTimeout(liveLogsIdleTimer);
   if (liveLogsMaxTimer) clearTimeout(liveLogsMaxTimer);
   if (inPane) {
+    const total = STREAM_BACKLOG_LINES.toLocaleString();
+    const source = label ? '<b>' + escapeHtml(label) + '</b>' : 'this source';
     $('#liveLogsContent').innerHTML =
-      '<div class="log-loading" id="liveLogsLoading"><span class="spinner"></span>'
-      + '<div><b>Loading recent history</b>'
-      + '<div class="sub" id="liveLogsLoadingSub">Replaying the last '
-      + STREAM_BACKLOG_LINES.toLocaleString()
-      + ' lines from this source… live output follows.</div></div></div>';
+      '<div class="log-loading" id="liveLogsLoading">'
+      + '<span class="spinner"></span>'
+      + '<div class="log-loading-title">Loading recent history</div>'
+      + '<div class="log-loading-sub">Replaying the last ' + total + ' lines of '
+      + source + ' before live output begins.</div>'
+      + '<div class="log-loading-bar"><i id="liveLogsLoadingBar"></i></div>'
+      + '<div class="log-loading-count" id="liveLogsLoadingCount">0 of ' + total + ' lines</div>'
+      + '</div>';
   }
   setLogStatus('loading', 'Loading history…');
   liveLogsIdleTimer = setTimeout(finishBacklog, BACKLOG_IDLE_MS);
@@ -3709,7 +3751,7 @@ function connectLiveLogsStream(resume = false) {
 
   // Not "Live" yet: what arrives first is the replayed history, and calling
   // that live is what made an empty terminal look like a silent service.
-  socket.onopen = () => { liveLogsRetry = 0; startBacklogWait(!resume); };
+  socket.onopen = () => { liveLogsRetry = 0; startBacklogWait(!resume, name); };
   socket.onmessage = ev => {
     if (ev.data === STREAM_PING) return;   // keepalive, not output
     if (liveLogsPaused) { liveLogsBuffer.push(ev.data); return; }

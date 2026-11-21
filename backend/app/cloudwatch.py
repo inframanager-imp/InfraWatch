@@ -138,29 +138,100 @@ def _format(event: dict, stream: str | None = None) -> str:
     return prefix + event.get("message", "").rstrip("\n")
 
 
-def fetch_backlog(connection, log_group: str, limit: int = 3000, minutes: int = 180) -> list[str]:
-    """Recent lines, oldest first, to fill the viewer when it opens.
+# How many streams back to look for the newest lines. An ECS group holds one
+# stream per task, so the recent lines live in however many tasks are running
+# -- a handful -- while the group may hold thousands of dead ones behind them.
+BACKLOG_STREAMS = 25
 
-    Bounded by time as well as count: FilterLogEvents bills by data scanned, so
-    an open-ended sweep of a busy group would be slow and needlessly expensive.
+
+def fetch_backlog(connection, log_group: str, limit: int = 3000) -> list[str]:
+    """The newest `limit` lines in the group, oldest first.
+
+    Read from the end of the most recently written streams, not forward from
+    a start time. FilterLogEvents reads forward: on a group busy enough to
+    reach the limit it returns the oldest events in the window, so the viewer
+    would fill with old lines and then jump to the live tail, with a silent
+    gap in between. On a quiet group a time window has the opposite problem --
+    three hours of a service that logs once a minute is 180 lines, not the
+    3,000 the viewer says it is loading.
+
+    Streams are taken newest-written first and read from their end. Several
+    tasks logging at once all have recent lines, so this cannot stop at the
+    first stream that fills the quota; it stops when a stream's last event is
+    older than everything already held, which nothing after it can beat.
     """
     try:
         client = session_for(connection).client("logs", config=_CLIENT_CONFIG)
-        start = int((time.time() - minutes * 60) * 1000)
-        events, token = [], None
-        while len(events) < limit:
-            kwargs = {"logGroupName": log_group, "startTime": start, "limit": min(10000, limit - len(events))}
-            if token:
-                kwargs["nextToken"] = token
-            page = client.filter_log_events(**kwargs)
-            events.extend(page.get("events", []))
-            token = page.get("nextToken")
-            if not token:
+        try:
+            streams = client.describe_log_streams(
+                logGroupName=log_group, orderBy="LastEventTime", descending=True,
+                limit=min(50, BACKLOG_STREAMS),
+            ).get("logStreams", [])
+        except ClientError as e:
+            # A role granted only FilterLogEvents cannot read streams. Rather
+            # than fail the viewer outright, fall back to what that role can
+            # do -- which is what this did before, limitations and all.
+            if e.response.get("Error", {}).get("Code") == "AccessDeniedException":
+                # Said out loud: the degraded reading looks exactly like the
+                # bug this replaced -- a short backlog on a busy group -- so
+                # leaving it silent would send someone hunting the wrong
+                # thing. The line reads in the viewer like any other.
+                return ([
+                    "[InfraWatch] This role cannot list log streams, so only the last "
+                    "3 hours are shown. Add logs:DescribeLogStreams and logs:GetLogEvents "
+                    "to it for the full backlog."
+                ] + _fetch_backlog_by_window(client, log_group, limit))
+            raise
+
+        newest: list[dict] = []
+        for stream in streams:
+            name = stream.get("logStreamName")
+            last = stream.get("lastEventTimestamp")
+            if not name or not last:
+                continue  # a stream that has never been written to
+            if len(newest) >= limit and last < newest[0]["timestamp"]:
+                # Streams arrive newest-written first, so this one and every
+                # one after it is entirely older than what is already held.
                 break
-        events.sort(key=lambda e: e["timestamp"])
-        return [_format(e) for e in events[-limit:]]
+            page = client.get_log_events(
+                logGroupName=log_group, logStreamName=name,
+                limit=min(10000, limit), startFromHead=False,
+            )
+            events = page.get("events", [])
+            for event in events:
+                # GetLogEvents does not name the stream on each event the way
+                # a filter does, and the formatter puts it on every line.
+                event["logStreamName"] = name
+            newest.extend(events)
+            newest.sort(key=lambda e: e["timestamp"])
+            newest = newest[-limit:]
+
+        return [_format(e) for e in newest]
     except (ClientError, BotoCoreError) as e:
         raise CloudWatchError(_friendly(e)) from e
+
+
+def _fetch_backlog_by_window(client, log_group: str, limit: int,
+                             minutes: int = 180) -> list[str]:
+    """The old reading, kept for roles that may not list streams.
+
+    Carries the limitation it always had: on a group busy enough to fill the
+    quota these are the oldest lines in the window, not the newest.
+    """
+    start = int((time.time() - minutes * 60) * 1000)
+    events, token = [], None
+    while len(events) < limit:
+        kwargs = {"logGroupName": log_group, "startTime": start,
+                  "limit": min(10000, limit - len(events))}
+        if token:
+            kwargs["nextToken"] = token
+        page = client.filter_log_events(**kwargs)
+        events.extend(page.get("events", []))
+        token = page.get("nextToken")
+        if not token:
+            break
+    events.sort(key=lambda e: e["timestamp"])
+    return [_format(e) for e in events[-limit:]]
 
 
 

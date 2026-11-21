@@ -1,8 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, or_
+from sqlalchemy.orm import Session, joinedload
 
 from .. import schemas
 from ..audit import log_action
@@ -25,29 +25,65 @@ def _accessible_vm(db: Session, user: User, vm_id: str) -> VM:
     return vm
 
 
-def _serialize(db: Session, monitor: UrlMonitor) -> schemas.UrlMonitorOut:
-    out = schemas.UrlMonitorOut.model_validate(monitor)
+def _as_date(value) -> date:
+    """Postgres hands back a date; SQLite hands back its string form."""
+    return value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
+
+
+def _uptime_by_day(db: Session, monitor_ids: list[str]) -> dict[str, dict[date, tuple[int, int]]]:
+    """(checks, successes) per day per monitor, counted in a single query.
+
+    Counted by the database rather than by loading the samples: a monitor
+    checked every 15 seconds has around forty thousand of them inside this
+    window, and the fleet page serialises every monitor the caller can see.
+    Reading all of those rows in order to divide two numbers was the slowest
+    thing this API did, and it ran before the page could be drawn.
+    """
+    if not monitor_ids:
+        return {}
     since = datetime.utcnow() - timedelta(days=UPTIME_DAYS)
-    samples = (
-        db.query(UrlCheckSample)
-        .filter(UrlCheckSample.monitor_id == monitor.id, UrlCheckSample.checked_at >= since)
+    day = func.date(UrlCheckSample.checked_at)
+    rows = (
+        db.query(
+            UrlCheckSample.monitor_id,
+            day.label("day"),
+            func.count().label("checks"),
+            func.sum(case((UrlCheckSample.ok, 1), else_=0)).label("successes"),
+        )
+        .filter(UrlCheckSample.monitor_id.in_(monitor_ids),
+                UrlCheckSample.checked_at >= since)
+        .group_by(UrlCheckSample.monitor_id, day)
         .all()
     )
-    if samples:
-        out.uptime_7d = round(100.0 * sum(1 for s in samples if s.ok) / len(samples), 2)
+    out: dict[str, dict[date, tuple[int, int]]] = {}
+    for monitor_id, day_value, checks, successes in rows:
+        out.setdefault(monitor_id, {})[_as_date(day_value)] = (int(checks), int(successes or 0))
+    return out
+
+
+def _serialize(db: Session, monitor: UrlMonitor,
+               by_day: dict[date, tuple[int, int]] | None = None) -> schemas.UrlMonitorOut:
+    """One monitor as the API returns it.
+
+    by_day is this monitor's slice of a batched count, so a list of monitors
+    costs one query for all of them. Left out, it is counted for this one --
+    which is what the single-monitor endpoints want.
+    """
+    out = schemas.UrlMonitorOut.model_validate(monitor)
+    days = by_day if by_day is not None else _uptime_by_day(db, [monitor.id]).get(monitor.id, {})
+
+    checks = sum(c for c, _ in days.values())
+    if checks:
+        out.uptime_7d = round(100.0 * sum(s for _, s in days.values()) / checks, 2)
 
     # One figure per day, oldest first. A day with no samples stays null rather
     # than reporting 0% -- "we were not watching" is not "it was down".
-    buckets: list[list[bool]] = [[] for _ in range(UPTIME_DAYS)]
     today = datetime.utcnow().date()
-    for s in samples:
-        index = UPTIME_DAYS - 1 - (today - s.checked_at.date()).days
-        if 0 <= index < UPTIME_DAYS:
-            buckets[index].append(s.ok)
-    out.daily = [
-        round(100.0 * sum(1 for ok in day if ok) / len(day), 1) if day else None
-        for day in buckets
-    ]
+    daily = []
+    for offset in range(UPTIME_DAYS - 1, -1, -1):
+        entry = days.get(today - timedelta(days=offset))
+        daily.append(round(100.0 * entry[1] / entry[0], 1) if entry and entry[0] else None)
+    out.daily = daily
     return out
 
 
@@ -80,14 +116,21 @@ def _apply(monitor: UrlMonitor, payload: schemas.UrlMonitorIn) -> None:
 @router.get("/url-monitors", response_model=list[schemas.UrlMonitorOut])
 def list_all_monitors(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Every monitor the caller may see, across the fleet."""
-    # Outer join: a standalone monitor has no VM row to match.
-    query = db.query(UrlMonitor).outerjoin(VM, UrlMonitor.vm_id == VM.id)
+    # Outer join: a standalone monitor has no VM row to match. joinedload on
+    # top of it, so naming the VM below does not cost a query per monitor.
+    query = (db.query(UrlMonitor)
+             .outerjoin(VM, UrlMonitor.vm_id == VM.id)
+             .options(joinedload(UrlMonitor.vm)))
     if user.role != "admin":
         allowed = {a.vm_id for a in user.vm_access}
         query = query.filter(or_(UrlMonitor.vm_id.in_(allowed), UrlMonitor.vm_id.is_(None)))
+    monitors = query.order_by(VM.name, UrlMonitor.name).all()
+
+    # One count covering every monitor on the page, not one per row.
+    by_day = _uptime_by_day(db, [m.id for m in monitors])
     out = []
-    for monitor in query.order_by(VM.name, UrlMonitor.name).all():
-        item = _serialize(db, monitor)
+    for monitor in monitors:
+        item = _serialize(db, monitor, by_day.get(monitor.id, {}))
         item.vm_name = monitor.vm.name if monitor.vm else None
         out.append(item)
     return out
@@ -118,7 +161,8 @@ def create_standalone_monitor(payload: schemas.UrlMonitorIn,
 def list_monitors(vm_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     vm = _accessible_vm(db, user, vm_id)
     monitors = db.query(UrlMonitor).filter(UrlMonitor.vm_id == vm.id).order_by(UrlMonitor.name).all()
-    return [_serialize(db, m) for m in monitors]
+    by_day = _uptime_by_day(db, [m.id for m in monitors])
+    return [_serialize(db, m, by_day.get(m.id, {})) for m in monitors]
 
 
 @router.post("/vms/{vm_id}/url-monitors", response_model=schemas.UrlMonitorOut)

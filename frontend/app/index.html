@@ -2439,17 +2439,30 @@ $('#loginForm').addEventListener('submit', async e => {
 
 $('#logoutBtn').addEventListener('click', logout);
 
-/* The boot path is genuinely slow -- loadVms() fans out four requests per VM
-   on top of the fleet list -- so say which stage is running rather than
-   leaving a logo on screen with no sign of life. */
+/* Signing in is deliberately slow -- bcrypt is -- and the fleet still has to
+   arrive behind it, so name the stage rather than leaving a logo on screen
+   with no sign of life. */
 function bootStatus(text) {
   const el = $('#bootStatus');
   if (el) el.textContent = text;
 }
 
+/* Boot awaits only what the page cannot be drawn without. Users, alert
+   groups, URL monitors and AWS accounts fill counts and panels nobody is
+   looking at yet, and one of them -- /url-monitors -- is the slowest request
+   this API serves. Awaiting all of it in turn made the boot screen last the
+   sum of every call rather than the longest one.
+
+   deferredBootDone says that batch has finished, so anything reading one of
+   those lists can tell "not here yet" from "genuinely empty". */
+let deferredBootData = null;
+let deferredBootDone = false;
+
 async function bootApp() {
   bootStatus('Restoring session\u2026');
-  me = await api('/auth/me');
+  // Neither needs the other, so this is one round trip rather than two.
+  const [identity, envs] = await Promise.all([api('/auth/me'), api('/environments')]);
+  me = identity;
   const roleLabel = me.role === 'admin' ? 'Administrator' : 'Read-only';
   $('#userName').textContent = me.name;
   $('#userEmail').textContent = me.email;
@@ -2463,26 +2476,29 @@ async function bootApp() {
   $('#addUrlBtn').style.display = me.role === 'admin' ? 'inline-flex' : 'none';
   $('#navSettings').style.display = me.role === 'admin' ? 'flex' : 'none';
 
-  bootStatus('Loading environments\u2026');
-  environments = await api('/environments');
+  environments = envs;
   renderEnvOptions();
 
   await loadVms();
-  if (me.role === 'admin') {
-    bootStatus('Loading users\u2026');
-    await loadUsers();
-    await loadAlertGroups();
-  }
-  // Fills the rail count at sign-in, so a down endpoint shows without
-  // opening the page.
-  await loadAllUrlMonitors();
-  await fetchAwsAccounts();
   bootStatus('Ready');
 
   stopDashSim();
   $('#bootLoading').style.display = 'none';
   $('#loginScreen').style.display = 'none';
   $('#appShell').style.display = 'grid';
+
+  // Behind the shell from here. allSettled rather than all: one of these
+  // failing leaves its own panel empty, which is no reason to take down a
+  // page the operator can already read. They still fill the rail counts, so
+  // a down endpoint surfaces without opening its page -- a moment later.
+  const extras = [loadAllUrlMonitors(), fetchAwsAccounts()];
+  if (me.role === 'admin') extras.push(loadUsers(), loadAlertGroups());
+  deferredBootData = Promise.allSettled(extras).then(results => {
+    deferredBootDone = true;
+    for (const r of results) {
+      if (r.status === 'rejected') console.error('Background load failed:', r.reason);
+    }
+  });
 }
 
 async function loadVms() {
@@ -5054,6 +5070,16 @@ $('#groupSaveBtn').addEventListener('click', async () => {
 function renderVmGroupPicker(selectedIds) {
   const chosen = new Set(selectedIds || []);
   const el = $('#vmGroupList');
+  // Groups arrive behind the shell, so this modal can open before they do.
+  // "None defined" would then be wrong rather than merely early -- wait for
+  // the answer and draw again, if the modal is still open to draw into.
+  if (alertGroups.length === 0 && !deferredBootDone && deferredBootData) {
+    el.innerHTML = '<div class="help">Loading alert groups\u2026</div>';
+    deferredBootData.then(() => {
+      if ($('#addVmOverlay').style.display === 'flex') renderVmGroupPicker(selectedIds);
+    });
+    return;
+  }
   if (alertGroups.length === 0) {
     el.innerHTML = '<div class="help">No alert groups defined yet — create one under Settings.</div>';
     return;

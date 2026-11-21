@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .. import schemas
 from ..audit import log_action
@@ -65,11 +65,14 @@ def _get_accessible_vm(db: Session, user: User, vm_id: str) -> VM:
 
 @router.get("", response_model=list[schemas.VMOut])
 def list_vms(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # selectinload because _serialize_vm reads vm.alert_groups: without it
+    # that is one more query per VM, on the request the whole page waits for.
+    query = db.query(VM).options(selectinload(VM.alert_groups))
     if user.role == "admin":
-        vms = db.query(VM).order_by(VM.name).all()
+        vms = query.order_by(VM.name).all()
     else:
         allowed_ids = [a.vm_id for a in user.vm_access]
-        vms = db.query(VM).filter(VM.id.in_(allowed_ids)).order_by(VM.name).all()
+        vms = query.filter(VM.id.in_(allowed_ids)).order_by(VM.name).all()
     return [_serialize_vm(vm) for vm in vms]
 
 
